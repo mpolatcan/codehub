@@ -21,10 +21,10 @@ interface SessionInfo {
 
 interface CliSpec {
   id: Cli;
-  common: string; // English bird name
-  binomial: string; // Latin binomial
-  order: string; // Decorative — taxonomic order or plate number role
-  bird: string; // SVG symbol id
+  common: string;
+  binomial: string;
+  order: string;
+  bird: string;
 }
 
 const CLIS: CliSpec[] = [
@@ -56,7 +56,6 @@ const SPEC_BY_CLI: Record<Cli, CliSpec> = Object.fromEntries(CLIS.map((c) => [c.
   CliSpec
 >;
 
-// Roman numerals up to 50 (plate numbers)
 const ROMAN = [
   "",
   "I",
@@ -97,9 +96,12 @@ function toRoman(n: number): string {
 const host = document.getElementById("terminal-host") as HTMLElement;
 const tabsEl = document.getElementById("tabs") as HTMLElement;
 const newBtn = document.getElementById("new-session") as HTMLButtonElement;
-const statusContainer = document.getElementById("status-container") as HTMLElement;
-const statusSession = document.getElementById("status-session") as HTMLElement;
-const statusPlate = document.getElementById("status-plate") as HTMLElement;
+const statusCellEl = document.getElementById("status-cell") as HTMLElement;
+const statusContainerEl = document.getElementById("status-container") as HTMLElement;
+const statusRuntimeEl = document.getElementById("status-runtime") as HTMLElement;
+const statusSessionEl = document.getElementById("status-session") as HTMLElement;
+const statusSessionNameEl = document.getElementById("status-session-name") as HTMLElement;
+const statusPlateEl = document.getElementById("status-plate") as HTMLElement;
 const mastheadDate = document.getElementById("masthead-date") as HTMLElement;
 const emptyState = document.getElementById("empty-state") as HTMLElement;
 
@@ -116,7 +118,7 @@ let bootstrapped = false;
 let plateCounter = 0;
 
 // -----------------------------------------------------------------------
-// Masthead — today's date in field-journal style
+// Masthead date
 // -----------------------------------------------------------------------
 
 (function setMastheadDate() {
@@ -129,13 +131,20 @@ let plateCounter = 0;
 })();
 
 // -----------------------------------------------------------------------
-// Status bar
+// Status — runtime state appears in both masthead pill and footer
 // -----------------------------------------------------------------------
 
 function renderStatus(status: ContainerStatus) {
   lastStatus = status;
-  statusContainer.className = `status-cell state-${status.state}`;
-  statusContainer.innerHTML = `aviary <em>—</em> ${status.state}`;
+  const cls = `state-${status.state}`;
+  statusCellEl.className = `mast-center ${cls}`;
+  statusContainerEl.className = `status-foot ${cls}`;
+  const dot = statusCellEl.querySelector(".status-dot");
+  const text = statusCellEl.querySelector(".status-text");
+  if (dot) dot.className = "status-dot";
+  if (text) text.textContent = status.state;
+  statusRuntimeEl.textContent = status.state;
+
   if (status.state === "running" && !bootstrapped) {
     bootstrapped = true;
     void bootstrapExistingSessions();
@@ -144,16 +153,15 @@ function renderStatus(status: ContainerStatus) {
 
 function updateActivePlate() {
   if (!activeName) {
-    statusSession.innerHTML = "specimen <em>—</em> none";
-    statusPlate.textContent = "—";
+    statusSessionNameEl.textContent = "—";
+    statusPlateEl.textContent = "—";
     return;
   }
   const meta = sessionMeta.get(activeName);
   const cli = meta?.cli;
   const spec = cli ? SPEC_BY_CLI[cli] : null;
-  const label = spec?.common ?? activeName;
-  statusSession.innerHTML = `specimen <em>—</em> <span class="roman">${label}</span>`;
-  statusPlate.textContent = meta ? toRoman(meta.plate) : "—";
+  statusSessionNameEl.textContent = spec?.common ?? activeName;
+  statusPlateEl.textContent = meta ? toRoman(meta.plate) : "—";
 }
 
 // -----------------------------------------------------------------------
@@ -166,7 +174,7 @@ function refreshEmptyState() {
 }
 
 // -----------------------------------------------------------------------
-// Tabs — rendered as specimen cards
+// Tabs — specimen ledger row
 // -----------------------------------------------------------------------
 
 function renderTabs() {
@@ -177,9 +185,12 @@ function renderTabs() {
     const tab = document.createElement("div");
     tab.className = `tab${name === activeName ? " active" : ""}`;
     tab.innerHTML = `
+      <span class="plate-num">${meta ? toRoman(meta.plate) : "—"}</span>
       <svg class="bird" aria-hidden="true"><use href="${spec?.bird ?? "#bird-owl"}"/></svg>
-      <span class="latin">${spec?.binomial ?? name}</span>
-      <span class="meta"><span class="plate">Pl. ${meta ? toRoman(meta.plate) : "—"}</span> ${spec?.common ?? "Specimen"}</span>
+      <span class="tab-text">
+        <span class="latin">${spec?.binomial ?? name}</span>
+        <span class="common">${spec?.common ?? "Specimen"}</span>
+      </span>
       <span class="close" aria-label="close">×</span>
     `;
     tab.onclick = () => activateTab(name);
@@ -209,9 +220,6 @@ async function closeTab(name: string) {
   const pane = panes.get(name);
   if (!pane) return;
 
-  // Kill the tmux session first so the server drops it. The attached exec's
-  // stdout stream will end naturally, our background tasks unwind, and the
-  // pty exit event fires. Then we tear down our local pane bookkeeping.
   try {
     await invoke("kill_session", { name });
   } catch (e) {
@@ -247,6 +255,7 @@ async function openSession(name: string, cli: Cli) {
   const pane = await createPane(host, name, {
     plateLabel: `Plate ${toRoman(plateCounter)} — ${spec.common}`,
     binomial: spec.binomial,
+    watermark: `№ ${toRoman(plateCounter)}`,
   });
   panes.set(name, pane);
   activateTab(name);
@@ -254,7 +263,7 @@ async function openSession(name: string, cli: Cli) {
 }
 
 // -----------------------------------------------------------------------
-// New session — specimen release modal
+// Modal
 // -----------------------------------------------------------------------
 
 function pickCli(): Promise<Cli | null> {
@@ -263,18 +272,22 @@ function pickCli(): Promise<Cli | null> {
     overlay.className = "modal-overlay";
     overlay.innerHTML = `
       <div class="modal" role="dialog" aria-modal="true">
+        <span class="frame-fleuron tl"><svg viewBox="0 0 24 24"><use href="#fleuron"/></svg></span>
+        <span class="frame-fleuron tr"><svg viewBox="0 0 24 24"><use href="#fleuron"/></svg></span>
+        <span class="frame-fleuron bl"><svg viewBox="0 0 24 24"><use href="#fleuron"/></svg></span>
+        <span class="frame-fleuron br"><svg viewBox="0 0 24 24"><use href="#fleuron"/></svg></span>
+
         <header class="modal-header">
+          <span class="kicker">Tom. I &middot; Pl. ${toRoman(plateCounter + 1)}</span>
           <h2>Release a specimen</h2>
-          <span class="header-meta">Vol. I · Pl. ${toRoman(plateCounter + 1)}</span>
+          <span class="header-meta">Choose a species to admit into the aviary</span>
         </header>
-        <p class="modal-subtitle">
-          Choose the species to admit into the aviary. Each occupies a single perch.
-        </p>
         <div class="cli-grid">
           ${CLIS.map(
             (c, i) => `
               <button class="cli-card" data-cli="${c.id}" aria-label="${c.common}">
                 <span class="order">${toRoman(i + 1)}.</span>
+                <span class="order-caps">${c.order}</span>
                 <svg class="bird" aria-hidden="true"><use href="${c.bird}"/></svg>
                 <span class="common">${c.common}</span>
                 <span class="binomial">${c.binomial}</span>
@@ -284,7 +297,7 @@ function pickCli(): Promise<Cli | null> {
           ).join("")}
         </div>
         <footer class="modal-footer">
-          <span>Esc to dismiss</span>
+          <span class="esc"><kbd>Esc</kbd> to dismiss</span>
           <button class="cancel" type="button">Return to journal</button>
         </footer>
       </div>
@@ -324,8 +337,9 @@ function pickCli(): Promise<Cli | null> {
 
 async function newSession() {
   if (lastStatus?.state !== "running") {
-    statusContainer.className = "status-cell state-error";
-    statusContainer.innerHTML = `aviary <em>—</em> ${lastStatus?.state ?? "unknown"} · cannot release`;
+    statusCellEl.className = "mast-center state-error";
+    const text = statusCellEl.querySelector(".status-text");
+    if (text) text.textContent = `${lastStatus?.state ?? "unknown"} · cannot release`;
     return;
   }
   const cli = await pickCli();
@@ -343,7 +357,6 @@ async function bootstrapExistingSessions() {
   try {
     const sessions: SessionInfo[] = await invoke("list_sessions");
     for (const s of sessions) {
-      // Best-effort CLI detection from session name prefix; fallback claude.
       const guessed = (CLIS.find((c) => s.name.startsWith(c.id))?.id ?? "claude") as Cli;
       await openSession(s.name, guessed);
     }
@@ -371,8 +384,11 @@ window.addEventListener("resize", () => {
     renderStatus(e.payload);
   });
   await listen<string>("aviary://lifecycle-error", (e) => {
-    statusContainer.className = "status-cell state-error";
-    statusContainer.innerHTML = `aviary <em>—</em> error · ${e.payload}`;
+    statusCellEl.className = "mast-center state-error";
+    const text = statusCellEl.querySelector(".status-text");
+    if (text) text.textContent = `error · ${e.payload}`;
+    statusContainerEl.className = "status-foot state-error";
+    statusRuntimeEl.textContent = "error";
   });
 
   try {
@@ -382,3 +398,6 @@ window.addEventListener("resize", () => {
     console.error(e);
   }
 })();
+
+// Make sessions visible elsewhere if needed (debugging)
+void statusSessionEl;

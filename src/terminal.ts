@@ -18,6 +18,7 @@ export interface Pane {
 export interface PaneOptions {
   plateLabel?: string;
   binomial?: string;
+  watermark?: string;
 }
 
 // Terminal theme — parchment ink on warm charcoal
@@ -67,6 +68,12 @@ export async function createPane(
     bn.className = "plate-binomial";
     bn.textContent = opts.binomial;
     el.appendChild(bn);
+  }
+  if (opts.watermark) {
+    const wm = document.createElement("span");
+    wm.className = "plate-watermark";
+    wm.textContent = opts.watermark;
+    el.appendChild(wm);
   }
 
   const termHost = document.createElement("div");
