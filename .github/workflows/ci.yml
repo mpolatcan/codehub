@@ -64,6 +64,14 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # tauri::generate_context! validates frontendDist at compile time,
+      # so clippy/cargo check both need dist/index.html to exist even
+      # though we never run the bundle here.
+      - name: Stub frontend bundle for tauri::generate_context!
+        run: |
+          mkdir -p ../dist
+          echo '<!doctype html><html><body>ci</body></html>' > ../dist/index.html
+
       - name: rustfmt --check
         run: cargo fmt --all -- --check
 
@@ -71,10 +79,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: cargo check
-        run: |
-          mkdir -p ../dist
-          echo '<!doctype html><html><body>ci</body></html>' > ../dist/index.html
-          cargo check --all-targets --all-features
+        run: cargo check --all-targets --all-features
 
   runtime-image:
     name: Runtime image build (no push)
