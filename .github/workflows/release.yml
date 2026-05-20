@@ -1,0 +1,187 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write    # create GitHub Release + upload assets
+  packages: write    # push image to ghcr.io
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/aviary-runtime
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) Publish the runtime container image (multi-arch) to ghcr.io
+  # ---------------------------------------------------------------------------
+  runtime-image:
+    name: Publish runtime image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------------
+  # 2) Build Tauri desktop bundles on each target OS
+  # ---------------------------------------------------------------------------
+  tauri-bundle:
+    name: Build ${{ matrix.label }}
+    needs: runtime-image
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            label: macOS (arm64)
+            target: aarch64-apple-darwin
+            artifact_glob: "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg"
+          - os: ubuntu-22.04
+            label: Linux (x86_64)
+            target: x86_64-unknown-linux-gnu
+            artifact_glob: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            patchelf \
+            file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""    # placeholder — add when signing enabled
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            npx tauri build --target ${{ matrix.target }}
+          else
+            npx tauri build
+          fi
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aviary-${{ matrix.target }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 3) Create the GitHub Release and attach all bundles
+  # ---------------------------------------------------------------------------
+  github-release:
+    name: Create GitHub Release
+    needs: [runtime-image, tauri-bundle]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # for git log changelog generation
+
+      - name: Download all bundle artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: bundles
+          pattern: aviary-*
+          merge-multiple: true
+
+      - name: Generate release notes from commits
+        id: notes
+        run: |
+          PREV=$(git tag --sort=-v:refname | grep -v "^${GITHUB_REF_NAME}$" | head -n1 || echo "")
+          {
+            echo "## Aviary ${GITHUB_REF_NAME}"
+            echo
+            echo "Runtime image: \`${REGISTRY}/${IMAGE_NAME}:${{ needs.runtime-image.outputs.version }}\`"
+            echo
+            echo "### Changes"
+            if [ -n "$PREV" ]; then
+              git log "${PREV}..${GITHUB_REF_NAME}" --pretty=format:'- %s (%h)' --no-merges
+            else
+              echo "- Initial release"
+            fi
+          } > NOTES.md
+          cat NOTES.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Aviary ${{ github.ref_name }}
+          body_path: NOTES.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: bundles/**
+          fail_on_unmatched_files: true

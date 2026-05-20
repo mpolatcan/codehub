@@ -40,7 +40,7 @@ Run this skill when any of:
 4. **Tag `latest`** only if this is the canonical version on `main`:
 
    ```bash
-   docker tag mutlupolatcan/aviary-runtime:<VERSION> mutlupolatcan/aviary-runtime:latest
+   docker tag ghcr.io/mpolatcan/aviary-runtime:<VERSION> ghcr.io/mpolatcan/aviary-runtime:latest
    ```
 
 5. **Multi-arch build for publishing** (only when cutting a release — see `release-cut` skill):

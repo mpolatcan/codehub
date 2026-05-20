@@ -5,7 +5,7 @@
 # Variables (override on the command line, e.g. `make image IMAGE_TAG=0.2.0`):
 #
 #   IMAGE_TAG     Runtime image tag.  Default: parsed from src-tauri/src/lib.rs
-#   IMAGE_REPO    Runtime image repo. Default: mutlupolatcan/aviary-runtime
+#   IMAGE_REPO    Runtime image repo. Default: ghcr.io/mpolatcan/aviary-runtime
 #   PLATFORMS     buildx platforms.   Default: linux/amd64,linux/arm64
 #   CONTAINER     Runtime container name (debug helpers). Default: aviary-runtime
 # =============================================================================
@@ -14,7 +14,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
-IMAGE_REPO ?= mutlupolatcan/aviary-runtime
+IMAGE_REPO ?= ghcr.io/mpolatcan/aviary-runtime
 IMAGE_TAG  ?= $(shell grep -E 'DEFAULT_IMAGE' src-tauri/src/lib.rs | sed -E 's/.*:([0-9]+\.[0-9]+\.[0-9]+).*/\1/' | head -n1)
 IMAGE      := $(IMAGE_REPO):$(IMAGE_TAG)
 PLATFORMS  ?= linux/amd64,linux/arm64

@@ -11,7 +11,7 @@ Pre-flight required:
 - `TEST_SCENARIOS.md` regression checklist (the end-of-doc list) has been walked manually
 - `cargo check` clean inside `src-tauri/`
 - `npm run build` clean
-- Docker Hub credentials available for `mutlupolatcan/aviary-runtime`
+- Docker Hub credentials available for `ghcr.io/mpolatcan/aviary-runtime`
 
 ## 1. Bump version everywhere
 
@@ -20,7 +20,7 @@ The version appears in four places. Update all to the same value (`X.Y.Z`):
 - `package.json` — `"version": "X.Y.Z"`
 - `src-tauri/Cargo.toml` — `version = "X.Y.Z"` under `[package]`
 - `src-tauri/tauri.conf.json` — `"version": "X.Y.Z"`
-- `src-tauri/src/lib.rs` — `const DEFAULT_IMAGE: &str = "mutlupolatcan/aviary-runtime:X.Y.Z";`
+- `src-tauri/src/lib.rs` — `const DEFAULT_IMAGE: &str = "ghcr.io/mpolatcan/aviary-runtime:X.Y.Z";`
 
 Commit the version bump as its own commit: `chore: bump version to X.Y.Z`.
 
@@ -37,7 +37,7 @@ The `image-push` target reads the tag from `src-tauri/src/lib.rs:DEFAULT_IMAGE` 
 Verify the manifest after push:
 
 ```bash
-docker buildx imagetools inspect mutlupolatcan/aviary-runtime:X.Y.Z
+docker buildx imagetools inspect ghcr.io/mpolatcan/aviary-runtime:X.Y.Z
 ```
 
 Both `linux/amd64` and `linux/arm64` platforms must be listed.
@@ -89,8 +89,8 @@ If a release ships broken:
 gh release delete vX.Y.Z --yes
 git tag -d vX.Y.Z
 git push origin :refs/tags/vX.Y.Z
-docker buildx imagetools create --tag mutlupolatcan/aviary-runtime:latest \
-  mutlupolatcan/aviary-runtime:<previous-version>
+docker buildx imagetools create --tag ghcr.io/mpolatcan/aviary-runtime:latest \
+  ghcr.io/mpolatcan/aviary-runtime:<previous-version>
 ```
 
 Leave the broken runtime tag in place (`X.Y.Z`) for forensics — only re-point `latest`.

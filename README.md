@@ -32,7 +32,7 @@ Running multiple agent CLIs locally is messy: separate terminals, separate auth,
 
 Boot sequence:
 1. App launch -> `Lifecycle::ensure_runtime` spawned in background.
-2. Pull `mutlupolatcan/aviary-runtime:<version>` if missing (~10-20s first run).
+2. Pull `ghcr.io/mpolatcan/aviary-runtime:<version>` if missing (~10-20s first run).
 3. Create container with volume mounts under `~/Library/Application Support/aviary/`.
 4. Frontend listens on `aviary://lifecycle` events for state transitions.
 5. Once `running`, frontend calls `list_sessions` and restores existing tmux tabs.
@@ -62,7 +62,7 @@ cd /Users/mutlu.polatcan/aviary
 npm install
 
 # Build runtime image locally (or wait for app to pull from registry)
-docker build -t mutlupolatcan/aviary-runtime:0.1.0 runtime/
+docker build -t ghcr.io/mpolatcan/aviary-runtime:0.1.0 runtime/
 
 # Dev mode (hot reload frontend, rebuild Rust on change)
 npm run tauri dev
@@ -73,7 +73,7 @@ Override defaults:
 | Env var | Purpose | Default |
 |---|---|---|
 | `AVIARY_CONTAINER` | Container name | `aviary-runtime` |
-| `AVIARY_IMAGE` | Image tag to use | `mutlupolatcan/aviary-runtime:0.1.0` |
+| `AVIARY_IMAGE` | Image tag to use | `ghcr.io/mpolatcan/aviary-runtime:0.1.0` |
 | `AVIARY_NETWORK_MODE` | Docker network mode | `bridge` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Skip `/login` in Claude Code | unset |
 

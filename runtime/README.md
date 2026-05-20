@@ -30,9 +30,9 @@ docker build -t aviary-runtime:dev .
 ```bash
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t mutlupolatcan/aviary-runtime:0.1.0 \
-  -t mutlupolatcan/aviary-runtime:latest \
+  -t ghcr.io/mpolatcan/aviary-runtime:0.1.0 \
+  -t ghcr.io/mpolatcan/aviary-runtime:latest \
   --push .
 ```
 
-Aviary's `lifecycle.rs` pulls `mutlupolatcan/aviary-runtime:<aviary-version>` on first launch.
+Aviary's `lifecycle.rs` pulls `ghcr.io/mpolatcan/aviary-runtime:<aviary-version>` on first launch.

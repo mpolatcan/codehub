@@ -15,7 +15,7 @@ pub struct AppState {
 }
 
 const DEFAULT_CONTAINER: &str = "aviary-runtime";
-const DEFAULT_IMAGE: &str = "mutlupolatcan/aviary-runtime:0.1.0";
+const DEFAULT_IMAGE: &str = "ghcr.io/mpolatcan/aviary-runtime:0.1.0";
 
 #[tauri::command]
 async fn container_status(state: tauri::State<'_, AppState>) -> Result<ContainerStatus, String> {

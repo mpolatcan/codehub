@@ -70,7 +70,7 @@ Environment knobs:
 | Env var | Purpose | Default |
 |---|---|---|
 | `AVIARY_CONTAINER` | Container name | `aviary-runtime` |
-| `AVIARY_IMAGE` | Image tag | `mutlupolatcan/aviary-runtime:0.1.0` |
+| `AVIARY_IMAGE` | Image tag | `ghcr.io/mpolatcan/aviary-runtime:0.1.0` |
 | `AVIARY_NETWORK_MODE` | Docker network mode | `bridge` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Skip /login in Claude Code | unset |
 

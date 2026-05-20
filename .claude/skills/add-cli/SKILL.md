@@ -61,7 +61,7 @@ Edit `index.html`. Add a `<symbol id="bird-<slug>" viewBox="0 0 64 64">` inside 
 Edit `src-tauri/src/lib.rs`:
 
 ```rust
-const DEFAULT_IMAGE: &str = "mutlupolatcan/aviary-runtime:0.1.<NEXT>";
+const DEFAULT_IMAGE: &str = "ghcr.io/mpolatcan/aviary-runtime:0.1.<NEXT>";
 ```
 
 This ensures end users get a fresh pull when they update Aviary.
