@@ -65,17 +65,23 @@ cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged
 
 ## One-shot full sweep
 
-When you want everything fixed and re-checked in one go:
+The Makefile wraps both pipelines:
 
 ```bash
-# from repo root
+make check     # Biome + tsc + rustfmt --check + clippy -D warnings (no writes)
+make fix       # Apply all safe auto-fixes, then re-run make check
+```
+
+`make fix` does Biome safe fixes → `cargo fmt` → `cargo clippy --fix` (allow-dirty / allow-staged) → re-run `make check` to confirm the sweep is idempotent. If the final check fails, the remaining issues need manual judgement.
+
+For the raw commands without Make:
+
+```bash
 npm run check:fix && \
 (cd src-tauri && cargo fmt --all && cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged) && \
 npm run typecheck && \
 (cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings)
 ```
-
-This first applies all safe fixes, then re-runs the strict checks. If the final clippy / typecheck steps fail, the remaining issues need manual judgement.
 
 ## When to run
 

@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (Biome + tsc + Vite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Biome (lint + format + imports)
+        run: npm run check
+
+      - name: TypeScript type-check
+        run: npm run typecheck
+
+      - name: Vite build
+        run: npx vite build
+
+  backend:
+    name: Backend (rustfmt + clippy + cargo check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: rustfmt --check
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: cargo check
+        run: |
+          mkdir -p ../dist
+          echo '<!doctype html><html><body>ci</body></html>' > ../dist/index.html
+          cargo check --all-targets --all-features
+
+  runtime-image:
+    name: Runtime image build (no push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: contains(github.event.pull_request.changed_files, 'runtime/') || github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build runtime image (single-arch, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: runtime
+          push: false
+          load: true
+          tags: aviary-runtime:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test installed CLIs
+        run: |
+          docker run --rm --entrypoint bash aviary-runtime:ci -c "
+            set -e
+            which claude
+            which codex
+            which tmux
+            claude --version
+            codex --version
+            tmux -V
+          "

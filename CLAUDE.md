@@ -48,16 +48,22 @@ aviary/
 
 ## Local dev
 
+A `Makefile` at repo root is the canonical entry point. Run `make help` for the full list.
+
 ```bash
 # One-time
 source ~/.cargo/env                                 # cargo on PATH (also in ~/.zshrc)
-docker build -t mutlupolatcan/aviary-runtime:0.1.0 runtime/
-npm install
+make install                                         # npm deps; cargo fetches on first build
+make image                                           # build runtime image at the tag pinned in lib.rs
 
 # Day-to-day
-npm run tauri dev                                   # Vite + Tauri, hot-reloads frontend
-cargo check --manifest-path src-tauri/Cargo.toml    # Backend type-check only
+make dev                                             # Vite + Tauri, hot-reloads frontend
+make check                                           # Full lint sweep (Biome + tsc + rustfmt + clippy)
+make fix                                             # Apply all safe auto-fixes, then re-check
+make image-verify                                    # Smoke-test installed CLIs in the runtime image
 ```
+
+CI mirrors `make check` (see `.github/workflows/ci.yml`). Don't introduce checks locally that CI doesn't enforce, and vice versa.
 
 Environment knobs:
 

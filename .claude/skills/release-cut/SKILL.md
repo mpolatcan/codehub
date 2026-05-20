@@ -26,15 +26,13 @@ Commit the version bump as its own commit: `chore: bump version to X.Y.Z`.
 
 ## 2. Publish the runtime image
 
-Use the `runtime-rebuild` skill's multi-arch path. From repo root:
+From repo root, after the version bump in step 1 is committed:
 
 ```bash
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t mutlupolatcan/aviary-runtime:X.Y.Z \
-  -t mutlupolatcan/aviary-runtime:latest \
-  --push runtime/
+make image-push          # multi-arch buildx push (linux/amd64, linux/arm64)
 ```
+
+The `image-push` target reads the tag from `src-tauri/src/lib.rs:DEFAULT_IMAGE` and also retags `:latest`.
 
 Verify the manifest after push:
 
@@ -47,7 +45,7 @@ Both `linux/amd64` and `linux/arm64` platforms must be listed.
 ## 3. Build the desktop bundles
 
 ```bash
-npm run tauri build
+make build
 ```
 
 Outputs land in `src-tauri/target/release/bundle/`:

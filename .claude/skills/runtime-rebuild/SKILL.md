@@ -19,23 +19,23 @@ Run this skill when any of:
 2. **Build.** From repo root:
 
    ```bash
-   docker build -t mutlupolatcan/aviary-runtime:<VERSION> runtime/
+   make image                # equivalent to: docker build -t <repo>:<VERSION> runtime/
+   make image-nocache        # --no-cache, guaranteed-clean rebuild
    ```
 
-   For a guaranteed-clean build (no cache):
+   Both targets parse the version from `src-tauri/src/lib.rs:DEFAULT_IMAGE`. Override via:
 
    ```bash
-   docker build --no-cache -t mutlupolatcan/aviary-runtime:<VERSION> runtime/
+   make image IMAGE_TAG=0.2.0
    ```
 
 3. **Smoke-test inside the image** before declaring success:
 
    ```bash
-   docker run --rm --entrypoint bash mutlupolatcan/aviary-runtime:<VERSION> \
-     -c "which claude && which codex && which tmux && tmux -V"
+   make image-verify
    ```
 
-   Every command must produce a path. If `which antigravity` is included it will currently fail because Antigravity install is commented out — that is expected; do not block on it.
+   Every CLI must produce a path + version. If `which antigravity` is added it will currently fail because Antigravity install is commented out — that is expected; do not block on it.
 
 4. **Tag `latest`** only if this is the canonical version on `main`:
 
@@ -46,11 +46,7 @@ Run this skill when any of:
 5. **Multi-arch build for publishing** (only when cutting a release — see `release-cut` skill):
 
    ```bash
-   docker buildx build \
-     --platform linux/amd64,linux/arm64 \
-     -t mutlupolatcan/aviary-runtime:<VERSION> \
-     -t mutlupolatcan/aviary-runtime:latest \
-     --push runtime/
+   make image-push          # buildx --platform linux/amd64,linux/arm64 --push
    ```
 
 ## Notes
