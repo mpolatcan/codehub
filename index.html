@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aviary — Field Journal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <!-- Eagle Owl silhouette (Bubo bubo) — Claude -->
+        <symbol id="bird-owl" viewBox="0 0 64 64">
+          <path
+            fill="currentColor"
+            d="M32 8c-6 0-10 4-12 8-3-1-6 0-7 3-1 3 1 6 3 7-2 4-2 9 0 13 2 5 7 9 13 11l-2 5h3l2-4c1 0 2 1 3 1s2-1 3-1l2 4h3l-2-5c6-2 11-6 13-11 2-4 2-9 0-13 2-1 4-4 3-7-1-3-4-4-7-3-2-4-6-8-12-8zm-7 18c2 0 3 2 3 4s-1 4-3 4-3-2-3-4 1-4 3-4zm14 0c2 0 3 2 3 4s-1 4-3 4-3-2-3-4 1-4 3-4zm-7 9 2 3-2 2-2-2z"
+          />
+        </symbol>
+        <!-- Raven silhouette (Corvus corax) — Codex -->
+        <symbol id="bird-raven" viewBox="0 0 64 64">
+          <path
+            fill="currentColor"
+            d="M10 38c1-8 7-14 15-15 4 0 7 1 10 3l8-10 2 1-3 11c4 3 6 7 7 12l9 4-9 2c-1 4-3 7-6 9l5 4-7-1c-3 1-7 2-11 1-7-1-13-5-17-11l-5 3 2-7c-1-2-1-4 0-6z"
+          />
+          <circle cx="44" cy="26" r="1.4" fill="#1a1612" />
+        </symbol>
+        <!-- Peregrine Falcon silhouette (Falco peregrinus) — Antigravity -->
+        <symbol id="bird-falcon" viewBox="0 0 64 64">
+          <path
+            fill="currentColor"
+            d="M32 6 26 18l-14-4 8 11-12 8 14 1-4 14 12-7 5 14 5-14 12 7-4-14 14-1-12-8 8-11-14 4z"
+          />
+        </symbol>
+        <!-- Empty cage for empty state -->
+        <symbol id="cage" viewBox="0 0 64 64">
+          <path
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            d="M14 14h36v36H14zM14 14l5-6h26l5 6M22 14v36M30 14v36M38 14v36M46 14v36M14 32h36M32 50v6M28 56h8"
+          />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div id="app">
+      <header id="masthead">
+        <div class="masthead-left">
+          <span class="serif-italic">Aviary</span>
+          <span class="rule"></span>
+          <span class="caps">Field Journal</span>
+        </div>
+        <div class="masthead-right">
+          <span id="masthead-date"></span>
+        </div>
+      </header>
+
+      <nav id="tabbar">
+        <div id="tabs"></div>
+        <button id="new-session" title="Release a new specimen">
+          <span class="plus">＋</span>
+          <span class="label">release</span>
+        </button>
+      </nav>
+
+      <main id="terminal-host">
+        <div id="empty-state" class="empty-state">
+          <svg class="empty-cage" width="120" height="120"><use href="#cage" /></svg>
+          <h1>The aviary is silent.</h1>
+          <p>No specimens currently in residence.</p>
+          <p class="muted">
+            Release one with <kbd>＋</kbd> above, or wait for the runtime to wake.
+          </p>
+        </div>
+      </main>
+
+      <footer id="statusbar">
+        <span id="status-container" class="status-cell">aviary <em>—</em> awaiting</span>
+        <span class="dingbat">◆</span>
+        <span id="status-session" class="status-cell">specimen <em>—</em> none</span>
+        <span class="dingbat">◆</span>
+        <span class="status-cell muted">vol. <span class="roman">I</span>, plate <span id="status-plate">—</span></span>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

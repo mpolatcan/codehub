@@ -1,0 +1,691 @@
+/* =========================================================================
+   Aviary — Ornithological Field Journal
+   ========================================================================= */
+
+:root {
+  /* Palette — warm charcoal with parchment chrome */
+  --ink-bg: #1a1612;
+  --ink-panel: #221c17;
+  --ink-rule: #3a2f25;
+  --ink-rule-soft: #2a2520;
+
+  --parchment: #e8dcc4;
+  --parchment-warm: #f0e4cc;
+  --parchment-dim: #c9b89a;
+  --parchment-faded: #8a7e64;
+
+  --ochre: #c9a36b;
+  --ochre-bright: #e0b87a;
+  --oxidized: #a04a3a;
+  --moss: #6a7a52;
+  --indigo: #4a5a78;
+
+  /* Type */
+  --display: "Instrument Serif", "Cormorant Garamond", "EB Garamond",
+    Georgia, serif;
+  --mono-ui: "DM Mono", "JetBrains Mono", ui-monospace, monospace;
+  --mono-term: "JetBrains Mono", "DM Mono", ui-monospace, monospace;
+
+  /* Sizes */
+  --fs-small: 10px;
+  --fs-base: 12px;
+  --fs-h1: 32px;
+
+  /* Geometry */
+  --rule-hair: 0.5px solid var(--ink-rule);
+  --rule-bold: 1px solid var(--ink-rule);
+  --rule-parchment: 1px solid color-mix(in srgb, var(--parchment) 20%, transparent);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+@font-face {
+  font-family: "Instrument Serif Fallback";
+  src: local("Georgia");
+  size-adjust: 95%;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  background: var(--ink-bg);
+  color: var(--parchment);
+  font-family: var(--mono-ui);
+  font-size: var(--fs-base);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+/* Paper grain overlay — subtle SVG noise on top of everything chrome */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.7 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+#app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 28px 56px 1fr 28px;
+}
+
+/* =========================================================================
+   MASTHEAD — top brand strip, mimicking a journal nameplate
+   ========================================================================= */
+
+#masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  background: var(--ink-panel);
+  border-bottom: var(--rule-hair);
+  font-size: var(--fs-small);
+  -webkit-app-region: drag;
+}
+
+.masthead-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.serif-italic {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--parchment-warm);
+  letter-spacing: 0;
+  padding-left: 70px; /* leave room for macOS traffic lights */
+}
+
+.rule {
+  width: 24px;
+  height: 1px;
+  background: var(--parchment-faded);
+}
+
+.caps {
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 9px;
+  color: var(--parchment-faded);
+}
+
+.masthead-right {
+  font-family: var(--display);
+  font-style: italic;
+  color: var(--parchment-dim);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+/* =========================================================================
+   TAB BAR — specimen drawer
+   ========================================================================= */
+
+#tabbar {
+  display: flex;
+  align-items: stretch;
+  background:
+    linear-gradient(180deg, var(--ink-panel) 0%, var(--ink-bg) 100%);
+  border-bottom: var(--rule-bold);
+  -webkit-app-region: drag;
+  position: relative;
+}
+
+#tabbar::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -3px;
+  height: 1px;
+  background: var(--ink-rule-soft);
+}
+
+#tabs {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 0;
+  padding: 8px 18px 8px 14px;
+  min-width: 200px;
+  background: transparent;
+  border-right: var(--rule-hair);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+  transition: background 0.25s ease;
+}
+
+.tab::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: transparent;
+  transition: background 0.2s ease;
+}
+
+.tab:hover { background: rgba(232, 220, 196, 0.025); }
+.tab.active { background: rgba(232, 220, 196, 0.05); }
+.tab.active::before { background: var(--ochre); }
+
+.tab .bird {
+  grid-row: 1 / 3;
+  width: 28px;
+  height: 28px;
+  color: var(--parchment-faded);
+  align-self: center;
+  transition: color 0.2s ease, transform 0.3s ease;
+}
+.tab:hover .bird,
+.tab.active .bird { color: var(--ochre-bright); transform: scale(1.05); }
+
+.tab .latin {
+  grid-column: 2;
+  grid-row: 1;
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--parchment-warm);
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab .meta {
+  grid-column: 2;
+  grid-row: 2;
+  font-family: var(--mono-ui);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--parchment-faded);
+  margin-top: 2px;
+}
+
+.tab .meta .plate {
+  color: var(--ochre);
+  margin-right: 6px;
+}
+
+.tab.active .latin { color: var(--parchment-warm); }
+.tab.active .meta { color: var(--parchment-dim); }
+
+.tab .close {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: center;
+  color: var(--parchment-faded);
+  opacity: 0.5;
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 2px;
+  transition: all 0.15s ease;
+}
+.tab .close:hover {
+  opacity: 1;
+  color: var(--oxidized);
+  background: rgba(160, 74, 58, 0.08);
+}
+
+#new-session {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 22px;
+  background: transparent;
+  border: none;
+  border-left: var(--rule-hair);
+  color: var(--parchment-dim);
+  cursor: pointer;
+  font-family: var(--mono-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 9px;
+  -webkit-app-region: no-drag;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+#new-session .plus {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--ochre);
+  transition: transform 0.3s ease;
+}
+
+#new-session:hover {
+  color: var(--parchment-warm);
+  background: rgba(201, 163, 107, 0.04);
+}
+#new-session:hover .plus { transform: rotate(90deg); color: var(--ochre-bright); }
+
+/* =========================================================================
+   TERMINAL AREA — plate
+   ========================================================================= */
+
+#terminal-host {
+  position: relative;
+  background: var(--ink-bg);
+  padding: 16px 18px;
+}
+
+/* Hairline double-rule frame around the terminal — like a journal plate */
+#terminal-host::before {
+  content: "";
+  position: absolute;
+  inset: 12px 14px;
+  border: var(--rule-bold);
+  pointer-events: none;
+}
+#terminal-host::after {
+  content: "";
+  position: absolute;
+  inset: 16px 18px;
+  border: var(--rule-hair);
+  pointer-events: none;
+}
+
+.term-pane {
+  position: absolute;
+  inset: 20px 22px;
+  display: none;
+}
+.term-pane.active { display: block; }
+
+.term-pane .plate-label {
+  position: absolute;
+  top: -10px;
+  left: 12px;
+  background: var(--ink-bg);
+  padding: 0 8px;
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--ochre);
+  letter-spacing: 0.05em;
+  z-index: 5;
+}
+
+.term-pane .plate-binomial {
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  background: var(--ink-bg);
+  padding: 0 8px;
+  font-family: var(--mono-ui);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--parchment-faded);
+  z-index: 5;
+}
+
+/* =========================================================================
+   EMPTY STATE
+   ========================================================================= */
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--parchment-dim);
+  text-align: center;
+  pointer-events: none;
+}
+.empty-state.hidden { display: none; }
+
+.empty-cage {
+  color: var(--parchment-faded);
+  opacity: 0.5;
+  margin-bottom: 14px;
+  animation: slow-pulse 6s ease-in-out infinite;
+}
+
+@keyframes slow-pulse {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 0.6; }
+}
+
+.empty-state h1 {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: var(--fs-h1);
+  color: var(--parchment-warm);
+  letter-spacing: -0.01em;
+}
+
+.empty-state p {
+  font-family: var(--mono-ui);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--parchment-dim);
+}
+
+.empty-state .muted {
+  color: var(--parchment-faded);
+  font-size: 10px;
+  margin-top: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+kbd {
+  display: inline-block;
+  background: var(--ink-panel);
+  border: var(--rule-bold);
+  border-radius: 2px;
+  padding: 1px 6px;
+  font-family: var(--mono-ui);
+  font-size: 10px;
+  color: var(--parchment-warm);
+}
+
+/* =========================================================================
+   STATUS BAR — field journal footer
+   ========================================================================= */
+
+#statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+  background: var(--ink-panel);
+  border-top: var(--rule-hair);
+  font-family: var(--mono-ui);
+  font-size: 10px;
+  color: var(--parchment-dim);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.status-cell em {
+  font-style: normal;
+  color: var(--parchment-faded);
+  margin: 0 6px;
+}
+
+.status-cell .roman {
+  font-family: var(--display);
+  font-style: italic;
+  text-transform: none;
+  color: var(--parchment-warm);
+  letter-spacing: 0;
+  margin: 0 2px;
+}
+
+.dingbat {
+  color: var(--ochre);
+  font-size: 8px;
+  letter-spacing: 0;
+}
+
+.status-cell.state-running    { color: var(--moss); }
+.status-cell.state-stopped,
+.status-cell.state-missing    { color: var(--ochre); }
+.status-cell.state-starting   { color: var(--ochre-bright); animation: blink 1.4s linear infinite; }
+.status-cell.state-unreachable,
+.status-cell.state-error      { color: var(--oxidized); }
+
+@keyframes blink {
+  0%, 60%, 100% { opacity: 1; }
+  70%, 90%      { opacity: 0.45; }
+}
+
+.muted { color: var(--parchment-faded); }
+
+/* =========================================================================
+   MODAL — specimen release plate
+   ========================================================================= */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 8, 6, 0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: overlay-in 0.3s ease;
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.modal {
+  width: 720px;
+  max-width: 92vw;
+  background: var(--ink-panel);
+  border: var(--rule-bold);
+  padding: 0;
+  position: relative;
+  animation: modal-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Double-rule frame */
+.modal::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: var(--rule-hair);
+  pointer-events: none;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 24px 32px 14px;
+  border-bottom: var(--rule-hair);
+}
+
+.modal-header h2 {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 28px;
+  color: var(--parchment-warm);
+  letter-spacing: -0.01em;
+}
+
+.modal-header .header-meta {
+  font-family: var(--mono-ui);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: var(--parchment-faded);
+}
+
+.modal-subtitle {
+  padding: 14px 32px 22px;
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--parchment-dim);
+  letter-spacing: 0;
+  border-bottom: var(--rule-hair);
+}
+
+.cli-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  padding: 0;
+}
+
+.cli-card {
+  background: transparent;
+  color: var(--parchment);
+  border: none;
+  border-right: var(--rule-hair);
+  padding: 32px 18px 26px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  transition: background 0.25s ease;
+  overflow: hidden;
+}
+
+.cli-card:last-child { border-right: none; }
+
+.cli-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center 30%,
+    rgba(201, 163, 107, 0.1) 0%,
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.cli-card:hover { background: rgba(232, 220, 196, 0.03); }
+.cli-card:hover::before { opacity: 1; }
+
+.cli-card .bird {
+  width: 56px;
+  height: 56px;
+  color: var(--parchment-dim);
+  transition: color 0.3s ease, transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.cli-card:hover .bird {
+  color: var(--ochre-bright);
+  transform: translateY(-2px);
+}
+
+.cli-card .common {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 22px;
+  color: var(--parchment-warm);
+  line-height: 1;
+  letter-spacing: -0.005em;
+}
+
+.cli-card .binomial {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--parchment-faded);
+  letter-spacing: 0.01em;
+}
+
+.cli-card .cli-name {
+  margin-top: 6px;
+  font-family: var(--mono-ui);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: var(--ochre);
+}
+
+.cli-card .order {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--parchment-faded);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 32px 18px;
+  border-top: var(--rule-hair);
+  font-family: var(--mono-ui);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--parchment-faded);
+}
+
+.modal .cancel {
+  background: transparent;
+  color: var(--parchment-faded);
+  border: var(--rule-hair);
+  border-radius: 0;
+  padding: 8px 18px;
+  font-family: var(--mono-ui);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.modal .cancel:hover {
+  color: var(--parchment-warm);
+  border-color: var(--parchment-dim);
+  background: rgba(232, 220, 196, 0.04);
+}
+
+/* Staggered card reveal */
+.cli-card { opacity: 0; animation: card-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+.cli-card:nth-child(1) { animation-delay: 0.10s; }
+.cli-card:nth-child(2) { animation-delay: 0.18s; }
+.cli-card:nth-child(3) { animation-delay: 0.26s; }
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* =========================================================================
+   xterm.js theme overrides (cosmetic — Terminal options set in TS)
+   ========================================================================= */
+
+.xterm-viewport::-webkit-scrollbar { width: 6px; }
+.xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--ink-rule);
+  border-radius: 0;
+}
+.xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--parchment-faded); }
