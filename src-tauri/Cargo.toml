@@ -2,6 +2,9 @@
 name = "aviary"
 version = "0.1.0"
 edition = "2021"
+# Dev-bridge added a second binary; without this, `cargo run` (used by
+# `tauri dev`) can't choose a default. Pin the app as the default-run target.
+default-run = "aviary"
 
 [lib]
 name = "aviary_lib"
