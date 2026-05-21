@@ -130,7 +130,8 @@ export function PaneHead({ session }: { session: string }) {
       <button
         type="button"
         className="pane-ctl split-row"
-        title="Split right"
+        title="Split (⌘\)"
+        aria-keyshortcuts="Meta+Backslash"
         onClick={(e) => {
           e.stopPropagation();
           void doSplit("row");
@@ -141,7 +142,8 @@ export function PaneHead({ session }: { session: string }) {
       <button
         type="button"
         className="pane-ctl close"
-        title="Close session"
+        title="Close session (⌘W)"
+        aria-keyshortcuts="Meta+W"
         onClick={(e) => {
           e.stopPropagation();
           void closeSession(session);

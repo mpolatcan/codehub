@@ -5,9 +5,9 @@ import { Masthead } from "./components/Masthead";
 import { Rail } from "./components/Rail";
 import { StatusBar } from "./components/StatusBar";
 import { TabBar } from "./components/TabBar";
+import { autoSplitDir, useKeyboard } from "./hooks/useKeyboard";
 import { useLauncher } from "./lib/launcher";
 import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
-import type { SplitDir } from "./lib/tree";
 
 const FLEURON_CORNERS = ["tl", "tr", "bl", "br"] as const;
 
@@ -21,6 +21,7 @@ export function App() {
   const focused = active?.focused ?? null;
   const focusedAlias = useStore((s) => (focused ? s.sessionMeta[focused]?.alias : undefined));
 
+  useKeyboard();
   useEffect(() => {
     void initLifecycle();
   }, []);
@@ -40,13 +41,7 @@ export function App() {
     }
     const c = await openLauncher("New session");
     if (!c) return;
-    // Compare dataset rather than building a selector — bootstrap-imported tmux
-    // names can contain selector-special chars and would throw querySelector.
-    const el = [...document.querySelectorAll<HTMLElement>(".pane-leaf")].find(
-      (n) => n.dataset.session === ws.focused,
-    );
-    const dir: SplitDir = el && el.clientWidth >= el.clientHeight ? "row" : "col";
-    await splitSession(ws.focused, dir, c.cli, c.mode);
+    await splitSession(ws.focused, autoSplitDir(ws.focused), c.cli, c.mode);
   };
 
   return (

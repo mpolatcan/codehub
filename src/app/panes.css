@@ -1012,6 +1012,44 @@ body.dragging .divider::after {
   text-align: center;
 }
 
+/* ---- Focus-visible (keyboard) ---------------------------------------- */
+
+/* Keyboard users get a clear accent ring; mouse clicks stay clean (the
+   :focus-visible heuristic suppresses it on pointer interaction). */
+.tab:focus-visible,
+.pane-ctl:focus-visible,
+.agent-row:focus-visible,
+.mode-opt:focus-visible,
+.rail-group-head:focus-visible,
+.rr-main:focus-visible,
+.rr-close:focus-visible,
+.rail-new:focus-visible,
+.rail-toggle:focus-visible,
+.cancel:focus-visible,
+.start:focus-visible,
+.tab .close:focus-visible {
+  outline: 2px solid var(--color-accent-bright);
+  outline-offset: -2px;
+  border-radius: 2px;
+}
+
+/* ---- Reduced motion --------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-leaf,
+  .modal-overlay,
+  .modal-fixed,
+  .popover-launch {
+    animation: none;
+  }
+  .session-rail,
+  .rail-toggle,
+  .rail-new .plus,
+  .tab .bird {
+    transition: none;
+  }
+}
+
 /* ---- xterm overrides -------------------------------------------------- */
 
 .xterm-viewport::-webkit-scrollbar {

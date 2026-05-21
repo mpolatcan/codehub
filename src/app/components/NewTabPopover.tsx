@@ -21,7 +21,8 @@ export function NewTabPopover() {
       <PopoverTrigger asChild>
         <button
           type="button"
-          title="Open a new tab"
+          title="Open a new tab (⌘T)"
+          aria-keyshortcuts="Meta+T"
           className="group flex items-center gap-[7px] px-[14px] border-r border-rule-soft text-text-dim hover:text-accent transition-colors data-[state=open]:text-accent"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
