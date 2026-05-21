@@ -10,12 +10,11 @@
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400;1,500&family=Silkscreen:wght@400;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <defs>
-        <!-- Pixel-art birds. 16×16 grid, currentColor, crisp edges (see style.css). -->
+        <!-- Pixel-art birds. 16×16 grid, currentColor, crisp edges (see theme.css). -->
 
         <!-- Owl — Claude. Round body + two ear tufts + carved eyes. -->
         <symbol id="bird-owl" viewBox="0 0 16 16" shape-rendering="crispEdges">
@@ -49,94 +48,8 @@
       </defs>
     </svg>
 
-    <div id="app">
-      <header id="masthead">
-        <div class="mast-left">
-          <span class="brand">Aviary</span>
-          <span class="brand-sep">·</span>
-          <span class="brand-sub">AI coding sessions, multiplexed</span>
-        </div>
-        <div class="mast-center" id="status-cell">
-          <span class="status-dot"></span>
-          <span class="status-text">awaiting</span>
-        </div>
-        <div class="mast-right">
-          <span class="mast-date" id="masthead-date"></span>
-        </div>
-      </header>
+    <div id="root"></div>
 
-      <nav id="tabbar">
-        <button id="new-session" title="Open a new tab">
-          <span class="plus">＋</span>
-          <span class="release-label">
-            <span class="rl-top">new</span>
-            <span class="rl-bot">tab</span>
-          </span>
-        </button>
-        <div id="tabs"></div>
-      </nav>
-
-      <main id="terminal-host">
-        <section id="split-area">
-          <span class="frame-fleuron tl"><svg viewBox="0 0 24 24"><use href="#fleuron" /></svg></span>
-          <span class="frame-fleuron tr"><svg viewBox="0 0 24 24"><use href="#fleuron" /></svg></span>
-          <span class="frame-fleuron bl"><svg viewBox="0 0 24 24"><use href="#fleuron" /></svg></span>
-          <span class="frame-fleuron br"><svg viewBox="0 0 24 24"><use href="#fleuron" /></svg></span>
-
-          <div id="grid-root"></div>
-
-          <div id="empty-state" class="empty-state">
-            <svg class="empty-bird" width="220" height="110" aria-hidden="true">
-              <use href="#bird-flight" />
-            </svg>
-            <h1>
-              <span class="amp">No</span> sessions <span class="amp">yet</span>.
-            </h1>
-            <p class="lede">Open a tab to start an AI coding agent.</p>
-            <p class="muted">
-              <kbd>＋</kbd> new tab &nbsp;·&nbsp; or wait for the runtime to wake
-            </p>
-          </div>
-        </section>
-
-        <aside id="session-rail">
-          <header class="rail-head">
-            <span class="rail-title">Sessions</span>
-            <button id="rail-toggle" class="rail-toggle" title="Collapse the session list" aria-label="collapse session list">›</button>
-          </header>
-          <div id="rail-list"></div>
-          <footer class="rail-foot">
-            <button id="rail-new" title="New session in the current tab">
-              <span class="plus">＋</span>
-              <span class="rail-new-label">new session</span>
-            </button>
-          </footer>
-          <span class="rail-spine">Sessions</span>
-        </aside>
-      </main>
-
-      <footer id="statusbar">
-        <span class="status-foot" id="status-session">
-          <span class="caps">Session</span>
-          <span class="sep">|</span>
-          <span class="roman" id="status-session-name">—</span>
-        </span>
-        <span class="status-foot status-plate">
-          <span class="caps">Tab</span>
-          <span class="sep">|</span>
-          <span class="roman" id="status-plate">—</span>
-        </span>
-        <span class="status-foot" id="status-container">
-          <span class="caps">Runtime</span>
-          <span class="sep">|</span>
-          <span class="state" id="status-runtime">awaiting</span>
-        </span>
-        <span class="status-foot status-motto">
-          <span class="motto">ad libitum</span>
-        </span>
-      </footer>
-    </div>
-
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/app/main.tsx"></script>
   </body>
 </html>

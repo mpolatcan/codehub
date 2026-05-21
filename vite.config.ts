@@ -4,8 +4,8 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   clearScreen: false,
-  // React migration is in progress. plugin-react + tailwind power the React app
-  // (app.html / src/app); both are no-ops for the legacy vanilla entry.
+  // React 19 app (index.html → src/app/main.tsx). Tailwind v4 via the Vite
+  // plugin; tokens are bridged from theme.css into the @theme layer.
   plugins: [react(), tailwindcss()],
   server: {
     port: 1420,
