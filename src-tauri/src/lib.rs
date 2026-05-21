@@ -1,12 +1,30 @@
-mod docker;
-mod lifecycle;
-mod pty;
+// Modules are `pub` so the dev-server bin (feature `devserver`, see
+// devserver.rs) can reuse the same docker / pty / lifecycle logic without going
+// through Tauri.
+#[cfg(feature = "devserver")]
+pub mod devserver;
+pub mod docker;
+pub mod lifecycle;
+pub mod pty;
 
 use docker::{Cli, DockerClient, LaunchMode};
 use lifecycle::{ContainerStatus, Lifecycle};
-use pty::{PtyRegistry, SessionInfo};
+use pty::{PaneEmitter, PtyRegistry, SessionInfo};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
+
+/// Bridges a pane's output to the Tauri webview as `pty://data|exit/<id>`
+/// events — the production [`PaneEmitter`].
+struct TauriEmitter(tauri::AppHandle);
+
+impl PaneEmitter for TauriEmitter {
+    fn data(&self, pane_id: &str, text: String) {
+        let _ = self.0.emit(&format!("pty://data/{}", pane_id), text);
+    }
+    fn exit(&self, pane_id: &str, code: i32) {
+        let _ = self.0.emit::<i32>(&format!("pty://exit/{}", pane_id), code);
+    }
+}
 
 pub struct AppState {
     pub lifecycle: Arc<Lifecycle>,
@@ -116,7 +134,13 @@ async fn attach_session(
 ) -> Result<String, String> {
     state
         .registry
-        .attach(&state.docker, &name, cols, rows, app)
+        .attach(
+            &state.docker,
+            &name,
+            cols,
+            rows,
+            Arc::new(TauriEmitter(app)),
+        )
         .await
         .map_err(|e| e.to_string())
 }

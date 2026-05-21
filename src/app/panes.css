@@ -104,8 +104,9 @@ body.dragging .divider::after {
   }
 }
 .pane-leaf.focused {
-  border-color: var(--color-accent-deep);
-  box-shadow: 0 0 0 1px rgba(232, 163, 61, 0.22), inset 0 0 30px rgba(0, 0, 0, 0.3);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent), 0 0 14px rgba(232, 163, 61, 0.28), inset 0 0 30px
+    rgba(0, 0, 0, 0.3);
 }
 
 .pane-head {
@@ -137,7 +138,7 @@ body.dragging .divider::after {
 .pane-head .pane-name {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--color-text);
   line-height: 1;
   white-space: nowrap;
@@ -154,7 +155,7 @@ body.dragging .divider::after {
 .pane-name-input {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--color-text);
   background: var(--color-bg-deep);
   border: 1px solid var(--color-accent-deep);
@@ -223,7 +224,7 @@ body.dragging .divider::after {
 
 .mode-badge {
   font-family: var(--font-pixel);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   line-height: 1;
   padding: 3px 4px;
@@ -349,7 +350,7 @@ body.dragging .divider::after {
   height: 18px;
   border-radius: 2px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -416,7 +417,7 @@ body.dragging .divider::after {
 }
 .rg-plate {
   font-family: var(--font-pixel);
-  font-size: 9px;
+  font-size: var(--fs-pixel);
   color: var(--color-text-dim);
   line-height: 1;
 }
@@ -430,16 +431,19 @@ body.dragging .divider::after {
 .rg-count {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: var(--color-text-ghost);
 }
 .rail-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
   border-bottom: 1px solid var(--color-rule-soft);
   position: relative;
   transition: background 0.15s ease;
+}
+.rail-row .mode-badge {
+  margin-right: 6px;
 }
 .rail-row:hover {
   background: rgba(255, 255, 255, 0.025);
@@ -487,7 +491,7 @@ body.dragging .divider::after {
 .rail-row .rr-common {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--color-text);
   line-height: 1.05;
   white-space: nowrap;
@@ -505,7 +509,7 @@ body.dragging .divider::after {
   opacity: 0;
   color: var(--color-text-faint);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 1;
   padding: 2px 5px;
   margin-right: 8px;
@@ -594,10 +598,38 @@ body.dragging .divider::after {
   bottom: -1px;
   height: 2px;
   background: var(--color-accent);
+  transform-origin: left center;
+  animation: tab-underline 0.32s var(--ease-out-quint);
+}
+@keyframes tab-underline {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+/* New tabs append to the right edge; slide each one in from there so the eye
+   tracks where it landed. Runs once per tab on mount (keyed by ws.id). */
+.tab-enter {
+  animation: tab-in 0.3s var(--ease-out-quint) both;
+}
+@keyframes tab-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 .tab .plate-num {
   font-family: var(--font-pixel);
-  font-size: 9px;
+  font-size: var(--fs-pixel);
   color: var(--color-text-ghost);
   text-align: right;
   line-height: 1;
@@ -625,10 +657,15 @@ body.dragging .divider::after {
   gap: 2px;
   overflow: hidden;
 }
+.tab .tab-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .tab .latin {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--color-text);
   line-height: 1;
   overflow: hidden;
@@ -645,7 +682,7 @@ body.dragging .divider::after {
   color: var(--color-text-faint);
   opacity: 0;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-md);
   line-height: 1;
   padding: 3px 6px;
   border-radius: 2px;
@@ -749,7 +786,7 @@ body.dragging .divider::after {
 .modal-header h2 {
   font-family: var(--font-mono);
   font-weight: 800;
-  font-size: 26px;
+  font-size: var(--fs-2xl);
   color: var(--color-text);
   letter-spacing: -0.02em;
   line-height: 1;
@@ -803,6 +840,35 @@ body.dragging .divider::after {
   flex-direction: column;
   gap: 6px;
 }
+
+/* Stagger the agent rows + mode options in as the launcher opens — the panel
+   itself slides in (pop-in / modal-in), then its contents cascade. */
+.agent-row,
+.mode-opt {
+  animation: row-in 0.34s var(--ease-out-quint) both;
+}
+.agent-row:nth-child(1),
+.mode-opt:nth-child(1) {
+  animation-delay: 0.04s;
+}
+.agent-row:nth-child(2),
+.mode-opt:nth-child(2) {
+  animation-delay: 0.09s;
+}
+.agent-row:nth-child(3),
+.mode-opt:nth-child(3) {
+  animation-delay: 0.14s;
+}
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 .agent-row {
   display: grid;
   grid-template-columns: 30px 1fr auto;
@@ -842,7 +908,7 @@ body.dragging .divider::after {
 .agent-row .ar-name {
   font-family: var(--font-mono);
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-md);
   color: var(--color-text);
   line-height: 1;
 }
@@ -873,7 +939,7 @@ body.dragging .divider::after {
   cursor: pointer;
   font-family: var(--font-mono);
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--color-text-dim);
   text-align: left;
   transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
@@ -898,7 +964,7 @@ body.dragging .divider::after {
 }
 .mode-hint {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   line-height: 1.4;
   color: var(--color-text-dim);
   min-height: 34px;
@@ -907,7 +973,7 @@ body.dragging .divider::after {
 .mode-warn {
   display: none;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   line-height: 1.4;
   color: var(--color-danger);
   margin: 0;
@@ -1033,18 +1099,40 @@ body.dragging .divider::after {
   border-radius: 2px;
 }
 
+/* ---- Empty state ------------------------------------------------------ */
+
+/* The flock drifts on a slow loop so the idle screen breathes. */
+.empty-bird {
+  animation: flock-drift 6s ease-in-out infinite;
+}
+@keyframes flock-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
 /* ---- Reduced motion --------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
   .pane-leaf,
   .modal-overlay,
   .modal-fixed,
-  .popover-launch {
+  .popover-launch,
+  .tab-enter,
+  .tab.active::after,
+  .agent-row,
+  .mode-opt,
+  .empty-bird {
     animation: none;
   }
   .session-rail,
   .rail-toggle,
   .rail-new .plus,
+  .tab,
   .tab .bird {
     transition: none;
   }

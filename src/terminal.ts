@@ -1,9 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
-import { type UnlistenFn, listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import { type UnlistenFn, invoke, listen } from "./app/lib/bridge";
 
 export interface Pane {
   sessionName: string;

@@ -29,7 +29,8 @@ aviary/
       hooks/                # useKeyboard (global shortcuts), useContainerStatus
       lib/                  # store.ts (Zustand), panes.ts (registry), tree.ts
                             #   (split layout), catalog.ts (CLIS/MODES), launcher.ts,
-                            #   ipc.ts (typed Tauri boundary)
+                            #   ipc.ts (typed Tauri boundary), bridge.ts (browser-mode
+                            #   transport: Tauri IPC vs dev-server REST/WS)
   src-tauri/                # Rust backend
     Cargo.toml
     tauri.conf.json
@@ -39,7 +40,9 @@ aviary/
       lib.rs                # Tauri commands + setup hook
       lifecycle.rs          # Image pull, container create/start/stop
       docker.rs             # tmux session ops + exec attach
-      pty.rs                # PtyRegistry — pane stream pumps
+      pty.rs                # PtyRegistry — pane stream pumps (PaneEmitter trait)
+      devserver.rs          # Dev-only HTTP/WS bridge (feature `devserver`)
+      bin/devserver.rs      # Bridge entrypoint binary (aviary-devserver)
   runtime/
     Dockerfile              # Runtime image (CLIs + tmux)
     README.md               # Build + publish instructions
@@ -67,6 +70,9 @@ make image                                           # build runtime image at th
 
 # Day-to-day
 make dev                                             # Vite + Tauri, hot-reloads frontend
+make dev-web                                          # Vite + standalone backend bridge, NO Tauri window
+                                                     #   → drive the UI in a plain browser at :1420 with a
+                                                     #   live backend (visual review / playwright screenshots)
 make check                                           # Full lint sweep (Biome + tsc + rustfmt + clippy)
 make fix                                             # Apply all safe auto-fixes, then re-check
 make image-verify                                    # Smoke-test installed CLIs in the runtime image
@@ -97,6 +103,7 @@ Environment knobs:
 
 ## Gotchas / non-obvious things
 
+- **`src-tauri/Cargo.toml` pins `default-run = "aviary"`.** The dev bridge added a second binary (`aviary-devserver`); without `default-run`, the `cargo run` that `tauri dev` / `make dev` invoke can't pick a target and fails with "could not determine which binary to run". Keep the pin if you add more binaries.
 - **`tauri::generate_context!` macro reads `tauri.conf.json` at compile time** and validates icon paths + `frontendDist`. If `dist/` is missing, `cargo check` fails with a proc-macro panic. Either run `npm run build` once, or keep the gitignored placeholder. Avoid this trap when running CI.
 - **Bollard `create_exec` requires explicit type annotation** in our codebase: `create_exec::<String>(...)`. Without it the compiler cannot infer `T: Into<String>`.
 - **`SHELL ["bash", "-euo", "pipefail", "-c"]` is set in the runtime Dockerfile.** This matters because we use `curl ... | bash` patterns to install CLIs; without pipefail, a failing curl silently succeeds and the CLI is missing from the image. Do not remove it.
@@ -114,5 +121,5 @@ There is no automated IPC test suite yet. Manual regression matrix lives in `TES
 ## When in doubt
 
 - Prefer reading `src-tauri/src/lib.rs` first for the backend — it lists every Tauri command and is the cleanest map of how the app is glued together. For the frontend, `src/app/lib/store.ts` is the equivalent map (every state mutation + the IPC calls each one fires).
-- If a backend change requires a new IPC command, add it to the `tauri::generate_handler![...]` list in `lib.rs:run()` AND to the typed `ipc` object in `src/app/lib/ipc.ts`.
+- If a backend change requires a new IPC command, it now has a **four-point sync** (the dev bridge mirrors the IPC surface): the `tauri::generate_handler![...]` list in `lib.rs:run()`, the typed `ipc` object in `src/app/lib/ipc.ts`, a REST route in `src-tauri/src/devserver.rs`, and its command→REST mapping in `src/app/lib/bridge.ts`. Skip the last two only if you never need browser-mode (`make dev-web`).
 - If a frontend file fails to type-check after a CSS import, ensure `src/vite-env.d.ts` declares the module.

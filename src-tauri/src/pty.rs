@@ -2,13 +2,21 @@ use crate::docker::{DockerClient, DockerError, SessionInfo as _SessionInfo};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
 pub use crate::docker::SessionInfo;
+
+/// Sink for a pane's output, decoupled from any host runtime. The Tauri app
+/// implements this over `AppHandle::emit` (events `pty://data/<id>` /
+/// `pty://exit/<id>`); the dev server (feature `devserver`) implements it over a
+/// WebSocket broadcast. This is the only seam pty.rs needs to be host-agnostic.
+pub trait PaneEmitter: Send + Sync + 'static {
+    fn data(&self, pane_id: &str, text: String);
+    fn exit(&self, pane_id: &str, code: i32);
+}
 
 #[derive(Debug, Error)]
 pub enum PtyError {
@@ -20,7 +28,9 @@ pub enum PtyError {
     Send(String),
 }
 
-pub(crate) enum InputMsg {
+// `pub` (not `pub(crate)`): `pub mod pty` makes `Pane::input_tx` reachable at
+// `pub`, so its message type must match that visibility.
+pub enum InputMsg {
     Data(Vec<u8>),
     Shutdown,
 }
@@ -33,6 +43,12 @@ pub struct Pane {
 
 pub struct PtyRegistry {
     panes: Mutex<HashMap<String, Pane>>,
+}
+
+impl Default for PtyRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PtyRegistry {
@@ -48,15 +64,15 @@ impl PtyRegistry {
         session: &str,
         cols: u16,
         rows: u16,
-        app: AppHandle,
+        emitter: Arc<dyn PaneEmitter>,
     ) -> Result<String, PtyError> {
         // Caller is expected to call `create_session` first.
         let mut handles = docker.attach_exec(session, cols, rows).await?;
         let pane_id = Uuid::new_v4().to_string();
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<InputMsg>();
 
-        // Output pump: bollard stream -> tauri event
-        let app_out = app.clone();
+        // Output pump: bollard stream -> emitter (Tauri event or WS broadcast)
+        let emitter_out = emitter.clone();
         let pane_id_out = pane_id.clone();
         tokio::spawn(async move {
             while let Some(chunk) = handles.output.next().await {
@@ -69,7 +85,7 @@ impl PtyRegistry {
                             _ => continue,
                         };
                         let text = String::from_utf8_lossy(&bytes).to_string();
-                        let _ = app_out.emit(&format!("pty://data/{}", pane_id_out), text);
+                        emitter_out.data(&pane_id_out, text);
                     },
                     Err(e) => {
                         tracing::warn!("output stream error: {e}");
@@ -77,7 +93,7 @@ impl PtyRegistry {
                     },
                 }
             }
-            let _ = app_out.emit::<i32>(&format!("pty://exit/{}", pane_id_out), 0);
+            emitter_out.exit(&pane_id_out, 0);
         });
 
         // Input pump: channel -> bollard stdin
