@@ -252,6 +252,15 @@ impl DockerClient {
         Ok(())
     }
 
+    /// Rename a session's window so the themed in-pane status bar (which renders
+    /// the window name `#W`) reflects an alias the user edited in the UI. Each
+    /// Aviary session has exactly one window, so `-t <name>` resolves it.
+    pub async fn rename_tmux_window(&self, name: &str, alias: &str) -> Result<(), DockerError> {
+        self.exec_capture(vec!["tmux", "rename-window", "-t", name, alias])
+            .await?;
+        Ok(())
+    }
+
     pub async fn attach_exec(
         &self,
         session: &str,

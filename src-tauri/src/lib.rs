@@ -126,6 +126,19 @@ async fn kill_session(name: String, state: tauri::State<'_, AppState>) -> Result
 }
 
 #[tauri::command]
+async fn rename_session(
+    name: String,
+    alias: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .docker
+        .rename_tmux_window(&name, &alias)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn attach_session(
     name: String,
     cols: u16,
@@ -239,6 +252,7 @@ pub fn run() {
             list_sessions,
             create_session,
             kill_session,
+            rename_session,
             attach_session,
             pty_write,
             pty_resize,

@@ -216,11 +216,21 @@ export const useStore = create<AviaryState>((set, get) => {
     renameSession: (name, alias) => {
       const next = alias.trim();
       if (!next) return;
+      let changed = false;
       set((s) => {
         const meta = s.sessionMeta[name];
-        if (!meta) return {};
+        if (!meta || meta.alias === next) return {};
+        changed = true;
         return { sessionMeta: { ...s.sessionMeta, [name]: { ...meta, alias: next } } };
       });
+      // Mirror the alias onto the tmux window name so the in-pane status bar
+      // (#W) updates too. Best-effort: a backend failure must not roll back the
+      // UI rename the user just made.
+      if (changed) {
+        void ipc.renameSession(name, next).catch((e) => {
+          console.warn(`rename_session(${name}) failed:`, e);
+        });
+      }
     },
 
     commitRatio: (wsId, nodeId, ratio) => {
