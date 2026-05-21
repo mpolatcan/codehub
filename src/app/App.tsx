@@ -1,15 +1,20 @@
 import { useEffect } from "react";
 import { Grid } from "./components/Grid";
 import { Masthead } from "./components/Masthead";
+import { Rail } from "./components/Rail";
 import { StatusBar } from "./components/StatusBar";
 import { TabBar } from "./components/TabBar";
 import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
+import type { SplitDir } from "./lib/tree";
+
+const FLEURON_CORNERS = ["tl", "tr", "bl", "br"] as const;
 
 export function App() {
   const status = useStore((s) => s.status);
   const error = useStore((s) => s.error);
   const active = useStore(activeWorkspace);
   const newPlate = useStore((s) => s.newPlate);
+  const splitSession = useStore((s) => s.splitSession);
   const focused = active?.focused ?? null;
   const focusedAlias = useStore((s) => (focused ? s.sessionMeta[focused]?.alias : undefined));
 
@@ -19,12 +24,47 @@ export function App() {
 
   const state = error ? "unreachable" : (status?.state ?? null);
 
+  // Rail "+" / new-tab convenience: add a session to the current tab by
+  // splitting its focused pane along its longer axis; fall back to a new tab.
+  // Until the launcher lands (Phase 4) this reuses the focused agent / Standard.
+  const newSessionHere = () => {
+    const { activeWorkspaceId, workspaces, sessionMeta } = useStore.getState();
+    const ws = workspaces.find((w) => w.id === activeWorkspaceId);
+    if (!ws?.focused) {
+      void newPlate("claude", "standard");
+      return;
+    }
+    // Compare dataset rather than building a selector — bootstrap-imported tmux
+    // names can contain selector-special chars and would throw querySelector.
+    const el = [...document.querySelectorAll<HTMLElement>(".pane-leaf")].find(
+      (n) => n.dataset.session === ws.focused,
+    );
+    const dir: SplitDir = el && el.clientWidth >= el.clientHeight ? "row" : "col";
+    void splitSession(ws.focused, dir, sessionMeta[ws.focused]?.cli ?? "claude", "standard");
+  };
+
   return (
     <div className="grid h-full grid-rows-[56px_40px_1fr_28px]">
       <Masthead state={state} />
       <TabBar onNewTab={() => void newPlate("claude", "standard")} />
       <main className="relative flex overflow-hidden bg-bg-deep">
-        {active?.root ? <Grid ws={active} /> : <EmptyState />}
+        <div className="work-area">
+          {FLEURON_CORNERS.map((c) => (
+            <span key={c} className={`frame-fleuron ${c}`}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#fleuron" />
+              </svg>
+            </span>
+          ))}
+          {active?.root ? (
+            <div className="grid-root">
+              <Grid ws={active} />
+            </div>
+          ) : (
+            <EmptyState />
+          )}
+        </div>
+        <Rail onNewHere={newSessionHere} />
       </main>
       <StatusBar
         state={state}
@@ -37,7 +77,7 @@ export function App() {
 
 function EmptyState() {
   return (
-    <div className="flex flex-1 h-full flex-col items-center justify-center gap-4 text-center select-none">
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-center select-none">
       <svg className="bird text-text-ghost" width={220} height={110} aria-hidden="true">
         <use href="#bird-flight" />
       </svg>
