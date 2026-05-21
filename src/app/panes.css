@@ -1,0 +1,361 @@
+/* Terminal grid — split nodes, dividers, pane chrome, xterm surface. Ported
+   from the vanilla skin (src/style.css) with tokens remapped to the React
+   @theme vars in theme.css. This is structural layout for the xterm panes, not
+   a shadcn component, so it stays plain CSS. */
+
+.pane-stash {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* ---- Split nodes ------------------------------------------------------ */
+
+.split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.split.row {
+  flex-direction: row;
+}
+.split.col {
+  flex-direction: column;
+}
+.split-cell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.divider {
+  flex: 0 0 auto;
+  position: relative;
+  background: transparent;
+  z-index: 6;
+}
+.divider.row {
+  width: 8px;
+  cursor: col-resize;
+}
+.divider.col {
+  height: 8px;
+  cursor: row-resize;
+}
+.divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--color-text-ghost);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.divider.row::after {
+  width: 2px;
+  height: 20px;
+}
+.divider.col::after {
+  width: 20px;
+  height: 2px;
+}
+.divider:hover::after {
+  opacity: 1;
+  background: var(--color-accent);
+}
+body.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+body.dragging .divider::after {
+  opacity: 1;
+  background: var(--color-accent-bright);
+}
+
+/* ---- Pane leaf -------------------------------------------------------- */
+
+.pane-leaf {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-pane);
+  border: 1px solid var(--color-rule);
+  margin: 3px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  animation: pane-in 0.22s ease;
+}
+@keyframes pane-in {
+  from {
+    opacity: 0;
+    transform: scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.pane-leaf.focused {
+  border-color: var(--color-accent-deep);
+  box-shadow: 0 0 0 1px rgba(232, 163, 61, 0.22), inset 0 0 30px rgba(0, 0, 0, 0.3);
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px 5px 9px;
+  background: var(--color-panel);
+  border-bottom: 1px solid var(--color-rule);
+  user-select: none;
+  flex: 0 0 auto;
+}
+.pane-leaf.focused .pane-head {
+  border-bottom-color: var(--color-accent-deep);
+  background: linear-gradient(180deg, rgba(232, 163, 61, 0.06), var(--color-panel));
+}
+
+.pane-head .bird {
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-faint);
+  flex: 0 0 auto;
+  transition: color 0.18s ease;
+}
+.pane-leaf.focused .pane-head .bird {
+  color: var(--color-accent-bright);
+}
+
+.pane-head .pane-name {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--color-text);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+  padding: 1px 3px;
+  border-radius: 2px;
+}
+.pane-head .pane-name:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pane-name-input {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--color-text);
+  background: var(--color-bg-deep);
+  border: 1px solid var(--color-accent-deep);
+  border-radius: 2px;
+  padding: 1px 4px;
+  line-height: 1;
+  width: 12ch;
+  outline: none;
+}
+
+.pane-head .pane-agent {
+  font-family: var(--font-pixel);
+  font-size: var(--fs-pixel);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-faint);
+  white-space: nowrap;
+}
+
+.pane-head .pane-spacer {
+  flex: 1;
+}
+
+.pane-ctl {
+  background: transparent;
+  border: none;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  padding: 3px 4px;
+  border-radius: 2px;
+  line-height: 0;
+  opacity: 0.45;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.pane-leaf:hover .pane-ctl,
+.pane-leaf.focused .pane-ctl {
+  opacity: 0.8;
+}
+.pane-ctl:hover {
+  opacity: 1;
+  color: var(--color-accent-bright);
+  background: rgba(232, 163, 61, 0.1);
+}
+.pane-ctl svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+.pane-ctl.close:hover {
+  color: var(--color-danger);
+  background: rgba(214, 96, 77, 0.12);
+}
+
+.pane-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.term-surface {
+  position: absolute;
+  inset: 7px 5px 5px 7px;
+}
+
+/* ---- Mode badge (AUTO / YOLO) ----------------------------------------- */
+
+.mode-badge {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  padding: 3px 4px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.mode-badge.badge-auto {
+  color: var(--color-accent-bright);
+  background: rgba(232, 163, 61, 0.14);
+  border: 1px solid var(--color-accent-deep);
+}
+.mode-badge.badge-yolo {
+  color: var(--color-danger);
+  background: rgba(214, 96, 77, 0.14);
+  border: 1px solid rgba(214, 96, 77, 0.5);
+}
+
+/* ---- Tabs ------------------------------------------------------------- */
+
+.tab {
+  display: grid;
+  grid-template-columns: 18px 22px 1fr auto;
+  align-items: center;
+  column-gap: 9px;
+  padding: 0 14px 0 12px;
+  min-width: 168px;
+  max-width: 260px;
+  background: transparent;
+  border-right: 1px solid var(--color-rule-soft);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+  transition: background 0.18s ease;
+}
+.tab:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.tab.active {
+  background: var(--color-panel);
+}
+.tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--color-accent);
+}
+.tab .plate-num {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: var(--color-text-ghost);
+  text-align: right;
+  line-height: 1;
+}
+.tab.active .plate-num,
+.tab:hover .plate-num {
+  color: var(--color-accent);
+}
+.tab .bird {
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-faint);
+  transition: color 0.18s ease, transform 0.12s steps(2);
+}
+.tab:hover .bird,
+.tab.active .bird {
+  color: var(--color-accent-bright);
+}
+.tab:hover .bird {
+  transform: translateY(-1px);
+}
+.tab .tab-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+.tab .latin {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--color-text);
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab .common {
+  font-family: var(--font-pixel);
+  font-size: var(--fs-pixel);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-faint);
+}
+.tab .close {
+  color: var(--color-text-faint);
+  opacity: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 2px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.tab:hover .close {
+  opacity: 0.6;
+}
+.tab .close:hover {
+  opacity: 1;
+  color: var(--color-danger);
+  background: rgba(214, 96, 77, 0.12);
+}
+
+/* ---- xterm overrides -------------------------------------------------- */
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+.xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--color-rule);
+  border-radius: 0;
+}
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-faint);
+}
