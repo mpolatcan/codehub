@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { Grid } from "./components/Grid";
+import { LauncherDialog } from "./components/LauncherDialog";
 import { Masthead } from "./components/Masthead";
 import { Rail } from "./components/Rail";
 import { StatusBar } from "./components/StatusBar";
 import { TabBar } from "./components/TabBar";
+import { useLauncher } from "./lib/launcher";
 import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
 import type { SplitDir } from "./lib/tree";
 
@@ -15,6 +17,7 @@ export function App() {
   const active = useStore(activeWorkspace);
   const newPlate = useStore((s) => s.newPlate);
   const splitSession = useStore((s) => s.splitSession);
+  const openLauncher = useLauncher((s) => s.openLauncher);
   const focused = active?.focused ?? null;
   const focusedAlias = useStore((s) => (focused ? s.sessionMeta[focused]?.alias : undefined));
 
@@ -24,29 +27,32 @@ export function App() {
 
   const state = error ? "unreachable" : (status?.state ?? null);
 
-  // Rail "+" / new-tab convenience: add a session to the current tab by
-  // splitting its focused pane along its longer axis; fall back to a new tab.
-  // Until the launcher lands (Phase 4) this reuses the focused agent / Standard.
-  const newSessionHere = () => {
-    const { activeWorkspaceId, workspaces, sessionMeta } = useStore.getState();
+  // Rail "+" — add a session to the current tab by splitting its focused pane
+  // along its longer axis; fall back to a new tab when nothing is open. The
+  // launcher dialog picks agent × mode.
+  const newSessionHere = async () => {
+    const { activeWorkspaceId, workspaces } = useStore.getState();
     const ws = workspaces.find((w) => w.id === activeWorkspaceId);
     if (!ws?.focused) {
-      void newPlate("claude", "standard");
+      const c = await openLauncher("New tab");
+      if (c) await newPlate(c.cli, c.mode);
       return;
     }
+    const c = await openLauncher("New session");
+    if (!c) return;
     // Compare dataset rather than building a selector — bootstrap-imported tmux
     // names can contain selector-special chars and would throw querySelector.
     const el = [...document.querySelectorAll<HTMLElement>(".pane-leaf")].find(
       (n) => n.dataset.session === ws.focused,
     );
     const dir: SplitDir = el && el.clientWidth >= el.clientHeight ? "row" : "col";
-    void splitSession(ws.focused, dir, sessionMeta[ws.focused]?.cli ?? "claude", "standard");
+    await splitSession(ws.focused, dir, c.cli, c.mode);
   };
 
   return (
     <div className="grid h-full grid-rows-[56px_40px_1fr_28px]">
       <Masthead state={state} />
-      <TabBar onNewTab={() => void newPlate("claude", "standard")} />
+      <TabBar />
       <main className="relative flex overflow-hidden bg-bg-deep">
         <div className="work-area">
           {FLEURON_CORNERS.map((c) => (
@@ -71,6 +77,7 @@ export function App() {
         sessionName={focusedAlias}
         plate={active ? String(active.plate) : null}
       />
+      <LauncherDialog />
     </div>
   );
 }

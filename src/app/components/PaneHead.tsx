@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
+import { useLauncher } from "../lib/launcher";
 import { useStore } from "../lib/store";
 import type { SplitDir } from "../lib/tree";
 
@@ -58,15 +59,18 @@ export function PaneHead({ session }: { session: string }) {
   const splitSession = useStore((s) => s.splitSession);
   const closeSession = useStore((s) => s.closeSession);
   const renameSession = useStore((s) => s.renameSession);
+  const openLauncher = useLauncher((s) => s.openLauncher);
   const [editing, setEditing] = useState(false);
 
   if (!meta) return null;
   const spec = SPEC_BY_CLI[meta.cli];
   const badge = MODE_BY_ID[meta.mode].badge;
 
-  // Until the launcher dialog lands (Phase 4), a split reuses the pane's own
-  // agent in Standard mode.
-  const doSplit = (dir: SplitDir) => void splitSession(session, dir, meta.cli, "standard");
+  // Split opens the launcher to pick the new pane's agent × mode.
+  const doSplit = async (dir: SplitDir) => {
+    const c = await openLauncher("Split");
+    if (c) await splitSession(session, dir, c.cli, c.mode);
+  };
 
   return (
     <div className="pane-head">
@@ -118,7 +122,7 @@ export function PaneHead({ session }: { session: string }) {
         title="Split below"
         onClick={(e) => {
           e.stopPropagation();
-          doSplit("col");
+          void doSplit("col");
         }}
       >
         <IconSplitCol />
@@ -129,7 +133,7 @@ export function PaneHead({ session }: { session: string }) {
         title="Split right"
         onClick={(e) => {
           e.stopPropagation();
-          doSplit("row");
+          void doSplit("row");
         }}
       >
         <IconSplitRow />
