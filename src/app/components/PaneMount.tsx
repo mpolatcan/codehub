@@ -12,12 +12,21 @@ export function PaneMount({ session }: { session: string }) {
     const slot = slotRef.current;
     if (!slot) return;
     registry.mountPane(session, slot);
-    const raf = requestAnimationFrame(() => registry.fit(session));
+    // Re-fit whenever the slot resizes — covers the initial 0→real transition on
+    // mount and every window/divider resize after. (The vanilla app used a single
+    // window-resize handler; a per-pane observer is more robust.) The observer
+    // fires once on observe() with the live size, so no separate initial fit.
+    const ro = new ResizeObserver(() => registry.fit(session));
+    ro.observe(slot);
     return () => {
-      cancelAnimationFrame(raf);
+      ro.disconnect();
       registry.parkPane(session);
     };
   }, [session]);
 
-  return <div ref={slotRef} className="relative flex-1 min-w-0 min-h-0" />;
+  // Fill the relatively-positioned .pane-body. The slot MUST NOT rely on flexbox
+  // here: .pane-body is `position:relative; flex:1` but not `display:flex`, so a
+  // `flex-1` slot would collapse to 0 height and the absolutely-positioned
+  // term-surface inside it would render blank.
+  return <div ref={slotRef} className="absolute inset-0" />;
 }
