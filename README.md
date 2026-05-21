@@ -2,7 +2,7 @@
 
 A home for your AI coding agents.
 
-Tauri desktop app that runs **Claude Code**, **Codex**, and **Antigravity** CLIs inside a single sandboxed Docker container, multiplexed via tmux. Each tab in the window = one tmux session = one agent. Aviary spawns and manages the container itself — no `docker compose` step.
+Tauri desktop app that runs **Claude Code**, **Codex**, and **Antigravity** CLIs inside a single sandboxed Docker container, multiplexed via tmux. Each pane = one tmux session = one agent; tabs hold one or more split panes. Aviary spawns and manages the container itself — no `docker compose` step.
 
 ## Why
 
@@ -14,7 +14,7 @@ Running multiple agent CLIs locally is messy: separate terminals, separate auth,
 flowchart LR
     subgraph webview["Tauri webview"]
         direction TB
-        UI["xterm.js · Vite<br/>vanilla TS<br/>tabs ↔ panes ↔ terminals"]
+        UI["xterm.js · Vite<br/>React 19 + Zustand<br/>tabs ↔ split panes ↔ terminals"]
     end
 
     subgraph backend["Rust backend (tokio)"]
@@ -66,7 +66,7 @@ sequenceDiagram
     UI->>UI: restore tabs
 ```
 
-### Per-session lifecycle (user clicks **+**)
+### Per-session lifecycle (new tab, split, or ⌘T)
 
 ```mermaid
 sequenceDiagram
@@ -75,8 +75,8 @@ sequenceDiagram
     participant B as Backend
     participant T as tmux (in container)
 
-    UI->>UI: CLI picker modal (claude / codex / antigravity)
-    UI->>B: create_session(name, cli)
+    UI->>UI: launcher — agent (claude/codex/antigravity) × mode (standard/auto/yolo)
+    UI->>B: create_session(name, cli, mode)
     B->>T: docker exec — tmux new-session -d -s NAME CLI
     UI->>B: attach_session(name, cols, rows)
     B->>T: bollard exec tty=true — tmux attach -t NAME
@@ -90,6 +90,13 @@ sequenceDiagram
         B->>T: TIOCSWINSZ
     end
 ```
+
+## Using it
+
+- **New session** — the `+` popover (or ⌘T) picks an agent and a permission mode.
+- **Permission modes** — *Standard* (agent asks first), *Auto* (auto-accepts edits, still sandboxed), *YOLO* (skips all approvals; the container is the boundary). Antigravity is Standard-only until its flags are verified.
+- **Splits** — split any pane (its head controls, or ⌘\) into a binary tree; drag the divider to resize.
+- **Keyboard** — ⌘T new tab · ⌘W close focused · ⌘\ split · ⌘1–9 switch tab.
 
 ## Runtime image
 
@@ -151,7 +158,8 @@ configured in `src-tauri/tauri.conf.json`.
 
 - macOS Keychain for OAuth token storage (`security-framework` crate).
 - Bell-character detection -> native notification when an agent finishes.
-- Split panes (tmux split-window), copy mode keybindings, session rename.
+- Copy-mode keybindings.
 - Multiple workspaces (one container per workspace dir).
 - Auto-update via Tauri updater plugin.
 - Icon set (cage grid + bird silhouette).
+- Code-split the frontend bundle (currently a single ~707 KB chunk).
