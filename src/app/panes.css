@@ -333,11 +333,21 @@ body.dragging .divider::after {
   flex: 0 0 auto;
   border-bottom: 2px solid var(--color-rule);
 }
-.session-rail.collapsed .rail-head,
 .session-rail.collapsed .rail-foot,
 .session-rail.collapsed .rail-list {
   opacity: 0;
   pointer-events: none;
+}
+/* Keep the header (and its toggle) interactive when collapsed — it is the only
+   affordance back to expanded. Just hide the title and center the chevron in
+   the 24px spine. */
+.session-rail.collapsed .rail-head {
+  padding: 0;
+  justify-content: center;
+  border-bottom-color: transparent;
+}
+.session-rail.collapsed .rail-title {
+  display: none;
 }
 .rail-title {
   font-family: var(--font-pixel);
