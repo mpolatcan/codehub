@@ -67,6 +67,9 @@ make image                                           # build runtime image at th
 
 # Day-to-day
 make dev                                             # Vite + Tauri, hot-reloads frontend
+make dev-web                                          # Vite + standalone backend bridge, NO Tauri window
+                                                     #   → drive the UI in a plain browser at :1420 with a
+                                                     #   live backend (visual review / playwright screenshots)
 make check                                           # Full lint sweep (Biome + tsc + rustfmt + clippy)
 make fix                                             # Apply all safe auto-fixes, then re-check
 make image-verify                                    # Smoke-test installed CLIs in the runtime image
@@ -114,5 +117,5 @@ There is no automated IPC test suite yet. Manual regression matrix lives in `TES
 ## When in doubt
 
 - Prefer reading `src-tauri/src/lib.rs` first for the backend — it lists every Tauri command and is the cleanest map of how the app is glued together. For the frontend, `src/app/lib/store.ts` is the equivalent map (every state mutation + the IPC calls each one fires).
-- If a backend change requires a new IPC command, add it to the `tauri::generate_handler![...]` list in `lib.rs:run()` AND to the typed `ipc` object in `src/app/lib/ipc.ts`.
+- If a backend change requires a new IPC command, it now has a **four-point sync** (the dev bridge mirrors the IPC surface): the `tauri::generate_handler![...]` list in `lib.rs:run()`, the typed `ipc` object in `src/app/lib/ipc.ts`, a REST route in `src-tauri/src/devserver.rs`, and its command→REST mapping in `src/app/lib/bridge.ts`. Skip the last two only if you never need browser-mode (`make dev-web`).
 - If a frontend file fails to type-check after a CSS import, ensure `src/vite-env.d.ts` declares the module.

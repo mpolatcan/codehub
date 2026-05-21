@@ -13,5 +13,16 @@ export default defineConfig({
     host: "127.0.0.1",
     hmr: { port: 1421 },
     watch: { ignored: ["**/src-tauri/**"] },
+    // Browser-mode dev bridge (src-tauri/src/devserver.rs, `make dev-web`).
+    // Same-origin proxy so the frontend's /__bridge calls + WebSocket avoid
+    // CORS. Harmless to the Tauri build, which never hits these paths.
+    proxy: {
+      "/__bridge": {
+        target: "http://127.0.0.1:4555",
+        changeOrigin: true,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/__bridge/, ""),
+      },
+    },
   },
 });

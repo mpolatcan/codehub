@@ -40,6 +40,18 @@ install-ci: ## Install npm dependencies for CI (lockfile-strict)
 dev: ## Run Tauri dev (Vite + Rust, hot-reload frontend)
 	npm run tauri dev
 
+.PHONY: dev-server
+dev-server: ## Run only the browser-mode backend bridge (HTTP/WS on :4555)
+	cd src-tauri && cargo run --bin aviary-devserver --features devserver
+
+.PHONY: dev-web
+dev-web: ## Browser-mode dev: Vite (:1420) + backend bridge (:4555), no Tauri window
+	@echo "Vite → http://localhost:1420  ·  bridge → /__bridge → :4555  (Ctrl-C to stop both)"
+	@trap 'kill 0' EXIT; \
+	  ( cd src-tauri && cargo run --bin aviary-devserver --features devserver ) & \
+	  npm run dev & \
+	  wait
+
 .PHONY: build
 build: ## Production build — Tauri bundle (DMG/AppImage/deb under src-tauri/target/release/bundle/)
 	npm run tauri build

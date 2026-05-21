@@ -1,5 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
-import { type UnlistenFn, listen } from "@tauri-apps/api/event";
+import { type UnlistenFn, invoke, listen } from "./bridge";
 
 // Typed boundary over the Tauri commands (lib.rs) and lifecycle events. Backend
 // is unchanged by the migration; this just gives the React app a typed surface.
