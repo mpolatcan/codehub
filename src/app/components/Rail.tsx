@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SPEC_BY_CLI } from "../lib/catalog";
+import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
 import * as registry from "../lib/panes";
 import { useStore } from "../lib/store";
 import { leavesList } from "../lib/tree";
@@ -52,13 +52,14 @@ export function Rail({ onNewHere }: { onNewHere: () => void }) {
                 className={`rail-group-head${active ? " active" : ""}`}
                 onClick={() => switchWorkspace(ws.id)}
               >
-                <span className="rg-plate">{ws.plate}</span>
                 <span className="rg-label">Tab</span>
+                <span className="rg-plate">{ws.plate}</span>
                 <span className="rg-count">{sessions.length}</span>
               </button>
               {sessions.map((session) => {
                 const meta = sessionMeta[session];
                 const spec = meta ? SPEC_BY_CLI[meta.cli] : null;
+                const badge = meta ? MODE_BY_ID[meta.mode].badge : "";
                 const focused = active && ws.focused === session;
                 return (
                   <div key={session} className={`rail-row${focused ? " focused" : ""}`}>
@@ -71,6 +72,9 @@ export function Rail({ onNewHere }: { onNewHere: () => void }) {
                         <span className="rr-num">{spec?.label ?? ""}</span>
                       </span>
                     </button>
+                    {badge && meta && (
+                      <span className={`mode-badge badge-${meta.mode}`}>{badge}</span>
+                    )}
                     <button
                       type="button"
                       className="rr-close"

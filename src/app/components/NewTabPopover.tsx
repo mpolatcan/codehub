@@ -23,7 +23,7 @@ export function NewTabPopover() {
           type="button"
           title="Open a new tab (⌘T)"
           aria-keyshortcuts="Meta+T"
-          className="group flex items-center gap-[7px] px-[14px] border-r border-rule-soft text-text-dim hover:text-accent transition-colors data-[state=open]:text-accent"
+          className="group flex items-center gap-[7px] px-[14px] border-l border-rule-soft text-text-dim hover:text-accent transition-colors data-[state=open]:text-accent"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
           <span className="text-[15px] leading-none">＋</span>
@@ -37,7 +37,7 @@ export function NewTabPopover() {
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent className="modal-panel popover-launch">
+      <PopoverContent align="end" className="modal-panel popover-launch">
         {open && <Inner onLaunch={launch} />}
       </PopoverContent>
     </Popover>
