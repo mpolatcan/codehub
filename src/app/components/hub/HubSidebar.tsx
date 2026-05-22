@@ -14,8 +14,9 @@ import { Popover, PopoverAnchor, PopoverContent } from "../ui/popover";
 
 // Left sidebar, ported from design/screens/main-hub-a.jsx. Logo, New-agent
 // launcher, view nav, and the live session list grouped by tab (one shared
-// runtime container today, so groups are tabs). View items beyond Hub are
-// stubbed (their screens land in P4) — shown but inert.
+// runtime container today, so groups are tabs). The view nav switches the main
+// region (P4): Hub + Containers + Settings are live; Dashboard is an honest
+// "coming soon" placeholder until its screen lands.
 const NEW_KEY = "newtab";
 
 export function HubSidebar() {
@@ -23,6 +24,8 @@ export function HubSidebar() {
   const activeId = useStore((s) => s.activeWorkspaceId);
   const sessionMeta = useStore((s) => s.sessionMeta);
   const status = useStore((s) => s.status);
+  const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const focusSession = useStore((s) => s.focusSession);
   const closeSession = useStore((s) => s.closeSession);
@@ -84,19 +87,31 @@ export function HubSidebar() {
         <div className="lbl" style={{ padding: "0 4px 6px" }}>
           Views
         </div>
-        <div className="side-item active">
+        <div
+          className={`side-item${view === "hub" ? " active" : ""}`}
+          onClick={() => setView("hub")}
+        >
           {Ico.hub}
           <span style={{ flex: 1 }}>Hub</span>
         </div>
-        <div className="side-item" style={{ opacity: 0.4 }} title="Coming soon">
+        <div
+          className={`side-item${view === "dashboard" ? " active" : ""}`}
+          onClick={() => setView("dashboard")}
+        >
           {Ico.grid}
           <span style={{ flex: 1 }}>Dashboard</span>
         </div>
-        <div className="side-item" style={{ opacity: 0.4 }} title="Coming soon">
+        <div
+          className={`side-item${view === "containers" ? " active" : ""}`}
+          onClick={() => setView("containers")}
+        >
           {Ico.container}
           <span style={{ flex: 1 }}>Containers</span>
         </div>
-        <div className="side-item" style={{ opacity: 0.4 }} title="Coming soon">
+        <div
+          className={`side-item${view === "settings" ? " active" : ""}`}
+          onClick={() => setView("settings")}
+        >
           {Ico.settings}
           <span style={{ flex: 1 }}>Settings</span>
         </div>
@@ -314,7 +329,9 @@ export function HubSidebar() {
             {status?.state ?? "—"}
           </div>
         </div>
-        <IconBtn title="Settings (coming soon)">{Ico.settings}</IconBtn>
+        <IconBtn title="Settings" onClick={() => setView("settings")}>
+          {Ico.settings}
+        </IconBtn>
       </div>
     </aside>
   );
