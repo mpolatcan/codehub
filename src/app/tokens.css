@@ -361,6 +361,11 @@
   border-radius: var(--r-3);
 }
 
+/* Clickable changed-file row in the Hub activity rail. */
+.rail-file:hover {
+  background: var(--bg-3) !important;
+}
+
 /* Keyboard shortcut badge */
 .kbd {
   font: 500 10.5px / 1 var(--mono);

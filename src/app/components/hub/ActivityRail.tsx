@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Ico } from "../../components/primitives/icons";
 import { type GitStatus, ipc } from "../../lib/ipc";
 import { useStore } from "../../lib/store";
+import { DiffViewer } from "./DiffViewer";
 
 // Right activity rail, ported from design/screens/main-hub-a.jsx.
 //
@@ -20,6 +21,8 @@ export function ActivityRail() {
   // apart; a failed read (container stopped mid-poll) clears to null → the
   // section falls back to its placeholder rather than freezing a stale list.
   const [git, setGit] = useState<GitStatus | null>(null);
+  // Path whose diff is open in the viewer, or null when closed.
+  const [diffPath, setDiffPath] = useState<string | null>(null);
   useEffect(() => {
     if (!running) {
       setGit(null);
@@ -90,7 +93,7 @@ export function ActivityRail() {
           </span>
         )}
       </div>
-      <Changes git={git} running={running} />
+      <Changes git={git} running={running} onOpen={setDiffPath} />
 
       {/* Activity — honest empty until the turn-event bus exists */}
       <div
@@ -123,12 +126,23 @@ export function ActivityRail() {
           Turn events and approval prompts will appear here.
         </p>
       </div>
+
+      <DiffViewer path={diffPath} onClose={() => setDiffPath(null)} />
     </aside>
   );
 }
 
 // The changed-files list, or an honest one-liner for each non-list state.
-function Changes({ git, running }: { git: GitStatus | null; running: boolean }) {
+// Each row opens that file's diff via `onOpen`.
+function Changes({
+  git,
+  running,
+  onOpen,
+}: {
+  git: GitStatus | null;
+  running: boolean;
+  onOpen: (path: string) => void;
+}) {
   if (git === null) {
     return <Note>{running ? "Reading workspace…" : "Runtime not running."}</Note>;
   }
@@ -143,23 +157,28 @@ function Changes({ git, running }: { git: GitStatus | null; running: boolean }) 
       {git.files.map((f) => {
         const { label, color } = decode(f.status);
         return (
-          <div
+          <button
+            type="button"
             key={f.path}
+            onClick={() => onOpen(f.path)}
+            title={`${f.path} — view diff`}
             style={{
               display: "flex",
               alignItems: "center",
               gap: 8,
+              width: "100%",
               padding: "4px 6px",
               borderRadius: 4,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              textAlign: "left",
               fontFamily: "var(--mono)",
               fontSize: 11.5,
             }}
+            className="rail-file"
           >
-            <span
-              className="tnum"
-              style={{ width: 16, flexShrink: 0, color, textAlign: "center" }}
-              title={`status ${f.status.trim() || f.status}`}
-            >
+            <span className="tnum" style={{ width: 16, flexShrink: 0, color, textAlign: "center" }}>
               {label}
             </span>
             <span
@@ -173,11 +192,10 @@ function Changes({ git, running }: { git: GitStatus | null; running: boolean }) 
                 whiteSpace: "nowrap",
                 textAlign: "left",
               }}
-              title={f.path}
             >
               {f.path}
             </span>
-          </div>
+          </button>
         );
       })}
       {git.total > git.files.length && (

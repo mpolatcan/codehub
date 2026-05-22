@@ -55,6 +55,10 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       return jget("/container-mounts") as Promise<T>;
     case "container_git_status":
       return jget("/container-git-status") as Promise<T>;
+    case "container_git_diff":
+      return jget(
+        `/container-git-diff?path=${encodeURIComponent(String(args.path))}`,
+      ) as Promise<T>;
     case "list_sessions":
       return jget("/sessions") as Promise<T>;
     case "create_session":
