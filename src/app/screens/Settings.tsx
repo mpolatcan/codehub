@@ -18,12 +18,14 @@
  * (BACKEND_PLAN.md decision) — wording corrected from the design.
  */
 import { AGENT_META, AgentGlyph, type AgentId } from "@/app/components/primitives/AgentGlyph";
+import { Logo } from "@/app/components/primitives/Logo";
 import { StatusDot } from "@/app/components/primitives/StatusDot";
 import { Ico } from "@/app/components/primitives/icons";
 import { CLIS } from "@/app/lib/catalog";
+import { type AgentVersion, type AppInfo, type Cli, type DockerInfo, ipc } from "@/app/lib/ipc";
 import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 export interface SettingsProps {
   /** Kill every running session. Defaults to the store's closeAllSessions. */
@@ -55,6 +57,10 @@ const NAV_GROUPS: { label: string; items: { key: string; label: string; soon?: b
       { key: "team", label: "Team", soon: true },
     ],
   },
+  {
+    label: "About",
+    items: [{ key: "about", label: "About CodeHub" }],
+  },
 ];
 
 export function Settings({ onStopAll }: SettingsProps) {
@@ -63,8 +69,22 @@ export function Settings({ onStopAll }: SettingsProps) {
   const [active, setActive] = useState("agents");
   const keyStatus = useStore((s) => s.keyStatus);
   const agentVersions = useStore((s) => s.agentVersions);
+  const dockerInfo = useStore((s) => s.dockerInfo);
   const sessionCount = useStore((s) => Object.keys(s.sessionMeta).length);
   const closeAllSessions = useStore((s) => s.closeAllSessions);
+
+  // App/platform identity is static (build + host consts), so fetch it once.
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    ipc
+      .appInfo()
+      .then((info) => alive && setAppInfo(info))
+      .catch(() => alive && setAppInfo(null));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const stopAll = () => {
     if (sessionCount === 0) return;
@@ -142,111 +162,242 @@ export function Settings({ onStopAll }: SettingsProps) {
 
       {/* pane */}
       <div style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
-        <div style={{ maxWidth: 720 }}>
-          <h1
-            style={{
-              margin: "0 0 4px",
-              fontSize: 22,
-              fontWeight: 600,
-              letterSpacing: "-0.01em",
-              color: "var(--fg-0)",
-            }}
-          >
-            Agents & API keys
-          </h1>
-          <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: 13 }}>
-            Configure the coding agents available in the spawn dialog. Keys are read from your host
-            environment (e.g. <span className="mono">CLAUDE_CODE_OAUTH_TOKEN</span>) and forwarded
-            into running containers — CodeHub never stores them.
-          </p>
+        {active === "about" ? (
+          <AboutPane appInfo={appInfo} dockerInfo={dockerInfo} agentVersions={agentVersions} />
+        ) : (
+          <div style={{ maxWidth: 720 }}>
+            <h1
+              style={{
+                margin: "0 0 4px",
+                fontSize: 22,
+                fontWeight: 600,
+                letterSpacing: "-0.01em",
+                color: "var(--fg-0)",
+              }}
+            >
+              Agents & API keys
+            </h1>
+            <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: 13 }}>
+              Configure the coding agents available in the spawn dialog. Keys are read from your
+              host environment (e.g. <span className="mono">CLAUDE_CODE_OAUTH_TOKEN</span>) and
+              forwarded into running containers — CodeHub never stores them.
+            </p>
 
-          <SectionHead label="Agents" />
-          {CLIS.map((c) => {
-            // Real Tier-1 reads; null until the bootstrap fetch resolves (or if a
-            // binary/key is absent — then version/varName render as em-dash).
-            const key = keyStatus?.[c.id];
-            const ver = agentVersions?.[c.id];
-            return (
-              <AgentRow
-                key={c.id}
-                agent={c.id}
-                name={c.label}
-                version={ver?.version ?? null}
-                present={key?.present ?? false}
-                varName={key?.varName ?? null}
-                source={key?.source ?? null}
-              />
-            );
-          })}
+            <SectionHead label="Agents" />
+            {CLIS.map((c) => {
+              // Real Tier-1 reads; null until the bootstrap fetch resolves (or if a
+              // binary/key is absent — then version/varName render as em-dash).
+              const key = keyStatus?.[c.id];
+              const ver = agentVersions?.[c.id];
+              return (
+                <AgentRow
+                  key={c.id}
+                  agent={c.id}
+                  name={c.label}
+                  version={ver?.version ?? null}
+                  present={key?.present ?? false}
+                  varName={key?.varName ?? null}
+                  source={key?.source ?? null}
+                />
+              );
+            })}
 
-          <div style={{ display: "flex", gap: 8, margin: "14px 0 32px" }}>
-            <Button variant="outline" size="sm" disabled>
-              {Ico.plus}Add custom agent
-            </Button>
-          </div>
-
-          <SectionHead label="Defaults for new sessions" />
-          {/* No persistent settings store yet (Tier-2/v1 — BACKEND_PLAN.md). These
-              controls are shown disabled rather than faking persistence. */}
-          <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--fg-2)" }}>
-            Not configurable yet — these land with the settings store. For now, spawn-time options
-            live in the ⌘N dialog.
-          </p>
-          <SettingRow
-            label="Default agent"
-            desc="Pre-selected in the spawn dialog (⌘N)."
-            control={<SelectStub value="Claude Code" />}
-          />
-          <SettingRow
-            label="Auto-approve safe commands"
-            desc="Read-only operations (ls, cat, git status) run without prompting."
-            control={<Toggle on />}
-          />
-          <SettingRow
-            label="Approve writes"
-            desc="Always ask before edits, branch ops, or shell execution."
-            control={<Toggle on />}
-          />
-          <SettingRow
-            label="Context budget"
-            desc="Stop loading more context once this fills."
-            control={<InputStub value="800k" suffix="tokens" />}
-            last
-          />
-
-          <SectionHead label="Danger zone" tone="err" />
-          <div
-            className="ch-card"
-            style={{
-              padding: 14,
-              borderColor: "color-mix(in oklab, var(--err) 30%, var(--bd))",
-              background: "color-mix(in oklab, var(--err) 4%, var(--bg-2))",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>
-                  Stop all running agents
-                </div>
-                <div style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
-                  SIGTERMs every session and persists their tmux scrollback.
-                  {sessionCount > 0 ? ` ${sessionCount} running.` : " None running."}
-                </div>
-              </div>
-              <span style={{ flex: 1 }} />
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={stopAll}
-                disabled={sessionCount === 0}
-              >
-                Stop all
+            <div style={{ display: "flex", gap: 8, margin: "14px 0 32px" }}>
+              <Button variant="outline" size="sm" disabled>
+                {Ico.plus}Add custom agent
               </Button>
             </div>
+
+            <SectionHead label="Defaults for new sessions" />
+            {/* No persistent settings store yet (Tier-2/v1 — BACKEND_PLAN.md). These
+              controls are shown disabled rather than faking persistence. */}
+            <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--fg-2)" }}>
+              Not configurable yet — these land with the settings store. For now, spawn-time options
+              live in the ⌘N dialog.
+            </p>
+            <SettingRow
+              label="Default agent"
+              desc="Pre-selected in the spawn dialog (⌘N)."
+              control={<SelectStub value="Claude Code" />}
+            />
+            <SettingRow
+              label="Auto-approve safe commands"
+              desc="Read-only operations (ls, cat, git status) run without prompting."
+              control={<Toggle on />}
+            />
+            <SettingRow
+              label="Approve writes"
+              desc="Always ask before edits, branch ops, or shell execution."
+              control={<Toggle on />}
+            />
+            <SettingRow
+              label="Context budget"
+              desc="Stop loading more context once this fills."
+              control={<InputStub value="800k" suffix="tokens" />}
+              last
+            />
+
+            <SectionHead label="Danger zone" tone="err" />
+            <div
+              className="ch-card"
+              style={{
+                padding: 14,
+                borderColor: "color-mix(in oklab, var(--err) 30%, var(--bd))",
+                background: "color-mix(in oklab, var(--err) 4%, var(--bg-2))",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>
+                    Stop all running agents
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
+                    SIGTERMs every session and persists their tmux scrollback.
+                    {sessionCount > 0 ? ` ${sessionCount} running.` : " None running."}
+                  </div>
+                </div>
+                <span style={{ flex: 1 }} />
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={stopAll}
+                  disabled={sessionCount === 0}
+                >
+                  Stop all
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+
+// About pane — every value is real: version/os/arch from `app_info` (build +
+// host consts), Docker from `docker_info`, agent versions from `agent_versions`.
+// No update check, no changelog, no fabricated build metadata; absent reads
+// render as em-dash rather than placeholders.
+function AboutPane({
+  appInfo,
+  dockerInfo,
+  agentVersions,
+}: {
+  appInfo: AppInfo | null;
+  dockerInfo: DockerInfo | null;
+  agentVersions: Record<Cli, AgentVersion> | null;
+}) {
+  const dash = "—";
+  const platform = appInfo ? `${appInfo.os}-${appInfo.arch}` : dash;
+  const dockerLine = dockerInfo?.reachable ? (dockerInfo.version ?? "reachable") : "not reachable";
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <h1
+        style={{
+          margin: "0 0 4px",
+          fontSize: 22,
+          fontWeight: 600,
+          letterSpacing: "-0.01em",
+          color: "var(--fg-0)",
+        }}
+      >
+        About CodeHub
+      </h1>
+      <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: 13 }}>
+        Build and host platform details for this install. Everything here is read from the running
+        binary and the local Docker daemon — CodeHub does not check for updates.
+      </p>
+
+      {/* hero */}
+      <div
+        className="ch-card"
+        style={{ padding: 18, display: "flex", alignItems: "center", gap: 16, marginBottom: 8 }}
+      >
+        <div
+          style={{
+            width: 52,
+            height: 52,
+            borderRadius: 12,
+            background: "var(--bg-0)",
+            border: "1px solid var(--bd)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <Logo size={30} withText={false} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-0.01em" }}>CodeHub</div>
+          <div
+            className="mono"
+            style={{ fontSize: 12, color: "var(--fg-2)", marginTop: 3, display: "flex", gap: 8 }}
+          >
+            <span>v{appInfo?.version ?? dash}</span>
+            <span style={{ color: "var(--fg-3)" }}>·</span>
+            <span>{platform}</span>
           </div>
         </div>
       </div>
-    </main>
+
+      <SectionHead label="Environment" />
+      <div
+        className="ch-card"
+        style={{
+          padding: 16,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "10px 24px",
+        }}
+      >
+        <Kv k="Version" v={appInfo ? `v${appInfo.version}` : dash} />
+        <Kv k="Docker" v={dockerLine} />
+        <Kv k="OS" v={appInfo?.os ?? dash} />
+        <Kv k="Architecture" v={appInfo?.arch ?? dash} />
+        <Kv k="Family" v={appInfo?.family ?? dash} />
+        <Kv k="Docker API" v={dockerInfo?.apiVersion ?? dash} />
+      </div>
+
+      <SectionHead label="Agents" />
+      <div className="ch-card" style={{ padding: 16, display: "grid", gap: "10px 24px" }}>
+        {CLIS.map((c) => (
+          <Kv key={c.id} k={c.label} v={agentVersions?.[c.id]?.version ?? dash} />
+        ))}
+      </div>
+
+      <SectionHead label="Credits" />
+      <p style={{ margin: "0 0 8px", fontSize: 12, color: "var(--fg-2)", lineHeight: 1.6 }}>
+        CodeHub runs Claude Code, Codex, and Antigravity side by side in one shared container. Built
+        with Tauri, React, and xterm.js. Agent CLIs and their model providers are owned by their
+        respective vendors.
+      </p>
+    </div>
+  );
+}
+
+// One mono key/value row for the About pane. Value is right-aligned and
+// ellipsized so a long Docker/socket string can't widen its grid track.
+function Kv({ k, v }: { k: string; v: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0 }}>
+      <span style={{ fontSize: 12, color: "var(--fg-2)", flexShrink: 0 }}>{k}</span>
+      <span style={{ flex: 1, borderBottom: "1px dotted var(--bd-soft)", minWidth: 8 }} />
+      <span
+        className="mono tnum"
+        style={{
+          fontSize: 11.5,
+          color: "var(--fg-1)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          minWidth: 0,
+        }}
+        title={v}
+      >
+        {v}
+      </span>
+    </div>
   );
 }
 

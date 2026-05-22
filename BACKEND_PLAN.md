@@ -90,6 +90,12 @@ interface DockerInfo {
 ```
 Risk: low (read-only). Degrades to `connected:false` when the daemon is down.
 
+**`app_info() -> AppInfo`** **DONE** — `lifecycle::app_info()`; build + host
+identity (name/version/os/arch/family) from `env!("CARGO_PKG_*")` +
+`std::env::consts`. No I/O, never fails, no update check. Backs the Settings
+**About** pane (version/OS/arch + Docker version via `docker_info` + agent
+versions via `agent_versions`; absent reads render em-dash, nothing fabricated).
+
 **`agent_versions() -> Record<Cli, AgentVersion>`** — backs agent cards/settings.
 Execs `<cli> --version` inside the running container; caches per container start.
 

@@ -132,6 +132,7 @@ pub async fn serve() {
     let app = Router::new()
         .route("/status", get(status))
         .route("/docker-info", get(docker_info))
+        .route("/app-info", get(app_info))
         .route("/agent-key-status", get(agent_key_status))
         .route("/agent-versions", get(agent_versions))
         .route("/container-stats", get(container_stats))
@@ -163,6 +164,10 @@ async fn status(State(st): State<AppState>) -> impl IntoResponse {
 
 async fn docker_info(State(st): State<AppState>) -> impl IntoResponse {
     Json(st.lifecycle.docker_info().await)
+}
+
+async fn app_info() -> impl IntoResponse {
+    Json(crate::lifecycle::app_info())
 }
 
 async fn agent_key_status() -> impl IntoResponse {
