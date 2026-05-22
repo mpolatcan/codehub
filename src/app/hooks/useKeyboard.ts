@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { splitKey, useLauncher } from "../lib/launcher";
+import { useOverlay } from "../lib/overlay";
 import { useStore } from "../lib/store";
 import type { SplitDir } from "../lib/tree";
 
@@ -18,6 +19,8 @@ export function autoSplitDir(session: string): SplitDir {
 //   ⌘/Ctrl N  — new tab (opens the launcher); ⌘/Ctrl T kept as an alias
 //   ⌘/Ctrl W  — close the focused session
 //   ⌘/Ctrl \  — split the focused pane
+//   ⌘/Ctrl K  — command palette
+//   ⌘/Ctrl /  — keyboard-shortcuts cheat sheet
 //   ⌘/Ctrl 1-9 — switch to tab N
 //
 // Attached at the capture phase so they win over xterm.js, which installs its
@@ -32,7 +35,21 @@ export function useKeyboard() {
 
       const store = useStore.getState();
       const launcher = useLauncher.getState();
+      const overlay = useOverlay.getState();
       const ws = store.workspaces.find((w) => w.id === store.activeWorkspaceId);
+
+      // While the palette / cheat sheet is open, only the two toggles below stay
+      // live (so ⌘K and ⌘/ can dismiss). Everything else — ⌘W, ⌘\, ⌘N, ⌘1-9 —
+      // would act on the pane hidden behind the dialog, so swallow it. esc is
+      // handled by Radix on the dialog itself.
+      if (overlay.palette || overlay.shortcuts) {
+        if (e.key === "k" || e.key === "/") {
+          e.preventDefault();
+          if (e.key === "k") overlay.togglePalette();
+          else overlay.toggleShortcuts();
+        }
+        return;
+      }
 
       // ⌘1-9 — jump to tab by index.
       if (/^[1-9]$/.test(e.key)) {
@@ -49,6 +66,14 @@ export function useKeyboard() {
         case "t":
           e.preventDefault();
           launcher.open("newtab");
+          break;
+        case "k":
+          e.preventDefault();
+          useOverlay.getState().togglePalette();
+          break;
+        case "/":
+          e.preventDefault();
+          useOverlay.getState().toggleShortcuts();
           break;
         case "w":
           if (!ws?.focused) return;
