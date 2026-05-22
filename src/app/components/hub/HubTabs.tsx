@@ -5,6 +5,7 @@ import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
 import type { Cli, Mode } from "../../lib/ipc";
 import { useLauncher } from "../../lib/launcher";
+import { useOverlay } from "../../lib/overlay";
 import { useStore } from "../../lib/store";
 import { leavesList } from "../../lib/tree";
 import { LaunchPanel } from "../LaunchPanel";
@@ -27,6 +28,10 @@ export function HubTabs() {
   const openLaunch = useLauncher((s) => s.open);
   const closeLaunch = useLauncher((s) => s.close);
   const isOpen = openKey === NEW_KEY;
+  // Diff button opens the combined "all changes" diff (reuses the rail's
+  // DiffViewer + container_git_diff_all); only meaningful while the runtime is up.
+  const setDiff = useOverlay((s) => s.setDiff);
+  const running = useStore((s) => s.status?.state === "running");
 
   const stripRef = useRef<HTMLDivElement>(null);
   const prevCount = useRef(workspaces.length);
@@ -166,10 +171,17 @@ export function HubTabs() {
 
       <div style={{ flex: 1 }} />
 
-      {/* trailing actions — land in later phases, inert for now */}
+      {/* trailing actions — Diff is live (combined /workspace diff); files +
+          notifications land in later phases. */}
       <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "0 8px" }}>
         <IconBtn title="Files (coming soon)">{Ico.files}</IconBtn>
-        <IconBtn title="Diff (coming soon)">{Ico.diff}</IconBtn>
+        <IconBtn
+          title={running ? "Review all workspace changes" : "Diff (runtime not running)"}
+          disabled={!running}
+          onClick={() => setDiff("")}
+        >
+          {Ico.diff}
+        </IconBtn>
         <IconBtn title="Notifications (coming soon)">{Ico.bell}</IconBtn>
       </div>
     </div>
