@@ -1,0 +1,421 @@
+/* CodeHub — design tokens + shadcn bridge + base helper classes.
+   Verbatim port of design/styles.css (dark default in :root, light in .light).
+   Token names (--bg-*, --fg-*, --live, etc.) do NOT collide with the existing
+   app's --color-* tokens in theme.css. */
+
+/* ── DARK (default) ──────────────────────────────────────────────────────── */
+:root {
+  /* surfaces */
+  --bg-0: #08090b;
+  --bg-1: #10131a;
+  --bg-2: #171b22;
+  --bg-3: #1f242d;
+  --bg-hover: #242a34;
+  --bg-active: #2b323d;
+
+  /* borders */
+  --bd: #262b34;
+  --bd-strong: #313742;
+  --bd-soft: #1c2027;
+
+  /* text */
+  --fg-0: #ecedf0;
+  --fg-1: #aeb2bb;
+  --fg-2: #6a6f79;
+  --fg-3: #3f444d;
+  --fg-4: #2a2e36;
+
+  /* accents */
+  --live: oklch(0.8 0.17 145);
+  --live-dim: oklch(0.8 0.17 145 / 0.18);
+  --wait: oklch(0.83 0.14 80);
+  --wait-dim: oklch(0.83 0.14 80 / 0.2);
+  --idle: oklch(0.78 0.06 240);
+  --idle-dim: oklch(0.78 0.06 240 / 0.18);
+  --err: oklch(0.72 0.18 25);
+  --err-dim: oklch(0.72 0.18 25 / 0.18);
+  --done: oklch(0.78 0.08 200);
+
+  /* semantic spend colors */
+  --spend-ok: var(--fg-0);
+  --spend-warn: oklch(0.83 0.14 80);
+  --spend-over: oklch(0.72 0.18 25);
+
+  /* agent accents */
+  --a-claude: oklch(0.78 0.13 35);
+  --a-codex: oklch(0.78 0.1 265);
+  --a-antigravity: oklch(0.78 0.13 200);
+
+  /* type */
+  --sans: "Geist", ui-sans-serif, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "JetBrains Mono", monospace;
+
+  /* radii */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 8px;
+  --r-4: 10px;
+  --r-5: 14px;
+  --radius: 6px;
+
+  /* shadows */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.35);
+  --shadow-3: 0 18px 60px rgba(0, 0, 0, 0.5);
+
+  /* ── shadcn token bridge (dark) ─────────────────────────────────────────── */
+  --background: #10131a;
+  --foreground: #ecedf0;
+  --card: #171b22;
+  --card-foreground: #ecedf0;
+  --popover: #171b22;
+  --popover-foreground: #ecedf0;
+  --primary: #ecedf0;
+  --primary-foreground: #08090b;
+  --secondary: #1f242d;
+  --secondary-foreground: #ecedf0;
+  --muted: #1f242d;
+  --muted-foreground: #6a6f79;
+  --accent: #1f242d;
+  --accent-foreground: #ecedf0;
+  --destructive: oklch(0.72 0.18 25);
+  --border: #262b34;
+  --input: #262b34;
+  --ring: oklch(0.8 0.17 145);
+}
+
+/* ── LIGHT ───────────────────────────────────────────────────────────────── */
+/* Maps to both .light and .ch-theme-light for compatibility */
+.light,
+.ch-theme-light {
+  --bg-0: #ffffff;
+  --bg-1: #f8f8f5;
+  --bg-2: #f1f1ec;
+  --bg-3: #e7e7e1;
+  --bg-hover: #dedcd5;
+  --bg-active: #d4d2ca;
+
+  --bd: #d6d4cc;
+  --bd-strong: #b8b6ac;
+  --bd-soft: #e9e7e0;
+
+  --fg-0: #16181c;
+  --fg-1: #43474f;
+  --fg-2: #767b85;
+  --fg-3: #9ea3ad;
+  --fg-4: #c9ccd2;
+
+  --live: oklch(0.58 0.16 145);
+  --live-dim: oklch(0.58 0.16 145 / 0.14);
+  --wait: oklch(0.62 0.15 70);
+  --wait-dim: oklch(0.62 0.15 70 / 0.15);
+  --idle: oklch(0.55 0.1 240);
+  --idle-dim: oklch(0.55 0.1 240 / 0.12);
+  --err: oklch(0.55 0.2 25);
+  --err-dim: oklch(0.55 0.2 25 / 0.12);
+  --done: oklch(0.55 0.08 200);
+
+  --spend-ok: var(--fg-0);
+  --spend-warn: oklch(0.62 0.15 70);
+  --spend-over: oklch(0.55 0.2 25);
+
+  --a-claude: oklch(0.55 0.14 35);
+  --a-codex: oklch(0.55 0.13 265);
+  --a-antigravity: oklch(0.55 0.13 200);
+
+  /* shadcn token bridge (light) */
+  --background: #f8f8f5;
+  --foreground: #16181c;
+  --card: #f1f1ec;
+  --card-foreground: #16181c;
+  --popover: #f1f1ec;
+  --popover-foreground: #16181c;
+  --primary: #16181c;
+  --primary-foreground: #ffffff;
+  --secondary: #e7e7e1;
+  --secondary-foreground: #16181c;
+  --muted: #e7e7e1;
+  --muted-foreground: #767b85;
+  --accent: #e7e7e1;
+  --accent-foreground: #16181c;
+  --destructive: oklch(0.55 0.2 25);
+  --border: #d6d4cc;
+  --input: #d6d4cc;
+  --ring: oklch(0.58 0.16 145);
+}
+
+/* ── Tailwind v4 theme bridge (font utilities) ────────────────────────────── */
+/* Adds font-sans / font-mono utilities backed by design tokens.
+   Placed in a separate @theme block so it merges with theme.css without conflict. */
+@theme {
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+}
+
+/* ── Base helper classes (ported from design/styles.css) ──────────────────── */
+
+.mono {
+  font-family: var(--mono);
+  font-feature-settings: "zero", "ss01";
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Uppercase mini-label (loud — for section heads) */
+.lbl {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+  font-weight: 500;
+}
+
+.lbl-mono {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+
+/* Quiet lowercase label (for metric stats) */
+.lbl-soft {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-3);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+}
+
+/* Status dot */
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  display: inline-block;
+}
+
+.dot.live {
+  background: var(--live);
+  box-shadow: 0 0 0 3px var(--live-dim);
+}
+
+.dot.wait {
+  background: var(--wait);
+  box-shadow: 0 0 0 3px var(--wait-dim);
+}
+
+.dot.idle {
+  background: var(--idle);
+  box-shadow: 0 0 0 3px var(--idle-dim);
+}
+
+.dot.err {
+  background: var(--err);
+  box-shadow: 0 0 0 3px var(--err-dim);
+}
+
+.dot.done {
+  background: var(--done);
+}
+
+.dot.off {
+  background: var(--fg-3);
+}
+
+/* Pulse animation for live status */
+@keyframes ch-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--live-dim);
+  }
+
+  50% {
+    box-shadow: 0 0 0 5px var(--live-dim);
+  }
+}
+
+.dot.live.pulse {
+  animation: ch-pulse 2s ease-in-out infinite;
+}
+
+@keyframes ch-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.blink {
+  animation: ch-blink 1.05s steps(1) infinite;
+}
+
+/* Terminal */
+.term {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg-1);
+  background: var(--bg-0);
+  white-space: pre;
+}
+
+.term .prompt {
+  color: var(--live);
+}
+
+.term .user {
+  color: var(--fg-0);
+}
+
+.term .dim {
+  color: var(--fg-2);
+}
+
+.term .ok {
+  color: var(--live);
+}
+
+.term .warn {
+  color: var(--wait);
+}
+
+.term .err {
+  color: var(--err);
+}
+
+.term .info {
+  color: var(--idle);
+}
+
+.term .accent {
+  color: var(--a-claude);
+}
+
+.term .path {
+  color: var(--idle);
+}
+
+.term .key {
+  color: var(--wait);
+}
+
+.term .added {
+  color: var(--live);
+}
+
+.term .removed {
+  color: var(--err);
+}
+
+.term .meta {
+  color: var(--fg-2);
+  font-style: normal;
+}
+
+/* Progress bar */
+.bar {
+  height: 4px;
+  background: var(--bg-3);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+  background: var(--fg-1);
+  border-radius: inherit;
+}
+
+.bar.live > i {
+  background: var(--live);
+}
+
+.bar.wait > i {
+  background: var(--wait);
+}
+
+.bar.thin {
+  height: 2px;
+}
+
+/* Card */
+.ch-card {
+  background: var(--bg-2);
+  border: 1px solid var(--bd);
+  border-radius: var(--r-3);
+}
+
+/* Keyboard shortcut badge */
+.kbd {
+  font: 500 10.5px / 1 var(--mono);
+  letter-spacing: 0.02em;
+  background: var(--bg-3);
+  border: 1px solid var(--bd);
+  border-bottom-width: 2px;
+  color: var(--fg-1);
+  padding: 2px 5px 1.5px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  min-width: 16px;
+  justify-content: center;
+}
+
+/* Dividers */
+.hr {
+  height: 1px;
+  background: var(--bd-soft);
+  border: 0;
+}
+
+.vr {
+  width: 1px;
+  background: var(--bd-soft);
+  align-self: stretch;
+}
+
+/* Sidebar item */
+.side-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--r-2);
+  cursor: pointer;
+  color: var(--fg-1);
+  position: relative;
+}
+
+.side-item:hover {
+  background: var(--bg-3);
+  color: var(--fg-0);
+}
+
+.side-item.active {
+  background: var(--bg-3);
+  color: var(--fg-0);
+}
+
+.side-item.active::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 2px;
+  height: 18px;
+  background: var(--fg-0);
+  border-radius: 2px;
+  transform: translateY(-50%);
+}

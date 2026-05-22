@@ -1,3 +1,4 @@
+import { URL, fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -7,6 +8,11 @@ export default defineConfig({
   // React 19 app (index.html → src/app/main.tsx). Tailwind v4 via the Vite
   // plugin; tokens are bridged from theme.css into the @theme layer.
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,
