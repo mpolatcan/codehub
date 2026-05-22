@@ -612,6 +612,54 @@ impl DockerClient {
             .await?;
         Ok(parse_git_status(&raw))
     }
+
+    /// Unified diff for one `/workspace` path. Tries `diff HEAD -- <path>` first
+    /// (captures staged + unstaged changes to a tracked file vs the last
+    /// commit); if that yields nothing — a brand-new untracked file, or a repo
+    /// with no commits yet — falls back to `diff --no-index /dev/null <path>` so
+    /// the new file shows as all-added. `path` is passed after `--` so it can
+    /// never be read as an option. Errors only when the container is down.
+    pub async fn git_diff(&self, path: &str) -> Result<String, DockerError> {
+        if !self.is_running().await? {
+            return Err(DockerError::ContainerDown(self.container.clone()));
+        }
+        let tracked = self
+            .exec_capture(vec![
+                "git",
+                "-C",
+                "/workspace",
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "--no-color",
+                "HEAD",
+                "--",
+                path,
+            ])
+            .await?;
+        // A real tracked-file diff starts with "diff --git"; anything else
+        // (empty, or a "fatal: bad revision HEAD" on a commit-less repo) means
+        // fall through to the untracked/new-file path.
+        if tracked.contains("diff --git") {
+            return Ok(tracked);
+        }
+        let untracked = self
+            .exec_capture(vec![
+                "git",
+                "-C",
+                "/workspace",
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "--no-color",
+                "--no-index",
+                "--",
+                "/dev/null",
+                path,
+            ])
+            .await?;
+        Ok(untracked)
+    }
 }
 
 /// Cap on changed paths returned to the UI; the rail only renders a short list.

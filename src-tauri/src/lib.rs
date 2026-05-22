@@ -145,6 +145,19 @@ async fn container_git_status(state: tauri::State<'_, AppState>) -> Result<GitSt
     state.docker.git_status().await.map_err(|e| e.to_string())
 }
 
+/// Unified diff for one `/workspace` path (rail "Changes" → diff viewer).
+#[tauri::command]
+async fn container_git_diff(
+    path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    state
+        .docker
+        .git_diff(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn list_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<SessionInfo>, String> {
     state
@@ -356,6 +369,7 @@ pub fn run() {
             container_logs,
             container_mounts,
             container_git_status,
+            container_git_diff,
             list_sessions,
             create_session,
             kill_session,

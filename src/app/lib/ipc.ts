@@ -93,6 +93,8 @@ export const ipc = {
   containerMounts: () => invoke<MountInfo[]>("container_mounts"),
   // Working-tree status of /workspace (branch + changed files).
   containerGitStatus: () => invoke<GitStatus>("container_git_status"),
+  // Unified diff for one /workspace path (raw `git diff` text).
+  containerGitDiff: (path: string) => invoke<string>("container_git_diff", { path }),
   listSessions: () => invoke<SessionInfo[]>("list_sessions"),
   createSession: (name: string, cli: Cli, mode: Mode, alias: string) =>
     invoke<void>("create_session", { name, cli, mode, alias }),

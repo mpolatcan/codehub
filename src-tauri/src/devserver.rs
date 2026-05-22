@@ -138,6 +138,7 @@ pub async fn serve() {
         .route("/container-logs", get(container_logs))
         .route("/container-mounts", get(container_mounts))
         .route("/container-git-status", get(container_git_status))
+        .route("/container-git-diff", get(container_git_diff))
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/:name", delete(kill_session))
         .route("/sessions/:name/rename", post(rename_session))
@@ -195,6 +196,18 @@ async fn container_mounts(State(st): State<AppState>) -> Result<impl IntoRespons
 
 async fn container_git_status(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
     st.docker.git_status().await.map(Json).map_err(err)
+}
+
+#[derive(Deserialize)]
+struct DiffQuery {
+    path: String,
+}
+
+async fn container_git_diff(
+    State(st): State<AppState>,
+    Query(q): Query<DiffQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker.git_diff(&q.path).await.map(Json).map_err(err)
 }
 
 async fn list_sessions(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
