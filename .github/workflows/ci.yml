@@ -76,10 +76,10 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: cargo check
-        run: cargo check --all-targets --all-features
+        run: cargo check --workspace --all-targets --all-features
 
   runtime-image:
     name: Runtime image build (no push)

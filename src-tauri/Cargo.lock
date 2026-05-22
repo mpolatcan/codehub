@@ -436,7 +436,7 @@ dependencies = [
 
 [[package]]
 name = "codehub"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "bollard",
@@ -454,6 +454,14 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "codehub-devserver"
+version = "0.1.2"
+dependencies = [
+ "codehub",
+ "tokio",
 ]
 
 [[package]]
