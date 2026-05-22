@@ -147,6 +147,10 @@
 /* ── Tailwind v4 theme bridge (font utilities) ────────────────────────────── */
 /* Adds font-sans / font-mono utilities backed by design tokens.
    Placed in a separate @theme block so it merges with theme.css without conflict. */
+/* NOTE: @theme blocks here are inert for Tailwind utility generation — this file
+   is not the stylesheet that `@import "tailwindcss"` (that's theme.css). These
+   just define the CSS custom properties. The shadcn color-utility bridge that
+   actually needs Tailwind lives in theme.css for that reason. */
 @theme {
   --font-sans: var(--sans);
   --font-mono: var(--mono);

@@ -12,10 +12,12 @@ const buttonVariants = cva(
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+        // outline + ghost reference design vars directly: `accent` is not bridged
+        // (legacy amber) and the class-based `dark:` variant isn't configured here.
         outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border border-[var(--bd)] bg-transparent text-[var(--fg-1)] shadow-xs hover:bg-[var(--bg-hover)] hover:text-[var(--fg-0)]",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+        ghost: "text-[var(--fg-1)] hover:bg-[var(--bg-hover)] hover:text-[var(--fg-0)]",
         link: "text-primary underline-offset-4 hover:underline",
         success:
           "bg-[var(--live)] text-[var(--bg-0)] hover:bg-[oklch(0.85_0.17_145)] focus-visible:ring-[var(--live)]/30",

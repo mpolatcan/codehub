@@ -29,6 +29,39 @@
   --font-pixel: "Silkscreen", "JetBrains Mono", monospace;
 }
 
+/* ── shadcn color-utility bridge ───────────────────────────────────────────── */
+/* Tailwind v4 only emits bg-/text-/border- color utilities for tokens it knows
+   as --color-*. The CodeHub design tokens (tokens.css) expose plain
+   --primary/--background/… vars; this block — which MUST live here, the file that
+   `@import "tailwindcss"` — registers them so bg-primary, text-foreground,
+   bg-card, border-border etc. actually resolve (otherwise the ui/* shadcn
+   components render colorless). `inline` keeps each value a var() reference, so
+   .light theme switching still works at runtime.
+
+   --color-accent is INTENTIONALLY omitted: this legacy skin owns `accent` as its
+   amber brand color and App.tsx still uses text-accent. Bridging it would regress
+   the live UI. shadcn variants that hover/focus on bg-accent are overridden with
+   design vars where they matter (see ui/button.tsx); the rest aren't used by the
+   ported screens and get a holistic pass in P6. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
 :root {
   /* Type scale — two families (JetBrains Mono + Silkscreen), one rhythm.
      `pixel`/`micro` are the Silkscreen HUD sizes; the rest are mono. Every
