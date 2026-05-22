@@ -11,7 +11,7 @@ use docker::{
     AgentVersion, Cli, CommitInfo, ContainerStats, DockerClient, GitStatus, LaunchMode, MountInfo,
     ProcessInfo,
 };
-use lifecycle::{ContainerStatus, DockerInfo, KeyStatus, Lifecycle};
+use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle};
 use pty::{PaneEmitter, PtyRegistry, SessionInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -102,6 +102,13 @@ async fn docker_info(state: tauri::State<'_, AppState>) -> Result<DockerInfo, St
 #[tauri::command]
 fn agent_key_status() -> Result<HashMap<String, KeyStatus>, String> {
     Ok(lifecycle::agent_key_status())
+}
+
+/// Build + host platform identity for the Settings "About" pane (version, OS,
+/// arch) — all compile-time / `std::env::consts` values, no I/O, no update check.
+#[tauri::command]
+fn app_info() -> Result<AppInfo, String> {
+    Ok(lifecycle::app_info())
 }
 
 /// `<cli> --version` for each agent inside the runtime container.
@@ -394,6 +401,7 @@ pub fn run() {
             container_stop,
             container_restart,
             docker_info,
+            app_info,
             agent_key_status,
             agent_versions,
             container_stats,

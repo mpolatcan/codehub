@@ -113,6 +113,33 @@ pub struct DockerInfo {
     pub api_version: Option<String>,
 }
 
+/// Build + host platform identity for the Settings "About" pane. Every field is
+/// a compile-time crate constant or a `std::env::consts` value — nothing is
+/// fabricated and there is no network/update check.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub name: String,
+    pub version: String,
+    /// Target OS, e.g. "macos", "linux", "windows".
+    pub os: String,
+    /// Target architecture, e.g. "aarch64", "x86_64".
+    pub arch: String,
+    /// OS family, e.g. "unix", "windows".
+    pub family: String,
+}
+
+/// App + platform identity from build-time constants (no I/O, never fails).
+pub fn app_info() -> AppInfo {
+    AppInfo {
+        name: env!("CARGO_PKG_NAME").to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+        family: std::env::consts::FAMILY.to_string(),
+    }
+}
+
 pub struct Lifecycle {
     pub docker: Docker,
     pub container_name: String,

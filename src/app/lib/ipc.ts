@@ -41,6 +41,16 @@ export interface AgentVersion {
   version: string | null;
 }
 
+// Build + host platform identity (Settings → About). All compile-time / runtime
+// constants from the backend — no update check, nothing fabricated.
+export interface AppInfo {
+  name: string;
+  version: string;
+  os: string;
+  arch: string;
+  family: string;
+}
+
 // One-shot resource snapshot of the runtime container (Containers view gauges).
 // Bytes are raw; the UI formats. Errors when the container is down — callers
 // leave the gauges blank rather than show zeros.
@@ -102,6 +112,8 @@ export interface GitStatus {
 export const ipc = {
   containerStatus: () => invoke<ContainerStatus>("container_status"),
   dockerInfo: () => invoke<DockerInfo>("docker_info"),
+  // Build + host platform identity for Settings → About.
+  appInfo: () => invoke<AppInfo>("app_info"),
   agentKeyStatus: () => invoke<Record<Cli, KeyStatus>>("agent_key_status"),
   agentVersions: () => invoke<Record<Cli, AgentVersion>>("agent_versions"),
   containerStats: () => invoke<ContainerStats>("container_stats"),
