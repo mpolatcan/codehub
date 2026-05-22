@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Ico } from "../../components/primitives/icons";
 import { type GitStatus, ipc } from "../../lib/ipc";
+import { useOverlay } from "../../lib/overlay";
 import { useStore } from "../../lib/store";
 import { DiffViewer } from "./DiffViewer";
 
@@ -21,8 +22,10 @@ export function ActivityRail() {
   // apart; a failed read (container stopped mid-poll) clears to null → the
   // section falls back to its placeholder rather than freezing a stale list.
   const [git, setGit] = useState<GitStatus | null>(null);
-  // Path whose diff is open in the viewer, or null when closed.
-  const [diffPath, setDiffPath] = useState<string | null>(null);
+  // Which diff is open lives in the overlay store so the Hub toolbar's Diff
+  // button can open the same viewer (a path, "" for all-changes, or null).
+  const diffPath = useOverlay((s) => s.diff);
+  const setDiffPath = useOverlay((s) => s.setDiff);
   useEffect(() => {
     if (!running) {
       setGit(null);
