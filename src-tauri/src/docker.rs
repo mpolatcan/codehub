@@ -25,6 +25,13 @@ pub struct SessionInfo {
     pub attached: bool,
 }
 
+/// Installed version of a CLI inside the runtime container, as reported by
+/// `<bin> --version`. `None` when the container is down or the probe fails.
+#[derive(Debug, Serialize, Clone)]
+pub struct AgentVersion {
+    pub version: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Cli {
@@ -181,6 +188,27 @@ impl DockerClient {
         } else {
             Ok(String::new())
         }
+    }
+
+    /// Probe each CLI's `--version` inside the container. Best-effort: a stopped
+    /// container or a failing/absent binary yields `version: None` for that CLI
+    /// rather than an error, so the caller always gets a full map.
+    pub async fn agent_versions(&self) -> HashMap<String, AgentVersion> {
+        let running = self.is_running().await.unwrap_or(false);
+        let mut out = HashMap::new();
+        for cli in [Cli::Claude, Cli::Codex, Cli::Antigravity] {
+            let version = if running {
+                self.exec_capture(vec![cli.binary(), "--version"])
+                    .await
+                    .ok()
+                    .map(|s| s.lines().next().unwrap_or_default().trim().to_string())
+                    .filter(|s| !s.is_empty())
+            } else {
+                None
+            };
+            out.insert(cli.binary().to_string(), AgentVersion { version });
+        }
+        out
     }
 
     pub async fn list_tmux_sessions(&self) -> Result<Vec<SessionInfo>, DockerError> {
