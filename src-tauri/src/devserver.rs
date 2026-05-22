@@ -140,6 +140,8 @@ pub async fn serve() {
         .route("/container-mounts", get(container_mounts))
         .route("/container-image", get(container_image))
         .route("/container-health", get(container_health))
+        .route("/container-list-dir", get(container_list_dir))
+        .route("/container-read-file", get(container_read_file))
         .route("/container-git-status", get(container_git_status))
         .route("/container-git-diff", get(container_git_diff))
         .route("/container-git-diff-all", get(container_git_diff_all))
@@ -210,6 +212,34 @@ async fn container_image(State(st): State<AppState>) -> Result<impl IntoResponse
 
 async fn container_health(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
     st.docker.health().await.map(Json).map_err(err)
+}
+
+#[derive(Deserialize)]
+struct PathQuery {
+    /// Empty / absent → the workspace root.
+    path: Option<String>,
+}
+
+async fn container_list_dir(
+    State(st): State<AppState>,
+    Query(q): Query<PathQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker
+        .list_dir(&q.path.unwrap_or_default())
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+async fn container_read_file(
+    State(st): State<AppState>,
+    Query(q): Query<PathQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker
+        .read_file(&q.path.unwrap_or_default())
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 async fn container_git_status(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {

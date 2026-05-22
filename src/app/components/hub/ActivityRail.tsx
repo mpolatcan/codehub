@@ -5,6 +5,7 @@ import { type GitStatus, ipc } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
 import { useStore } from "../../lib/store";
 import { DiffViewer } from "./DiffViewer";
+import { FilesBrowser } from "./FilesBrowser";
 
 // Right activity rail, ported from design/screens/main-hub-a.jsx.
 //
@@ -26,6 +27,9 @@ export function ActivityRail() {
   // button can open the same viewer (a path, "" for all-changes, or null).
   const diffPath = useOverlay((s) => s.diff);
   const setDiffPath = useOverlay((s) => s.setDiff);
+  // Files browser open-state, also toolbar-driven (HubTabs Files button).
+  const filesOpen = useOverlay((s) => s.files);
+  const setFilesOpen = useOverlay((s) => s.setFiles);
   useEffect(() => {
     if (!running) {
       setGit(null);
@@ -150,6 +154,7 @@ export function ActivityRail() {
       </div>
 
       <DiffViewer path={diffPath} onClose={() => setDiffPath(null)} />
+      <FilesBrowser open={filesOpen} onClose={() => setFilesOpen(false)} />
     </aside>
   );
 }

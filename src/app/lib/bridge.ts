@@ -57,6 +57,14 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       return jget("/container-image") as Promise<T>;
     case "container_health":
       return jget("/container-health") as Promise<T>;
+    case "container_list_dir":
+      return jget(
+        `/container-list-dir?path=${encodeURIComponent(String(args.path ?? ""))}`,
+      ) as Promise<T>;
+    case "container_read_file":
+      return jget(
+        `/container-read-file?path=${encodeURIComponent(String(args.path ?? ""))}`,
+      ) as Promise<T>;
     case "container_git_status":
       return jget("/container-git-status") as Promise<T>;
     case "container_git_diff":

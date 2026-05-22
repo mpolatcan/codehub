@@ -89,6 +89,14 @@ export interface RuntimeHealth {
   oomKilled: boolean | null;
 }
 
+// One entry in a /workspace directory listing (Files browser). `kind` is
+// "dir" | "file" | "link" | "other"; `size` is bytes (0 for directories).
+export interface FileEntry {
+  name: string;
+  kind: string;
+  size: number;
+}
+
 // One bind/volume mount of the runtime container, from `docker inspect`.
 // `source` is the host path, `destination` the in-container path.
 export interface MountInfo {
@@ -151,6 +159,10 @@ export const ipc = {
   containerImage: () => invoke<ImageInfo>("container_image"),
   // Liveness of the runtime container (started-at/restart count/status/OOM).
   containerHealth: () => invoke<RuntimeHealth>("container_health"),
+  // Non-recursive listing of a /workspace directory (empty path → root).
+  containerListDir: (path: string) => invoke<FileEntry[]>("container_list_dir", { path }),
+  // First 256 KiB of a /workspace file, UTF-8-lossy (Files browser preview).
+  containerReadFile: (path: string) => invoke<string>("container_read_file", { path }),
   // Working-tree status of /workspace (branch + changed files).
   containerGitStatus: () => invoke<GitStatus>("container_git_status"),
   // Unified diff for one /workspace path (raw `git diff` text).

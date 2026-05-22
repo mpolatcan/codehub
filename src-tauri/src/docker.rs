@@ -16,6 +16,8 @@ pub enum DockerError {
     ContainerDown(String),
     #[error("unknown CLI: {0}")]
     UnknownCli(String),
+    #[error("path outside /workspace: {0}")]
+    InvalidPath(String),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -155,6 +157,17 @@ pub struct CommitInfo {
     pub author: String,
     pub relative: String,
     pub subject: String,
+}
+
+/// One entry in a `/workspace` directory listing (Files browser). `kind` is
+/// "dir" | "file" | "link" | "other"; `size` is bytes (0 for directories). The
+/// listing is non-recursive — the UI navigates one level at a time.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntry {
+    pub name: String,
+    pub kind: String,
+    pub size: i64,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -858,6 +871,109 @@ impl DockerClient {
             .await?;
         Ok(parse_git_log(&raw))
     }
+
+    /// Non-recursive listing of a `/workspace` directory (Files browser). `path`
+    /// is confined to `/workspace` ([`workspace_path`] rejects traversal); empty
+    /// → the workspace root. Uses `find -maxdepth 1` with a `%y\t%s\t%f` format
+    /// (type / size / name) so the output is unambiguous regardless of locale,
+    /// unlike parsing `ls`. Capped at [`DIR_ENTRIES_CAP`]. Errors when the
+    /// container is down or the path escapes the workspace.
+    pub async fn list_dir(&self, path: &str) -> Result<Vec<FileEntry>, DockerError> {
+        if !self.is_running().await? {
+            return Err(DockerError::ContainerDown(self.container.clone()));
+        }
+        let dir = workspace_path(path)?;
+        let raw = self
+            .exec_capture(vec![
+                "find",
+                &dir,
+                "-maxdepth",
+                "1",
+                "-mindepth",
+                "1",
+                "-printf",
+                "%y\t%s\t%f\n",
+            ])
+            .await?;
+        Ok(parse_find(&raw))
+    }
+
+    /// First [`FILE_READ_CAP`] bytes of a `/workspace` file (Files browser
+    /// preview). `path` is confined to `/workspace`. `head -c` caps the read at
+    /// the source so a huge file never streams into memory; the bytes are
+    /// returned UTF-8-lossy (binary files show replacement chars — the UI notes
+    /// the cap). Errors when the container is down or the path escapes.
+    pub async fn read_file(&self, path: &str) -> Result<String, DockerError> {
+        if !self.is_running().await? {
+            return Err(DockerError::ContainerDown(self.container.clone()));
+        }
+        let file = workspace_path(path)?;
+        // `workspace_path` only validates the path *text*; `head` would still
+        // follow a symlink (or a symlinked parent dir) that points out of the
+        // mount. Resolve the real path in-container and re-confine it so the
+        // `/workspace` guarantee holds for the bytes actually read, not just the
+        // requested name. `-m` canonicalizes without requiring the file to exist
+        // (a missing file then fails at the `head` below, as before).
+        let canonical = self
+            .exec_capture(vec!["readlink", "-m", "--", &file])
+            .await?;
+        let canonical = canonical.trim();
+        if canonical.is_empty() {
+            return Err(DockerError::InvalidPath(file));
+        }
+        let real = workspace_path(canonical)?;
+        let cap = FILE_READ_CAP.to_string();
+        // `--` ends option parsing so a path starting with `-` is still a path.
+        self.exec_capture(vec!["head", "-c", &cap, "--", &real])
+            .await
+    }
+}
+
+/// Normalize and confine a browser path to `/workspace`. Empty → the workspace
+/// root. Rejects any `..` component (and anything not under `/workspace`) so the
+/// Files browser can never read outside the mount.
+fn workspace_path(path: &str) -> Result<String, DockerError> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Ok("/workspace".to_string());
+    }
+    let invalid = trimmed != "/workspace" && !trimmed.starts_with("/workspace/")
+        || trimmed.split('/').any(|seg| seg == "..");
+    if invalid {
+        return Err(DockerError::InvalidPath(trimmed.to_string()));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Parse `find -printf '%y\t%s\t%f\n'` output into [`FileEntry`] rows. Each line
+/// is `type<TAB>size<TAB>name`; `type` is find's single char (d/f/l/…). Lines
+/// that don't split into three fields are skipped. Capped at [`DIR_ENTRIES_CAP`].
+/// A name containing a literal newline (pathological) splits across lines and is
+/// dropped rather than mis-parsed — the listing under-reports, never corrupts.
+fn parse_find(raw: &str) -> Vec<FileEntry> {
+    raw.lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(3, '\t');
+            let ty = parts.next()?;
+            let size = parts.next()?;
+            let name = parts.next()?;
+            if name.is_empty() {
+                return None;
+            }
+            let kind = match ty {
+                "d" => "dir",
+                "f" => "file",
+                "l" => "link",
+                _ => "other",
+            };
+            Some(FileEntry {
+                name: name.to_string(),
+                kind: kind.to_string(),
+                size: size.parse().unwrap_or(0),
+            })
+        })
+        .take(DIR_ENTRIES_CAP)
+        .collect()
 }
 
 /// Cap on changed paths returned to the UI; the rail only renders a short list.
@@ -865,6 +981,12 @@ const GIT_FILES_CAP: usize = 200;
 
 /// Upper bound on commits a single `git_log` call will return.
 const GIT_LOG_CAP: u32 = 50;
+
+/// Cap on entries returned for one directory listing (Files browser).
+const DIR_ENTRIES_CAP: usize = 500;
+
+/// Cap on bytes returned for a file preview (Files browser): 256 KiB.
+const FILE_READ_CAP: usize = 262_144;
 
 /// Parse the US-delimited `git log` output (one commit per line,
 /// `hash\x1fauthor\x1frelative\x1fsubject`). Lines without all four fields —
@@ -1065,7 +1187,9 @@ pub struct AttachHandles {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_version_like, parse_git_log, parse_git_status, parse_top};
+    use super::{
+        is_version_like, parse_find, parse_git_log, parse_git_status, parse_top, workspace_path,
+    };
 
     #[test]
     fn version_like_accepts_real_versions_rejects_exec_errors() {
@@ -1203,5 +1327,30 @@ mod tests {
         assert_eq!(procs[0].pid, "7");
         assert_eq!(procs[0].command, "app");
         assert!(procs[0].time.is_none());
+    }
+
+    #[test]
+    fn find_parses_type_size_name() {
+        // `%y\t%s\t%f` rows → typed entries; a malformed line is skipped, and a
+        // name with spaces survives (splitn(3) keeps the remainder intact).
+        let raw = "d\t4096\tsrc\nf\t128\tREADME.md\nf\t0\tmy notes.txt\nbogus line\n";
+        let entries = parse_find(raw);
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].kind, "dir");
+        assert_eq!(entries[0].name, "src");
+        assert_eq!(entries[1].kind, "file");
+        assert_eq!(entries[1].size, 128);
+        assert_eq!(entries[2].name, "my notes.txt");
+    }
+
+    #[test]
+    fn workspace_path_confines_to_workspace() {
+        assert_eq!(workspace_path("").unwrap(), "/workspace");
+        assert_eq!(workspace_path("/workspace").unwrap(), "/workspace");
+        assert_eq!(workspace_path("/workspace/src").unwrap(), "/workspace/src");
+        // Traversal and escapes are rejected.
+        assert!(workspace_path("/workspace/../etc/passwd").is_err());
+        assert!(workspace_path("/etc/passwd").is_err());
+        assert!(workspace_path("/workspaceevil").is_err());
     }
 }
