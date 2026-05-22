@@ -229,8 +229,9 @@ per tab) need the Tier-3 multi-container work and are deferred.
     the terminal today). Stays an honest empty state until that surface exists.
 - **Dashboard (P4).** ~~Cross-session overview~~ **DONE (real subset)** — the
   Dashboard view is now a real read-only overview built from data the backend
-  already reports: live session count + per-session agent/mode/tab (store),
-  runtime CPU/memory (`container_stats`), `/workspace` git status
+  already reports: live session count + per-session agent/mode/tab (store) +
+  real per-session uptime (`list_sessions` now carries tmux `session_created`,
+  shown as "up 6h"), runtime CPU/memory (`container_stats`), `/workspace` git status
   (`container_git_status`: branch + ahead/behind + changed-file count), and
   ~~recent commits~~ **DONE** — `DockerClient::git_log(limit)` runs
   `git log --pretty=format:%H%x1f%an%x1f%ar%x1f%s` inside `/workspace` →
