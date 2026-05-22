@@ -16,6 +16,8 @@ export interface SessionInfo {
   name: string;
   windows: number;
   attached: boolean;
+  // Unix epoch seconds the tmux session was created; 0 when unreported.
+  created: number;
 }
 
 export type Cli = "claude" | "codex" | "antigravity";

@@ -25,6 +25,10 @@ pub struct SessionInfo {
     pub name: String,
     pub windows: u32,
     pub attached: bool,
+    /// Unix epoch seconds when the tmux session was created (`session_created`).
+    /// 0 when tmux didn't report it — the UI then omits the uptime rather than
+    /// showing a bogus age.
+    pub created: i64,
 }
 
 /// Installed version of a CLI inside the runtime container, as reported by
@@ -340,7 +344,7 @@ impl DockerClient {
                 "tmux",
                 "list-sessions",
                 "-F",
-                "#{session_name}|#{session_windows}|#{session_attached}",
+                "#{session_name}|#{session_windows}|#{session_attached}|#{session_created}",
             ])
             .await
             .unwrap_or_default();
@@ -353,6 +357,8 @@ impl DockerClient {
                     name: parts[0].to_string(),
                     windows: parts[1].parse().unwrap_or(0),
                     attached: parts[2] != "0",
+                    // `session_created` is epoch seconds; absent on older tmux → 0.
+                    created: parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0),
                 });
             }
         }

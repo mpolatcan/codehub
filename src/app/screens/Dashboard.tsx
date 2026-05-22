@@ -12,7 +12,13 @@ import { AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { IconBtn } from "@/app/components/primitives/IconBtn";
 import { Ico } from "@/app/components/primitives/icons";
 import { MODE_BY_ID, SPEC_BY_CLI } from "@/app/lib/catalog";
-import { type CommitInfo, type ContainerStats, type GitStatus, ipc } from "@/app/lib/ipc";
+import {
+  type CommitInfo,
+  type ContainerStats,
+  type GitStatus,
+  type SessionInfo,
+  ipc,
+} from "@/app/lib/ipc";
 import { useLauncher } from "@/app/lib/launcher";
 import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
@@ -36,12 +42,16 @@ export function Dashboard() {
   const [stats, setStats] = useState<ContainerStats | null>(null);
   const [git, setGit] = useState<GitStatus | null>(null);
   const [commits, setCommits] = useState<CommitInfo[] | null>(null);
+  // Live tmux sessions (~5s) — joined by name to sessionMeta for the real
+  // per-session uptime (`session_created`). null while down / pre-read.
+  const [tmux, setTmux] = useState<SessionInfo[] | null>(null);
 
   useEffect(() => {
     if (!running) {
       setStats(null);
       setGit(null);
       setCommits(null);
+      setTmux(null);
       return;
     }
     let alive = true;
@@ -57,13 +67,18 @@ export function Dashboard() {
     const h1 = poll(() => ipc.containerStats(), setStats, 2000);
     const h2 = poll(() => ipc.containerGitStatus(), setGit, 5000);
     const h3 = poll(() => ipc.containerGitLog(12), setCommits, 10000);
+    const h4 = poll(() => ipc.listSessions(), setTmux, 5000);
     return () => {
       alive = false;
       clearInterval(h1);
       clearInterval(h2);
       clearInterval(h3);
+      clearInterval(h4);
     };
   }, [running]);
+
+  // session name → created epoch (seconds), for the per-session uptime.
+  const createdBy = new Map((tmux ?? []).map((s) => [s.name, s.created]));
 
   const open = (session: string) => {
     focusSession(session);
@@ -163,6 +178,8 @@ export function Dashboard() {
                 {sessions.map(([session, meta]) => {
                   const ws = workspaces.find((w) => w.id === meta.workspaceId);
                   const badge = MODE_BY_ID[meta.mode].badge;
+                  const created = createdBy.get(session) ?? 0;
+                  const age = created > 0 ? fmtAge(created) : null;
                   return (
                     <div
                       key={session}
@@ -184,6 +201,7 @@ export function Dashboard() {
                       <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
                         {SPEC_BY_CLI[meta.cli].label}
                         {ws && ` · tab ${ws.plate}`}
+                        {age && ` · up ${age}`}
                       </span>
                       <IconBtn title="Open in Hub" onClick={() => open(session)}>
                         {Ico.arrowR}
@@ -230,6 +248,16 @@ export function Dashboard() {
 
 function runSub(n: number): string {
   return n === 0 ? "none yet" : "on the shared runtime";
+}
+
+// Compact age from a Unix epoch (seconds): "<1m", "12m", "3h", "2d". Coarse on
+// purpose — the sessions row only needs a glanceable uptime.
+function fmtAge(epochSec: number): string {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - epochSec));
+  if (s < 60) return "<1m";
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
 }
 
 // Human-readable bytes (binary units), matching the Containers view formatter.
