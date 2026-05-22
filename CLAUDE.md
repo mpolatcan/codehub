@@ -31,18 +31,20 @@ codehub/
                             #   (split layout), catalog.ts (CLIS/MODES), launcher.ts,
                             #   ipc.ts (typed Tauri boundary), bridge.ts (browser-mode
                             #   transport: Tauri IPC vs dev-server REST/WS)
-  src-tauri/                # Rust backend
-    Cargo.toml
+  src-tauri/                # Rust backend (workspace ROOT = the app crate)
+    Cargo.toml              # [workspace] root + app package `codehub`
     tauri.conf.json
     capabilities/default.json
+    devserver/              # Dev-bridge bin crate (workspace member, NOT bundled)
+      Cargo.toml            #   pkg `codehub-devserver`; deps on `codehub` w/ feature
+      src/main.rs           #   thin entry → codehub_lib::devserver::serve()
     src/
       main.rs               # Tiny entry, calls codehub_lib::run()
       lib.rs                # Tauri commands + setup hook
       lifecycle.rs          # Image pull, container create/start/stop
       docker.rs             # tmux session ops + exec attach
       pty.rs                # PtyRegistry — pane stream pumps (PaneEmitter trait)
-      devserver.rs          # Dev-only HTTP/WS bridge (feature `devserver`)
-      bin/devserver.rs      # Bridge entrypoint binary (codehub-devserver)
+      devserver.rs          # Dev-only HTTP/WS bridge logic (feature `devserver`)
   runtime/
     Dockerfile              # Runtime image (CLIs + tmux)
     README.md               # Build + publish instructions
@@ -103,7 +105,7 @@ Environment knobs:
 
 ## Gotchas / non-obvious things
 
-- **`src-tauri/Cargo.toml` pins `default-run = "codehub"`.** The dev bridge added a second binary (`codehub-devserver`); without `default-run`, the `cargo run` that `tauri dev` / `make dev` invoke can't pick a target and fails with "could not determine which binary to run". Keep the pin if you add more binaries.
+- **The app crate (`src-tauri/Cargo.toml`) must have exactly ONE binary, and the dev bridge lives in a separate workspace member (`src-tauri/devserver/`).** Tauri's bundler enumerates *every* bin target of the package being built — both `[[bin]]` entries AND every file under `src/bin/` — and tries to copy each into the bundle, **ignoring `required-features`**. A feature-gated dev bin inside the app package therefore breaks `tauri build` ("Failed to copy binary … `release/devserver` does not exist"), even though it's never compiled. So the bridge is its own crate, run with `cargo run -p codehub-devserver` (no `--features` flag — the member enables the `devserver` feature on its `codehub` path-dep). Don't add a second `[[bin]]` or any `src/bin/*.rs` to the app crate; add a workspace member instead. (This bit us on the v0.1.1 release — v0.1.0 shipped fine because it had a single binary.)
 - **`tauri::generate_context!` macro reads `tauri.conf.json` at compile time** and validates icon paths + `frontendDist`. If `dist/` is missing, `cargo check` fails with a proc-macro panic. Either run `npm run build` once, or keep the gitignored placeholder. Avoid this trap when running CI.
 - **Bollard `create_exec` requires explicit type annotation** in our codebase: `create_exec::<String>(...)`. Without it the compiler cannot infer `T: Into<String>`.
 - **`SHELL ["bash", "-euo", "pipefail", "-c"]` is set in the runtime Dockerfile.** This matters because we use `curl ... | bash` patterns to install CLIs; without pipefail, a failing curl silently succeeds and the CLI is missing from the image. Do not remove it.

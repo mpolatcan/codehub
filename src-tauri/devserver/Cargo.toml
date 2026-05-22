@@ -1,0 +1,14 @@
+# Dev-only HTTP/WS bridge, split into its own workspace-member crate so the
+# Tauri app package (`..`) has exactly ONE binary. Tauri's bundler enumerates
+# every bin target (and every file under `src/bin/`) of the app package and
+# tries to bundle it, ignoring `required-features` — so a feature-gated dev bin
+# living inside the app package breaks `tauri build`. Keeping it a separate
+# package keeps it out of the bundle entirely. Built via `make dev-web`.
+[package]
+name = "codehub-devserver"
+version = "0.1.1"
+edition = "2021"
+
+[dependencies]
+codehub = { path = "..", features = ["devserver"] }
+tokio = { version = "1", features = ["full"] }

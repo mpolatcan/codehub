@@ -42,13 +42,13 @@ dev: ## Run Tauri dev (Vite + Rust, hot-reload frontend)
 
 .PHONY: dev-server
 dev-server: ## Run only the browser-mode backend bridge (HTTP/WS on :4555)
-	cd src-tauri && cargo run --bin codehub-devserver --features devserver
+	cd src-tauri && cargo run -p codehub-devserver
 
 .PHONY: dev-web
 dev-web: ## Browser-mode dev: Vite (:1420) + backend bridge (:4555), no Tauri window
 	@echo "Vite → http://localhost:1420  ·  bridge → /__bridge → :4555  (Ctrl-C to stop both)"
 	@trap 'kill 0' EXIT; \
-	  ( cd src-tauri && cargo run --bin codehub-devserver --features devserver ) & \
+	  ( cd src-tauri && cargo run -p codehub-devserver ) & \
 	  npm run dev & \
 	  wait
 
@@ -75,13 +75,13 @@ check-frontend: ## Frontend: Biome check + tsc --noEmit
 .PHONY: check-backend
 check-backend: ## Backend: rustfmt --check + clippy -D warnings
 	cd src-tauri && cargo fmt --all -- --check
-	cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
+	cd src-tauri && cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 .PHONY: fix
 fix: ## Apply all safe auto-fixes (Biome + rustfmt + clippy --fix), then re-check
 	npm run check:fix
 	cd src-tauri && cargo fmt --all
-	cd src-tauri && cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged || true
+	cd src-tauri && cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --allow-staged || true
 	$(MAKE) check
 
 .PHONY: typecheck

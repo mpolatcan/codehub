@@ -1,21 +1,20 @@
+# The app is the workspace ROOT package and must have exactly one binary:
+# Tauri's bundler enumerates every bin target (and every file under `src/bin/`)
+# of the package being built, ignoring `required-features`, so any extra bin in
+# this package breaks `tauri build`. The dev bridge therefore lives in its own
+# member crate (`devserver/`), which `tauri build` never compiles or bundles.
+[workspace]
+members = ["devserver"]
+resolver = "2"
+
 [package]
 name = "codehub"
 version = "0.1.1"
 edition = "2021"
-# Dev-bridge added a second binary; without this, `cargo run` (used by
-# `tauri dev`) can't choose a default. Pin the app as the default-run target.
-default-run = "codehub"
 
 [lib]
 name = "codehub_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
-
-# Dev-only HTTP/WS bridge (browser testing). Excluded from normal builds; only
-# compiled with `--features devserver`. See src/devserver.rs.
-[[bin]]
-name = "codehub-devserver"
-path = "src/bin/devserver.rs"
-required-features = ["devserver"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
