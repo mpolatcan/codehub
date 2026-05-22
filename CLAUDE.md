@@ -14,7 +14,7 @@ This file is loaded on every Claude session in this repo. Keep it short and load
 ## Repo layout
 
 ```
-aviary/
+codehub/
   index.html                # React entry (#root) + SVG bird sprite
   src/                      # Frontend
     terminal.ts             # xterm.js pane factory + theme (framework-agnostic)
