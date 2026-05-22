@@ -9,6 +9,7 @@ import { HubTabs } from "./components/hub/HubTabs";
 import { PlannedScreen } from "./components/hub/PlannedScreen";
 import { Shortcuts } from "./components/hub/Shortcuts";
 import { WorkspaceBar } from "./components/hub/WorkspaceBar";
+import { useActivityPoll } from "./hooks/useActivityPoll";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { useLauncher } from "./lib/launcher";
 import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
@@ -98,6 +99,8 @@ export function App() {
 function HubView() {
   const active = useStore(activeWorkspace);
   const openLaunch = useLauncher((s) => s.open);
+  // Real working/idle signal for PaneHead + the rail's Activity section.
+  useActivityPoll();
 
   return (
     <>

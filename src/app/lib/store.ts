@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import { SPEC_BY_CLI } from "./catalog";
-import type { AgentVersion, Cli, ContainerStatus, DockerInfo, KeyStatus, Mode } from "./ipc";
+import type {
+  AgentVersion,
+  Cli,
+  ContainerStatus,
+  DockerInfo,
+  KeyStatus,
+  Mode,
+  SessionActivity,
+} from "./ipc";
 import { ipc, onLifecycle, onLifecycleError } from "./ipc";
 import * as registry from "./panes";
 import {
@@ -42,6 +50,9 @@ interface CodeHubState {
   // or null for the normal view. Set from a pane's expand button; any sidebar
   // view switch or closing that session clears it.
   detailSession: string | null;
+  // Live per-session working/idle activity (session_activity), keyed by session
+  // name. Polled by the Hub while the runtime is up; empty when down.
+  sessionActivity: Record<string, SessionActivity>;
 
   // Tier-1 reads (BACKEND_PLAN.md), fetched once the runtime is reachable.
   // Presence/version metadata only — never secret values.
@@ -59,6 +70,7 @@ interface CodeHubState {
   setView: (v: HubView) => void;
   openDetail: (name: string) => void;
   closeDetail: () => void;
+  setSessionActivity: (list: SessionActivity[]) => void;
   newPlate: (cli: Cli, mode: Mode) => Promise<void>;
   splitSession: (target: string, dir: SplitDir, cli: Cli, mode: Mode) => Promise<void>;
   closeSession: (name: string) => Promise<void>;
@@ -109,6 +121,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     error: null,
     view: "hub",
     detailSession: null,
+    sessionActivity: {},
     dockerInfo: null,
     keyStatus: null,
     agentVersions: null,
@@ -133,6 +146,12 @@ export const useStore = create<CodeHubState>((set, get) => {
       if (get().sessionMeta[name]) set({ detailSession: name });
     },
     closeDetail: () => set({ detailSession: null }),
+
+    setSessionActivity: (list) => {
+      const next: Record<string, SessionActivity> = {};
+      for (const a of list) next[a.session] = a;
+      set({ sessionActivity: next });
+    },
 
     newPlate: async (cli, mode) => {
       if (!isRunning()) return;

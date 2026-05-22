@@ -23,6 +23,18 @@ export interface SessionInfo {
 export type Cli = "claude" | "codex" | "antigravity";
 export type Mode = "standard" | "auto" | "yolo";
 
+// Per-session activity derived from pane output flow (BACKEND_PLAN.md). "working"
+// = output within the grace window; "idle" = quiet (idle / waiting / done — the
+// output signal can't distinguish those). idleMs = ms since last output; bytes =
+// total output seen since attach. NOT tokens/cost — those need per-CLI capture.
+export type ActivityState = "working" | "idle";
+export interface SessionActivity {
+  session: string;
+  state: ActivityState;
+  idleMs: number;
+  bytes: number;
+}
+
 // Tier-1 reads (BACKEND_PLAN.md). docker_info backs the empty-state daemon pill;
 // agent_versions / agent_key_status back the agent cards + Settings.
 export interface DockerInfo {
@@ -174,6 +186,8 @@ export const ipc = {
   containerTop: () => invoke<ProcessInfo[]>("container_top"),
   // Recent commits on /workspace (`git log`); defaults to 12 server-side.
   containerGitLog: (limit?: number) => invoke<CommitInfo[]>("container_git_log", { limit }),
+  // Per-session working/idle activity from output flow (polled by the Hub).
+  sessionActivity: () => invoke<SessionActivity[]>("session_activity"),
   listSessions: () => invoke<SessionInfo[]>("list_sessions"),
   createSession: (name: string, cli: Cli, mode: Mode, alias: string) =>
     invoke<void>("create_session", { name, cli, mode, alias }),

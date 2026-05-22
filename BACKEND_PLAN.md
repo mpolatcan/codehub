@@ -303,11 +303,26 @@ per tab) need the Tier-3 multi-container work and are deferred.
   — same per-turn-capture blocker below. Because every session shares ONE runtime,
   git + logs are workspace/runtime-wide, not per-session, and the inspector is
   labelled accordingly. Verified end-to-end against the live runtime (dark+light).
-- **Per-turn capture (the big unlock).** A subsystem that tails each agent pane's
-  output, detects turn boundaries and extracts token/cost would unblock Usage,
-  the Dashboard cost roll-ups, the Hub Activity feed + PaneHead metrics, the
-  Broadcast compare panes and the session-detail transcript in one shot. Fragile
-  and CLI-specific (each CLI formats differently) — deferred as its own project.
+- **Per-turn capture (the big unlock).** ~~A subsystem that tails each agent
+  pane's output…~~ **Foundation DONE (activity signal) / token-cost still
+  deferred.** The robust, CLI-agnostic layer is built: the pty output pump tees
+  every chunk into an `ActivityTracker` (`activity.rs`), and `session_activity`
+  reports each session's `working`/`idle` state from output flow (working =
+  output within a 1500ms grace window) plus `idleMs` + total `bytes`. This is
+  shared by both hosts (it lives on `PtyRegistry`, so the dev bridge gets it
+  free). Consumed by the Hub: PaneHead's status dot + "working/idle" line is now
+  real (was a focus proxy), and the rail's **Activity** section is now a real
+  live per-session working/idle list (was honest-empty). Known honest limits,
+  documented in `activity.rs`: the output signal can't separate idle from
+  waiting-for-approval from done (all "quiet"), and a shared repaint (e.g. a tmux
+  status-bar clock tick) can briefly read every session as "working".
+  - **Still deferred — turn boundaries + token/cost/turn-count.** These don't come
+    from output flow; they need either a per-CLI parser of each TUI's status line
+    (fragile, version-specific) or reading the CLIs' own session files (Claude's
+    `~/.claude/projects/**/*.jsonl` etc. — in-container, also unblocks Resume's
+    persistent history). That parser/reader layer is the remaining work for Usage,
+    Dashboard cost roll-ups, PaneHead token/cost metrics, broadcast compare and the
+    session-detail transcript. Won't be scraped from the terminal blindly.
 
 ---
 
