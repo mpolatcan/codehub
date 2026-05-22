@@ -29,8 +29,10 @@ export function HubTabs() {
   const closeLaunch = useLauncher((s) => s.close);
   const isOpen = openKey === NEW_KEY;
   // Diff button opens the combined "all changes" diff (reuses the rail's
-  // DiffViewer + container_git_diff_all); only meaningful while the runtime is up.
+  // DiffViewer + container_git_diff_all); Files opens the /workspace browser.
+  // Both reuse the rail-mounted viewers and only matter while the runtime is up.
   const setDiff = useOverlay((s) => s.setDiff);
+  const setFiles = useOverlay((s) => s.setFiles);
   const running = useStore((s) => s.status?.state === "running");
 
   const stripRef = useRef<HTMLDivElement>(null);
@@ -174,7 +176,13 @@ export function HubTabs() {
       {/* trailing actions — Diff is live (combined /workspace diff); files +
           notifications land in later phases. */}
       <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "0 8px" }}>
-        <IconBtn title="Files (coming soon)">{Ico.files}</IconBtn>
+        <IconBtn
+          title={running ? "Browse /workspace files" : "Files (runtime not running)"}
+          disabled={!running}
+          onClick={() => setFiles(true)}
+        >
+          {Ico.files}
+        </IconBtn>
         <IconBtn
           title={running ? "Review all workspace changes" : "Diff (runtime not running)"}
           disabled={!running}

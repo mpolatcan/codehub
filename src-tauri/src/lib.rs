@@ -8,8 +8,8 @@ pub mod lifecycle;
 pub mod pty;
 
 use docker::{
-    AgentVersion, Cli, CommitInfo, ContainerStats, DockerClient, GitStatus, ImageInfo, LaunchMode,
-    MountInfo, ProcessInfo, RuntimeHealth,
+    AgentVersion, Cli, CommitInfo, ContainerStats, DockerClient, FileEntry, GitStatus, ImageInfo,
+    LaunchMode, MountInfo, ProcessInfo, RuntimeHealth,
 };
 use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle};
 use pty::{PaneEmitter, PtyRegistry, SessionInfo};
@@ -160,6 +160,35 @@ async fn container_image(state: tauri::State<'_, AppState>) -> Result<ImageInfo,
 #[tauri::command]
 async fn container_health(state: tauri::State<'_, AppState>) -> Result<RuntimeHealth, String> {
     state.docker.health().await.map_err(|e| e.to_string())
+}
+
+/// Non-recursive listing of a `/workspace` directory (Files browser). `path` is
+/// confined to `/workspace`; empty → the workspace root. Errs when down or the
+/// path escapes the workspace.
+#[tauri::command]
+async fn container_list_dir(
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<Vec<FileEntry>, String> {
+    state
+        .docker
+        .list_dir(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// First 256 KiB of a `/workspace` file (Files browser preview). `path` is
+/// confined to `/workspace`. Errs when down or the path escapes.
+#[tauri::command]
+async fn container_read_file(
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    state
+        .docker
+        .read_file(&path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Working-tree status of the `/workspace` mount (Hub activity rail "Changes").
@@ -424,6 +453,8 @@ pub fn run() {
             container_mounts,
             container_image,
             container_health,
+            container_list_dir,
+            container_read_file,
             container_git_status,
             container_git_diff,
             container_git_diff_all,

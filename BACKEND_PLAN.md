@@ -233,6 +233,18 @@ per tab) need the Tier-3 multi-container work and are deferred.
   - "Activity" turn-event feed — still **pending**: needs an app-level event bus
     / permission-prompt stream the agents don't emit yet (their prompts render in
     the terminal today). Stays an honest empty state until that surface exists.
+- **Workspace files browser (P4 Hub A toolbar).** ~~Browse `/workspace`~~ **DONE**
+  — the design's `workspace.jsx` 3-pane (file tree + editor + cost telemetry) is
+  mostly fabrication-blocked (per-turn cost/tokens), but its genuinely-real core
+  is a read-only file browser. `DockerClient::list_dir(path)` runs
+  `find -maxdepth 1 -mindepth 1 -printf '%y\t%s\t%f\n'` inside the container →
+  `Vec<FileEntry{name,kind,size}>` (parser unit-tested, capped 500 entries), and
+  `read_file(path)` is `head -c 262144 -- <path>` (256 KiB cap, UTF-8-lossy).
+  Both confine to `/workspace` server-side via `workspace_path()` (rejects `..`
+  and any path outside the tree; `InvalidPath` error, unit-tested). The Hub
+  toolbar Files button opens a modal (overlay store `files`, mirroring `diff`)
+  with breadcrumb nav, dirs-first listing + byte sizes, and a click-to-preview
+  pane; disabled while the runtime is down. No writes — read-only by design.
 - **Dashboard (P4).** ~~Cross-session overview~~ **DONE (real subset)** — the
   Dashboard view is now a real read-only overview built from data the backend
   already reports: live session count + per-session agent/mode/tab (store) +
