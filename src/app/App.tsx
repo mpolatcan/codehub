@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Grid } from "./components/Grid";
 import { ActivityRail } from "./components/hub/ActivityRail";
+import { ComingSoon } from "./components/hub/ComingSoon";
 import { HubSidebar } from "./components/hub/HubSidebar";
 import { HubStatusBar } from "./components/hub/HubStatusBar";
 import { HubTabs } from "./components/hub/HubTabs";
@@ -8,15 +9,15 @@ import { WorkspaceBar } from "./components/hub/WorkspaceBar";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { useLauncher } from "./lib/launcher";
 import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
+import { ContainerInspector } from "./screens/ContainerInspector";
 import { EmptyHero } from "./screens/EmptyState";
+import { Settings } from "./screens/Settings";
 
-// Hub A shell (design/screens/main-hub-a.jsx): sidebar · workspace tabs +
-// per-pane terminal grid · activity rail. The live terminal grid, splits,
-// rename, keyboard shortcuts and lifecycle wiring are preserved from the vanilla
-// shell — only the chrome is reskinned.
+// App shell. The left sidebar is always present; the main region swaps on the
+// sidebar's view nav (P4). "hub" is the live terminal grid + activity rail; the
+// other views are full-pane screens.
 export function App() {
-  const active = useStore(activeWorkspace);
-  const openLaunch = useLauncher((s) => s.open);
+  const view = useStore((s) => s.view);
 
   useKeyboard();
   useEffect(() => {
@@ -34,7 +35,31 @@ export function App() {
       }}
     >
       <HubSidebar />
+      {view === "hub" ? (
+        <HubView />
+      ) : view === "containers" ? (
+        <ContainerInspector />
+      ) : view === "settings" ? (
+        <Settings />
+      ) : (
+        <ComingSoon
+          title="Dashboard"
+          note="Cross-session activity, usage and cost roll-ups land in a later P4 slice."
+        />
+      )}
+    </div>
+  );
+}
 
+// The Hub view: workspace tabs + per-pane terminal grid + activity rail. Splits,
+// rename, keyboard shortcuts and lifecycle wiring are preserved from the vanilla
+// shell — only the chrome is reskinned.
+function HubView() {
+  const active = useStore(activeWorkspace);
+  const openLaunch = useLauncher((s) => s.open);
+
+  return (
+    <>
       <main
         style={{
           flex: 1,
@@ -62,6 +87,6 @@ export function App() {
       </main>
 
       <ActivityRail />
-    </div>
+    </>
   );
 }

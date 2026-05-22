@@ -172,6 +172,18 @@ per tab) need the Tier-3 multi-container work and are deferred.
   output/telemetry, which is not uniformly exposed. Spike per-CLI feasibility first.
 - **Team / billing.** Out-of-scope v1 per the design's own `CLAUDE.md`. Render as
   "Coming soon".
+- **Container inspector live feeds (P4 Containers view).** The view renders the
+  real shared runtime (name/state/image/id, docker version, attached sessions,
+  the fixed `/workspace` mount, host-env credential presence) but four things
+  have no feed yet and show em-dashes / an honest placeholder:
+  - `container_stats` → `{ cpuPct, memUsed, memLimit, netRx, netTx, disk }` from
+    bollard `docker.stats()` (one-shot or a `codehub://stats` event stream).
+    Backs the CPU/Memory/Net/Disk gauge cards.
+  - `container_logs` → tail/stream of `docker logs` for the runtime, ideally as a
+    `codehub://container-log` event. Backs the "Container log" panel.
+  - Host side of the bind mount (the absolute host path behind `/workspace`) — not
+    in `ContainerStatus` today; add to `container_status` or a `mounts()` read.
+  All ship with the Tier-3 multi-container work, or sooner as standalone reads.
 
 ---
 

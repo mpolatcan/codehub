@@ -18,12 +18,17 @@ import {
   setRatio,
 } from "./tree";
 
+// Top-level view, switched from the sidebar nav. "hub" is the terminal grid;
+// the rest are full-pane screens (Containers ships in P4, the others follow).
+export type HubView = "hub" | "dashboard" | "containers" | "settings";
+
 interface CodeHubState {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   sessionMeta: Record<string, SessionMeta>;
   status: ContainerStatus | null;
   error: string | null;
+  view: HubView;
 
   // Tier-1 reads (BACKEND_PLAN.md), fetched once the runtime is reachable.
   // Presence/version metadata only — never secret values.
@@ -38,6 +43,7 @@ interface CodeHubState {
 
   setStatus: (s: ContainerStatus) => void;
   setError: (msg: string) => void;
+  setView: (v: HubView) => void;
   newPlate: (cli: Cli, mode: Mode) => Promise<void>;
   splitSession: (target: string, dir: SplitDir, cli: Cli, mode: Mode) => Promise<void>;
   closeSession: (name: string) => Promise<void>;
@@ -85,6 +91,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     sessionMeta: {},
     status: null,
     error: null,
+    view: "hub",
     dockerInfo: null,
     keyStatus: null,
     agentVersions: null,
@@ -101,6 +108,8 @@ export const useStore = create<CodeHubState>((set, get) => {
     },
 
     setError: (msg) => set({ error: msg }),
+
+    setView: (view) => set({ view }),
 
     newPlate: async (cli, mode) => {
       if (!isRunning()) return;
