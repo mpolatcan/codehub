@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import { Grid } from "./components/Grid";
 import { ActivityRail } from "./components/hub/ActivityRail";
 import { ComingSoon } from "./components/hub/ComingSoon";
+import { CommandPalette } from "./components/hub/CommandPalette";
 import { HubSidebar } from "./components/hub/HubSidebar";
 import { HubStatusBar } from "./components/hub/HubStatusBar";
 import { HubTabs } from "./components/hub/HubTabs";
+import { Shortcuts } from "./components/hub/Shortcuts";
 import { WorkspaceBar } from "./components/hub/WorkspaceBar";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { useLauncher } from "./lib/launcher";
@@ -47,6 +49,11 @@ export function App() {
           note="Cross-session activity, usage and cost roll-ups land in a later P4 slice."
         />
       )}
+
+      {/* Floating overlays, above every view (⌘K / ⌘/). Portalled, so placement
+          here is incidental. */}
+      <CommandPalette />
+      <Shortcuts />
     </div>
   );
 }
