@@ -1,3 +1,4 @@
+use crate::activity::ActivityTracker;
 use crate::docker::{DockerClient, DockerError, SessionInfo as _SessionInfo};
 use futures_util::StreamExt;
 use std::collections::HashMap;
@@ -43,6 +44,10 @@ pub struct Pane {
 
 pub struct PtyRegistry {
     panes: Mutex<HashMap<String, Pane>>,
+    // Shared per-session output-activity signal, fed from each pane's output
+    // pump. Host-agnostic — both the Tauri app and the dev bridge get it for
+    // free because they share this registry.
+    activity: Arc<ActivityTracker>,
 }
 
 impl Default for PtyRegistry {
@@ -55,7 +60,13 @@ impl PtyRegistry {
     pub fn new() -> Self {
         Self {
             panes: Mutex::new(HashMap::new()),
+            activity: Arc::new(ActivityTracker::new()),
         }
+    }
+
+    /// The shared activity tracker, for the `session_activity` read command.
+    pub fn activity(&self) -> Arc<ActivityTracker> {
+        self.activity.clone()
     }
 
     pub async fn attach(
@@ -71,9 +82,13 @@ impl PtyRegistry {
         let pane_id = Uuid::new_v4().to_string();
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<InputMsg>();
 
-        // Output pump: bollard stream -> emitter (Tauri event or WS broadcast)
+        // Output pump: bollard stream -> emitter (Tauri event or WS broadcast),
+        // teed into the activity tracker so a session's output flow drives its
+        // working/idle signal.
         let emitter_out = emitter.clone();
         let pane_id_out = pane_id.clone();
+        let activity_out = self.activity.clone();
+        let session_out = session.to_string();
         tokio::spawn(async move {
             while let Some(chunk) = handles.output.next().await {
                 match chunk {
@@ -84,6 +99,7 @@ impl PtyRegistry {
                             | bollard::container::LogOutput::Console { message } => message,
                             _ => continue,
                         };
+                        activity_out.mark(&session_out, bytes.len());
                         let text = String::from_utf8_lossy(&bytes).to_string();
                         emitter_out.data(&pane_id_out, text);
                     },
@@ -162,6 +178,11 @@ impl PtyRegistry {
     pub async fn detach(&self, pane_id: &str) {
         let mut panes = self.panes.lock().await;
         if let Some(pane) = panes.remove(pane_id) {
+            // Drop the session's activity entry only if no other pane is still
+            // attached to it (sessions are 1:1 with panes today, but stay safe).
+            if !panes.values().any(|p| p.session == pane.session) {
+                self.activity.remove(&pane.session);
+            }
             let _ = pane.input_tx.send(InputMsg::Shutdown);
         }
     }
@@ -180,6 +201,7 @@ impl PtyRegistry {
                 let _ = pane.input_tx.send(InputMsg::Shutdown);
             }
         }
+        self.activity.remove(session);
     }
 }
 

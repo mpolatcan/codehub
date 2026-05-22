@@ -147,6 +147,7 @@ pub async fn serve() {
         .route("/container-git-diff-all", get(container_git_diff_all))
         .route("/container-top", get(container_top))
         .route("/container-git-log", get(container_git_log))
+        .route("/session-activity", get(session_activity))
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/:name", delete(kill_session))
         .route("/sessions/:name/rename", post(rename_session))
@@ -284,6 +285,10 @@ async fn container_git_log(
 
 async fn list_sessions(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
     st.docker.list_tmux_sessions().await.map(Json).map_err(err)
+}
+
+async fn session_activity(State(st): State<AppState>) -> impl IntoResponse {
+    Json(st.registry.activity().snapshot())
 }
 
 #[derive(Deserialize)]

@@ -1,12 +1,14 @@
 // Modules are `pub` so the dev-server bin (feature `devserver`, see
 // devserver.rs) can reuse the same docker / pty / lifecycle logic without going
 // through Tauri.
+pub mod activity;
 #[cfg(feature = "devserver")]
 pub mod devserver;
 pub mod docker;
 pub mod lifecycle;
 pub mod pty;
 
+use activity::SessionActivity;
 use docker::{
     AgentVersion, Cli, CommitInfo, ContainerStats, DockerClient, FileEntry, GitStatus, ImageInfo,
     LaunchMode, MountInfo, ProcessInfo, RuntimeHealth,
@@ -345,6 +347,16 @@ async fn detach_session(pane_id: String, state: tauri::State<'_, AppState>) -> R
     Ok(())
 }
 
+/// Current per-session activity (working/idle) derived from pane output flow.
+/// In-memory and synchronous — never fails, returns an empty list when nothing
+/// is attached.
+#[tauri::command]
+async fn session_activity(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<SessionActivity>, String> {
+    Ok(state.registry.activity().snapshot())
+}
+
 /// Bundle identifier used by the app before the Aviary→CodeHub rebrand. The OS
 /// app-data dir is namespaced by this id, so a rebranded build looks at a fresh
 /// (empty) path and existing users would lose their CLI auth + workspace.
@@ -468,6 +480,7 @@ pub fn run() {
             pty_write,
             pty_resize,
             detach_session,
+            session_activity,
         ])
         .run(tauri::generate_context!())
         .expect("error while running codehub");

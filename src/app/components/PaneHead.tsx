@@ -19,9 +19,10 @@ import { Popover, PopoverAnchor, PopoverContent } from "./ui/popover";
 // the live store. The metric values are placeholders pending a per-session
 // telemetry feed (tokens / cost / turns / context) — see BACKEND_PLAN.md; shown
 // as em-dashes rather than fabricated numbers.
-export function PaneHead({ session, focused }: { session: string; focused: boolean }) {
+export function PaneHead({ session }: { session: string }) {
   const meta = useStore((s) => s.sessionMeta[session]);
   const agentVersions = useStore((s) => s.agentVersions);
+  const activity = useStore((s) => s.sessionActivity[session]);
   const splitSession = useStore((s) => s.splitSession);
   const closeSession = useStore((s) => s.closeSession);
   const renameSession = useStore((s) => s.renameSession);
@@ -39,9 +40,13 @@ export function PaneHead({ session, focused }: { session: string; focused: boole
   const version = agentVersions?.[meta.cli]?.version ?? null;
   const key = splitKey(session);
   const isOpen = openKey === key;
-  // Focus is the one real per-pane signal we have: the pane you're looking at is
-  // "live", the rest sit idle. No fabricated activity state.
-  const status = focused ? "live" : "idle";
+  // Real per-session signal from pane output flow (session_activity): the agent
+  // is "working" while producing output, else quiet. The dot reflects that — it
+  // means "is this agent working", independent of which pane you're looking at
+  // (focus is shown by the pane border). Quiet conflates idle/waiting/done; we
+  // don't fabricate which. Absent reading (pre-first-poll) → idle.
+  const working = activity?.state === "working";
+  const status = working ? "live" : "idle";
 
   const armSplit = (dir: SplitDir) => openLaunch(key, { dir, session });
   const launch = (cli: Cli, mode: Mode) => {
@@ -62,7 +67,7 @@ export function PaneHead({ session, focused }: { session: string; focused: boole
     >
       {/* identity row */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 12px 5px" }}>
-        <StatusDot status={status} pulse={focused} />
+        <StatusDot status={status} pulse={working} />
         <AgentGlyph agent={meta.cli} size={13} color={accent} />
 
         {editing ? (
@@ -187,13 +192,13 @@ export function PaneHead({ session, focused }: { session: string; focused: boole
             alignItems: "center",
             gap: 5,
             fontSize: 10.5,
-            color: focused ? "var(--live)" : "var(--fg-3)",
+            color: working ? "var(--live)" : "var(--fg-3)",
           }}
         >
-          {focused && (
+          {working && (
             <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--live)" }} />
           )}
-          {focused ? "active" : "idle"}
+          {working ? "working" : "idle"}
         </span>
       </div>
     </div>

@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { AgentGlyph } from "../../components/primitives/AgentGlyph";
+import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
 import { type GitStatus, ipc } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
@@ -11,10 +13,10 @@ import { FilesBrowser } from "./FilesBrowser";
 //
 // "Changes" is real: the /workspace working-tree status from
 // `container_git_status` (branch + ahead/behind + changed files), polled while
-// the runtime is up. The "Activity" feed (turn events / approval prompts) still
-// depends on an app-level event bus the backend does not emit yet — today the
-// CLIs' own prompts render inside the terminal — so it stays an honest empty
-// state until that surface exists (BACKEND_PLAN.md).
+// the runtime is up. "Activity" is real too: each session's live working/idle
+// state from `session_activity` (derived from pane output flow). It shows
+// *current* state per session, not a turn-by-turn history — a historical feed
+// with token/cost per turn still needs per-turn capture (BACKEND_PLAN.md).
 export function ActivityRail() {
   const status = useStore((s) => s.status);
   const running = status?.state === "running";
@@ -121,16 +123,47 @@ export function ActivityRail() {
       </div>
       <Changes git={git} running={running} onOpen={setDiffPath} />
 
-      {/* Activity — honest empty until the turn-event bus exists */}
+      {/* Activity — real live per-session working/idle from session_activity */}
       <div
         style={{
           padding: "12px 14px",
           borderTop: "1px solid var(--bd-soft)",
           borderBottom: "1px solid var(--bd-soft)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
         }}
       >
         <span className="lbl">Activity</span>
       </div>
+      <Activity running={running} />
+
+      <DiffViewer path={diffPath} onClose={() => setDiffPath(null)} />
+      <FilesBrowser open={filesOpen} onClose={() => setFilesOpen(false)} />
+    </aside>
+  );
+}
+
+// Live per-session activity: every running session with a working/idle dot +
+// how long it's been quiet. State is real (session_activity, from output flow);
+// clicking a row jumps to that session in the Hub. Honest empty when nothing
+// runs. Not a turn history — see the file header.
+function Activity({ running }: { running: boolean }) {
+  const meta = useStore((s) => s.sessionMeta);
+  const activity = useStore((s) => s.sessionActivity);
+  const focusSession = useStore((s) => s.focusSession);
+  const setView = useStore((s) => s.setView);
+  const sessions = Object.entries(meta);
+
+  if (!running) {
+    return (
+      <div style={{ flex: 1 }}>
+        <Note>Runtime not running.</Note>
+      </div>
+    );
+  }
+  if (sessions.length === 0) {
+    return (
       <div
         style={{
           flex: 1,
@@ -141,22 +174,84 @@ export function ActivityRail() {
           gap: 10,
           padding: 24,
           textAlign: "center",
-          color: "var(--fg-3)",
         }}
       >
         <span style={{ opacity: 0.5 }}>{Ico.bell}</span>
         <p style={{ margin: 0, fontSize: 12, color: "var(--fg-2)", lineHeight: 1.5 }}>
-          No activity yet.
+          No sessions running.
         </p>
         <p style={{ margin: 0, fontSize: 11, color: "var(--fg-3)", lineHeight: 1.5 }}>
-          Turn events and approval prompts will appear here.
+          Start one with ⌘N to see live activity.
         </p>
       </div>
+    );
+  }
 
-      <DiffViewer path={diffPath} onClose={() => setDiffPath(null)} />
-      <FilesBrowser open={filesOpen} onClose={() => setFilesOpen(false)} />
-    </aside>
+  const open = (name: string) => {
+    focusSession(name);
+    setView("hub");
+  };
+
+  return (
+    <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "6px 8px" }}>
+      {sessions.map(([name, m]) => {
+        const act = activity[name];
+        const working = act?.state === "working";
+        return (
+          <button
+            type="button"
+            key={name}
+            onClick={() => open(name)}
+            title={`${m.alias} — jump to session`}
+            className="rail-file"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              padding: "6px",
+              borderRadius: 4,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <StatusDot status={working ? "live" : "idle"} pulse={working} />
+            <AgentGlyph agent={m.cli} size={12} color={`var(--a-${m.cli})`} />
+            <span
+              className="mono"
+              style={{
+                fontSize: 11.5,
+                color: "var(--fg-0)",
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {m.alias}
+            </span>
+            <span
+              className="mono"
+              style={{ fontSize: 10.5, color: working ? "var(--live)" : "var(--fg-3)" }}
+            >
+              {working ? "working" : act ? `idle ${fmtIdle(act.idleMs)}` : "idle"}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
+}
+
+// Compact quiet-duration: "3s" / "2m" / "1h".
+function fmtIdle(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  return `${Math.floor(s / 3600)}h`;
 }
 
 // The changed-files list, or an honest one-liner for each non-list state.
