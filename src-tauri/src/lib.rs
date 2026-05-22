@@ -192,6 +192,41 @@ async fn detach_session(pane_id: String, state: tauri::State<'_, AppState>) -> R
     Ok(())
 }
 
+/// Bundle identifier used by the app before the Aviary→CodeHub rebrand. The OS
+/// app-data dir is namespaced by this id, so a rebranded build looks at a fresh
+/// (empty) path and existing users would lose their CLI auth + workspace.
+const LEGACY_BUNDLE_ID: &str = "com.mutlupolatcan.aviary";
+
+/// One-time migration for the rebrand: if the new (CodeHub) app-data dir does
+/// not exist yet but the legacy (Aviary) one does, move it over. Old and new
+/// dirs are siblings under the same OS app-data root, so this is a same-volume
+/// rename — cheap and atomic. Failure is non-fatal: we log and fall back to a
+/// fresh dir rather than block startup.
+fn migrate_legacy_app_data(new_app_data: &std::path::Path) {
+    // Never clobber an existing CodeHub dir; only migrate into a clean slot.
+    if new_app_data.exists() {
+        return;
+    }
+    let Some(parent) = new_app_data.parent() else {
+        return;
+    };
+    let legacy = parent.join(LEGACY_BUNDLE_ID);
+    if !legacy.is_dir() {
+        return;
+    }
+    match std::fs::rename(&legacy, new_app_data) {
+        Ok(()) => tracing::info!(
+            "migrated app data from legacy {} to {}",
+            legacy.display(),
+            new_app_data.display()
+        ),
+        Err(e) => tracing::warn!(
+            "could not migrate legacy app data from {} ({e}); starting fresh",
+            legacy.display()
+        ),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -214,6 +249,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {
             let app_data = app.path().app_data_dir().expect("app_data_dir unavailable");
+            // One-time carry-over of pre-rebrand (Aviary) auth + workspace data.
+            migrate_legacy_app_data(&app_data);
             let config_dir = app_data.join("config");
             let workspace_dir = app_data.join("workspace");
 
