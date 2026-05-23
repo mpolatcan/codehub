@@ -12,6 +12,7 @@ use activity::SessionActivity;
 use docker::{
     AgentVersion, ClaudeSession, ClaudeUsage, Cli, CommitInfo, ContainerStats, DockerClient,
     FileEntry, GitStatus, ImageInfo, LaunchMode, MountInfo, ProcessInfo, RuntimeHealth,
+    SessionUsage,
 };
 use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle};
 use pty::{PaneEmitter, PtyRegistry, SessionInfo};
@@ -248,6 +249,21 @@ async fn claude_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<Claude
         .map_err(|e| e.to_string())
 }
 
+/// Live token tally for one Claude session (its `--session-id` transcript), for
+/// the Hub pane header. `None` when there is no usable data yet. Errs only when
+/// the container is down.
+#[tauri::command]
+async fn claude_session_usage(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<SessionUsage>, String> {
+    state
+        .docker
+        .claude_session_usage(&id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Recent commits on `/workspace` (Dashboard "Recent commits"). `limit` defaults
 /// to 12 server-side and is clamped. Errs only when the container is down.
 #[tauri::command]
@@ -278,6 +294,7 @@ async fn create_session(
     mode: Option<String>,
     alias: Option<String>,
     resume: Option<String>,
+    session_id: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let cli = Cli::parse(&cli).map_err(|e| e.to_string())?;
@@ -285,7 +302,14 @@ async fn create_session(
     let alias = alias.unwrap_or_default();
     state
         .docker
-        .create_tmux_session(&name, cli, mode, &alias, resume.as_deref())
+        .create_tmux_session(
+            &name,
+            cli,
+            mode,
+            &alias,
+            resume.as_deref(),
+            session_id.as_deref(),
+        )
         .await
         .map_err(|e| e.to_string())?;
     // Record the agent identity so the activity snapshot (and the companion
@@ -575,6 +599,7 @@ pub fn run() {
             container_top,
             claude_usage,
             claude_sessions,
+            claude_session_usage,
             container_git_log,
             list_sessions,
             create_session,

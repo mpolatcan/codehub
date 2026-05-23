@@ -148,6 +148,7 @@ pub async fn serve() {
         .route("/container-top", get(container_top))
         .route("/claude-usage", get(claude_usage))
         .route("/claude-sessions", get(claude_sessions))
+        .route("/claude-session-usage", get(claude_session_usage))
         .route("/container-git-log", get(container_git_log))
         .route("/session-activity", get(session_activity))
         .route("/sessions", get(list_sessions).post(create_session))
@@ -278,6 +279,22 @@ async fn claude_sessions(State(st): State<AppState>) -> Result<impl IntoResponse
 }
 
 #[derive(Deserialize)]
+struct SessionUsageQuery {
+    id: String,
+}
+
+async fn claude_session_usage(
+    State(st): State<AppState>,
+    Query(q): Query<SessionUsageQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker
+        .claude_session_usage(&q.id)
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+#[derive(Deserialize)]
 struct LogQuery {
     limit: Option<u32>,
 }
@@ -308,6 +325,7 @@ struct CreateBody {
     mode: Option<String>,
     alias: Option<String>,
     resume: Option<String>,
+    session_id: Option<String>,
 }
 
 async fn create_session(
@@ -322,7 +340,14 @@ async fn create_session(
         .unwrap_or_default();
     let alias = body.alias.unwrap_or_default();
     st.docker
-        .create_tmux_session(&body.name, cli, mode, &alias, body.resume.as_deref())
+        .create_tmux_session(
+            &body.name,
+            cli,
+            mode,
+            &alias,
+            body.resume.as_deref(),
+            body.session_id.as_deref(),
+        )
         .await
         .map_err(err)?;
     // Mirror lib.rs: record agent identity for the activity snapshot.

@@ -36,6 +36,10 @@ export interface SessionMeta {
   alias: string;
   mode: Mode;
   workspaceId: string;
+  // Claude conversation id this session was launched with (`--session-id`, or
+  // the id it resumed). Lets the Hub read this session's own transcript for a
+  // live token tally. Only set for Claude sessions.
+  claudeId?: string;
 }
 
 let nodeCounter = 0;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AgentGlyph } from "../components/primitives/AgentGlyph";
 import { ContextGauge } from "../components/primitives/ContextGauge";
 import { IconBtn } from "../components/primitives/IconBtn";
@@ -6,7 +6,7 @@ import { MetricStat } from "../components/primitives/MetricStat";
 import { StatusDot } from "../components/primitives/StatusDot";
 import { Ico } from "../components/primitives/icons";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
-import type { Cli, Mode } from "../lib/ipc";
+import { type Cli, type Mode, type SessionUsage, ipc } from "../lib/ipc";
 import { splitKey, useLauncher } from "../lib/launcher";
 import { useStore } from "../lib/store";
 import type { SplitDir } from "../lib/tree";
@@ -32,6 +32,34 @@ export function PaneHead({ session }: { session: string }) {
   const openLaunch = useLauncher((s) => s.open);
   const closeLaunch = useLauncher((s) => s.close);
   const [editing, setEditing] = useState(false);
+
+  // Real per-session token tally, read from this Claude conversation's own
+  // transcript (the --session-id it launched with). Polled ~4s while running;
+  // only Claude sessions have a transcript, so others keep em-dash placeholders.
+  // null = no usable data yet (a session that hasn't responded) → em-dash too.
+  // Declared above the `!meta` guard so the hook count stays constant even as a
+  // session is torn down (closeSession drops meta before the tree drops the leaf).
+  const claudeId = meta?.cli === "claude" ? meta.claudeId : undefined;
+  const [usage, setUsage] = useState<SessionUsage | null>(null);
+  useEffect(() => {
+    if (!claudeId) {
+      setUsage(null);
+      return;
+    }
+    let alive = true;
+    const tick = () => {
+      ipc
+        .claudeSessionUsage(claudeId)
+        .then((u) => alive && setUsage(u))
+        .catch(() => alive && setUsage(null));
+    };
+    tick();
+    const h = setInterval(tick, 4000);
+    return () => {
+      alive = false;
+      clearInterval(h);
+    };
+  }, [claudeId]);
 
   if (!meta) return null;
   const spec = SPEC_BY_CLI[meta.cli];
@@ -177,12 +205,18 @@ export function PaneHead({ session }: { session: string }) {
         </IconBtn>
       </div>
 
-      {/* metric row — placeholder telemetry (BACKEND_PLAN.md) */}
+      {/* metric row — turn + tokens are REAL for Claude (read from this session's
+          transcript via --session-id; em-dash for other CLIs or before the first
+          response). ctx/cost/edits stay em-dash: no reliable per-session source
+          (cost lives on Usage with its estimate disclosure). */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 12px 7px" }}>
         <ContextGauge used={0} max={0} label="ctx" width={90} />
         <span className="vr" style={{ height: 16 }} />
-        <MetricStat label="turn" value="—" />
-        <MetricStat label="tokens" value="—" />
+        <MetricStat label="turn" value={usage ? String(usage.turns) : "—"} />
+        <MetricStat
+          label="tokens"
+          value={usage ? fmtTokens(usage.tokensIn + usage.tokensOut) : "—"}
+        />
         <MetricStat label="cost" value="—" />
         <MetricStat label="edits" value="—" />
         <span style={{ flex: 1 }} />
@@ -203,4 +237,12 @@ export function PaneHead({ session }: { session: string }) {
       </div>
     </div>
   );
+}
+
+// Compact token count for the narrow metric slot: 1_234_567 → "1.2M",
+// 12_300 → "12.3K", 540 → "540".
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
+  return String(n);
 }
