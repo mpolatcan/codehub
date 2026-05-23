@@ -259,8 +259,14 @@ pub struct ClaudeSession {
 /// transcript (`<sessionId>.jsonl`) so the Hub's pane header can show a real
 /// running tally. All FACTUAL: `turns` is deduped model responses, `tokens_in`/
 /// `tokens_out` are summed `usage` counts, `edits` is the count of file-editing
-/// tool calls (Edit/Write/MultiEdit/NotebookEdit) the agent actually made.
+/// tool calls (Edit/Write/MultiEdit/NotebookEdit) the agent actually made,
+/// `context_used` is the live context footprint (most recent turn's read size).
 /// Claude-only — the id is the `--session-id` the session was launched with.
+///
+/// There is deliberately NO context-window maximum: the transcript never records
+/// it, and it varies by model/CLI-version/tier (e.g. Opus 4.7 here runs a 1M
+/// window with no flag, not the 200K one might assume). The UI shows the real
+/// `context_used` count alone rather than a fabricated `used / max` ratio.
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionUsage {
@@ -268,6 +274,9 @@ pub struct SessionUsage {
     pub tokens_in: u64,
     pub tokens_out: u64,
     pub edits: u32,
+    /// Tokens the model read on its most recent turn (`input + cache_read +
+    /// cache_creation`) — the live context footprint. 0 when no turn has usage.
+    pub context_used: u64,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -1124,6 +1133,7 @@ impl DockerClient {
             tokens_in: u.totals.input,
             tokens_out: u.totals.output,
             edits: count_session_edits(&raw),
+            context_used: latest_context_used(&raw),
         }))
     }
 }
@@ -1190,6 +1200,42 @@ fn count_session_edits(raw: &str) -> u32 {
         }
     }
     edits
+}
+
+/// Current context footprint of a Claude session: the input size of its most
+/// recent model response (`input_tokens + cache_read_input_tokens +
+/// cache_creation_input_tokens` — the tokens the model read to produce that
+/// turn). This is the live "ctx" the pane header shows. Output tokens are
+/// excluded: they are this turn's generation, not part of the read context (they
+/// fold into the NEXT turn's input). The transcript is chronological, so the LAST
+/// assistant line with usage is the current state — no dedup needed (replayed
+/// history precedes freshly-appended turns). Returns 0 when no assistant turn
+/// carries usage. No window maximum is derived: it is not in the transcript and
+/// varies by model/CLI-version/tier, so the UI shows this count alone rather than
+/// a fabricated ratio (see [`SessionUsage`]).
+fn latest_context_used(raw: &str) -> u64 {
+    let mut used = 0u64;
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
+            continue;
+        }
+        let Some(usage) = v.get("message").and_then(|m| m.get("usage")) else {
+            continue;
+        };
+        let tok = |k: &str| usage.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
+        // Overwrite each turn → ends holding the last (most recent) one.
+        used = tok("input_tokens")
+            + tok("cache_read_input_tokens")
+            + tok("cache_creation_input_tokens");
+    }
+    used
 }
 
 /// Normalize and confine a browser path to `/workspace`. Empty → the workspace
@@ -1831,8 +1877,8 @@ pub struct AttachHandles {
 mod tests {
     use super::{
         clip_title, count_session_edits, is_session_id, is_synthetic_prompt, is_version_like,
-        parse_claude_sessions, parse_claude_usage, parse_find, parse_git_log, parse_git_status,
-        parse_top, workspace_path,
+        latest_context_used, parse_claude_sessions, parse_claude_usage, parse_find, parse_git_log,
+        parse_git_status, parse_top, workspace_path,
     };
 
     #[test]
@@ -2151,6 +2197,28 @@ mod tests {
         // Edit(1) + Write(1) + MultiEdit(1) = 3; the replayed first line is deduped.
         assert_eq!(count_session_edits(&raw), 3);
         assert_eq!(count_session_edits(""), 0);
+    }
+
+    #[test]
+    fn latest_context_used_is_last_turn_input_footprint() {
+        // Two turns; the ctx stat tracks the most recent one. Used = input +
+        // cache_read + cache_creation (output excluded — it's generation, not
+        // read context). Last assistant line wins regardless of earlier turns.
+        let raw = [
+            r#"{"type":"assistant","message":{"model":"claude-opus-4-7","usage":{"input_tokens":10,"output_tokens":999,"cache_read_input_tokens":100,"cache_creation_input_tokens":5}}}"#,
+            r#"{"type":"user","message":{"content":"more"}}"#,
+            r#"{"type":"assistant","message":{"model":"claude-opus-4-7","usage":{"input_tokens":20,"output_tokens":7,"cache_read_input_tokens":3000,"cache_creation_input_tokens":80}}}"#,
+        ]
+        .join("\n");
+        // 20 + 3000 + 80 = 3100; output (7) ignored.
+        assert_eq!(latest_context_used(&raw), 3100);
+
+        // No assistant turn with usage → 0.
+        assert_eq!(latest_context_used(""), 0);
+        assert_eq!(
+            latest_context_used(r#"{"type":"user","message":{"content":"hi"}}"#),
+            0
+        );
     }
 
     #[test]
