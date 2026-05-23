@@ -62,7 +62,7 @@ interface CodeHubState {
 
   // imperative bookkeeping (non-reactive counters)
   plateCounter: number;
-  specimenCounter: number;
+  sessionCounter: number;
   bootstrapped: boolean;
 
   setStatus: (s: ContainerStatus) => void;
@@ -86,7 +86,7 @@ function updateWs(list: Workspace[], id: string, fn: (w: Workspace) => Workspace
   return list.map((w) => (w.id === id ? fn(w) : w));
 }
 
-// Display alias for a session, e.g. "Owl 1". Shared by the session metadata and
+// Display alias for a session, e.g. "Claude 1". Shared by the session metadata and
 // the tmux window name passed at create time, so both read identically.
 function aliasFor(cli: Cli, num: number): string {
   return `${SPEC_BY_CLI[cli].alias} ${num}`;
@@ -96,13 +96,13 @@ export const useStore = create<CodeHubState>((set, get) => {
   const isRunning = () => get().status?.state === "running";
 
   const uniqueName = (cli: Cli): string => {
-    const next = get().specimenCounter + 1;
-    set({ specimenCounter: next });
+    const next = get().sessionCounter + 1;
+    set({ sessionCounter: next });
     return `${cli}-${Date.now().toString(36)}-${next.toString(36)}`;
   };
 
   const registerMeta = (name: string, cli: Cli, mode: Mode, workspaceId: string) => {
-    const num = get().specimenCounter;
+    const num = get().sessionCounter;
     const meta: SessionMeta = {
       cli,
       num,
@@ -126,7 +126,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     keyStatus: null,
     agentVersions: null,
     plateCounter: 0,
-    specimenCounter: 0,
+    sessionCounter: 0,
     bootstrapped: false,
 
     setStatus: (status) => {
@@ -156,7 +156,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     newPlate: async (cli, mode) => {
       if (!isRunning()) return;
       const name = uniqueName(cli);
-      await ipc.createSession(name, cli, mode, aliasFor(cli, get().specimenCounter));
+      await ipc.createSession(name, cli, mode, aliasFor(cli, get().sessionCounter));
       await registry.spawnPane(name);
 
       const plate = get().plateCounter + 1;
@@ -179,7 +179,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       const ws = get().workspaces.find((w) => w.id === get().sessionMeta[target]?.workspaceId);
       if (!ws || !ws.root) return;
       const name = uniqueName(cli);
-      await ipc.createSession(name, cli, mode, aliasFor(cli, get().specimenCounter));
+      await ipc.createSession(name, cli, mode, aliasFor(cli, get().sessionCounter));
       await registry.spawnPane(name);
       registerMeta(name, cli, mode, ws.id);
 
@@ -371,7 +371,7 @@ async function bootstrap(
       };
       set((st) => ({
         plateCounter: plate,
-        specimenCounter: st.specimenCounter + 1,
+        sessionCounter: st.sessionCounter + 1,
         workspaces: [...st.workspaces, ws],
         activeWorkspaceId: st.activeWorkspaceId ?? ws.id,
       }));

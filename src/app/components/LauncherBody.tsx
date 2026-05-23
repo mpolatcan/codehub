@@ -1,5 +1,6 @@
 import { CLIS, MODES, MODE_BY_ID, MODE_SUPPORT } from "../lib/catalog";
 import type { Cli, Mode } from "../lib/ipc";
+import { AgentGlyph } from "./primitives/AgentGlyph";
 
 interface Props {
   cli: Cli;
@@ -25,12 +26,11 @@ export function LauncherBody({ cli, mode, setCli, setMode }: Props) {
               aria-label={c.label}
               onClick={() => setCli(c.id)}
             >
-              <svg className="bird" aria-hidden="true">
-                <use href={c.bird} />
-              </svg>
+              <span className="ar-glyph" aria-hidden="true">
+                <AgentGlyph agent={c.id} size={20} color={`var(--a-${c.id})`} />
+              </span>
               <span className="ar-text">
                 <span className="ar-name">{c.label}</span>
-                <span className="ar-species">{c.species}</span>
               </span>
               <span className="ar-tick" aria-hidden="true">
                 ●

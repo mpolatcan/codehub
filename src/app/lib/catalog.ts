@@ -36,22 +36,16 @@ export const MODE_SUPPORT: Record<Cli, Mode[]> = {
 
 export interface CliSpec {
   id: Cli;
+  // Full product name for the launcher row (e.g. "Claude Code").
   label: string;
+  // Short name used to number default sessions (e.g. "Claude 1").
   alias: string;
-  species: string;
-  bird: string;
 }
 
 export const CLIS: CliSpec[] = [
-  { id: "claude", label: "Claude Code", alias: "Owl", species: "Eagle Owl", bird: "#bird-owl" },
-  { id: "codex", label: "Codex", alias: "Raven", species: "Common Raven", bird: "#bird-raven" },
-  {
-    id: "antigravity",
-    label: "Antigravity",
-    alias: "Falcon",
-    species: "Peregrine Falcon",
-    bird: "#bird-falcon",
-  },
+  { id: "claude", label: "Claude Code", alias: "Claude" },
+  { id: "codex", label: "Codex", alias: "Codex" },
+  { id: "antigravity", label: "Antigravity", alias: "Antigravity" },
 ];
 
 export const SPEC_BY_CLI: Record<Cli, CliSpec> = Object.fromEntries(

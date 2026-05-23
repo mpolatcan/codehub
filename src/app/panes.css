@@ -124,17 +124,6 @@ body.dragging .divider::after {
   background: linear-gradient(180deg, rgba(232, 163, 61, 0.06), var(--color-panel));
 }
 
-.pane-head .bird {
-  width: 16px;
-  height: 16px;
-  color: var(--color-text-faint);
-  flex: 0 0 auto;
-  transition: color 0.18s ease;
-}
-.pane-leaf.focused .pane-head .bird {
-  color: var(--color-accent-bright);
-}
-
 .pane-head .pane-name {
   font-family: var(--font-mono);
   font-weight: 500;
@@ -490,14 +479,6 @@ body.dragging .divider::after {
   color: inherit;
   min-width: 0;
 }
-.rail-row .bird {
-  width: 18px;
-  height: 18px;
-  color: var(--color-text-faint);
-}
-.rail-row.focused .bird {
-  color: var(--color-accent-bright);
-}
 .rail-row .rr-text {
   display: flex;
   flex-direction: column;
@@ -654,19 +635,6 @@ body.dragging .divider::after {
 .tab:hover .plate-num {
   color: var(--color-accent);
 }
-.tab .bird {
-  width: 20px;
-  height: 20px;
-  color: var(--color-text-faint);
-  transition: color 0.18s ease, transform 0.12s steps(2);
-}
-.tab:hover .bird,
-.tab.active .bird {
-  color: var(--color-accent-bright);
-}
-.tab:hover .bird {
-  transform: translateY(-1px);
-}
 .tab .tab-text {
   display: flex;
   flex-direction: column;
@@ -805,14 +773,13 @@ body.dragging .divider::after {
   border-color: var(--color-accent);
   background: linear-gradient(90deg, rgba(232, 163, 61, 0.1), var(--color-bg-deep) 70%);
 }
-.agent-row .bird {
+.agent-row .ar-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
-  color: var(--color-text-dim);
-  transition: color 0.18s ease;
-}
-.agent-row.selected .bird {
-  color: var(--color-accent-bright);
+  flex: 0 0 auto;
 }
 .agent-row .ar-text {
   display: flex;
@@ -826,13 +793,6 @@ body.dragging .divider::after {
   font-size: var(--fs-md);
   color: var(--color-text);
   line-height: 1;
-}
-.agent-row .ar-species {
-  font-family: var(--font-pixel);
-  font-size: var(--fs-pixel);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-faint);
 }
 .agent-row .ar-tick {
   font-size: 10px;
@@ -978,22 +938,6 @@ body.dragging .divider::after {
   border-radius: 2px;
 }
 
-/* ---- Empty state ------------------------------------------------------ */
-
-/* The flock drifts on a slow loop so the idle screen breathes. */
-.empty-bird {
-  animation: flock-drift 6s ease-in-out infinite;
-}
-@keyframes flock-drift {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-7px);
-  }
-}
-
 /* ---- Reduced motion --------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -1004,15 +948,13 @@ body.dragging .divider::after {
   .tab-enter,
   .tab.active::after,
   .agent-row,
-  .mode-opt,
-  .empty-bird {
+  .mode-opt {
     animation: none;
   }
   .session-rail,
   .rail-toggle,
   .rail-new .plus,
-  .tab,
-  .tab .bird {
+  .tab {
     transition: none;
   }
 }
