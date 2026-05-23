@@ -19,19 +19,13 @@ import { Dashboard } from "./screens/Dashboard";
 import { EmptyHero } from "./screens/EmptyState";
 import { SessionDetail } from "./screens/SessionDetail";
 import { Settings } from "./screens/Settings";
+import { Usage } from "./screens/Usage";
 
 // Designed screens whose real data needs backend CodeHub doesn't capture yet
 // (per-turn token/cost capture, persistent session history, integration
 // connectors). Rendered as honest, navigable PlannedScreen stubs that name
 // what's missing — never fabricated numbers. See BACKEND_PLAN.md.
 const PLANNED = {
-  usage: {
-    title: "Usage",
-    blurb:
-      "A per-agent breakdown of tokens, cost and turns across your sessions — so you can see where spend goes and compare models.",
-    needs:
-      "Needs per-turn capture: CodeHub does not yet record token/cost/turn metrics from the agent CLIs (the numbers live only inside each CLI's own session).",
-  },
   resume: {
     title: "Resume",
     blurb:
@@ -97,6 +91,8 @@ export function App() {
         <Settings />
       ) : view === "dashboard" ? (
         <Dashboard />
+      ) : view === "usage" ? (
+        <Usage />
       ) : (
         <PlannedScreen {...PLANNED[view]} />
       )}

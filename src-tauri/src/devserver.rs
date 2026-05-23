@@ -146,6 +146,7 @@ pub async fn serve() {
         .route("/container-git-diff", get(container_git_diff))
         .route("/container-git-diff-all", get(container_git_diff_all))
         .route("/container-top", get(container_top))
+        .route("/claude-usage", get(claude_usage))
         .route("/container-git-log", get(container_git_log))
         .route("/session-activity", get(session_activity))
         .route("/sessions", get(list_sessions).post(create_session))
@@ -265,6 +266,10 @@ async fn container_git_diff_all(State(st): State<AppState>) -> Result<impl IntoR
 
 async fn container_top(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
     st.docker.top().await.map(Json).map_err(err)
+}
+
+async fn claude_usage(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    st.docker.claude_usage().await.map(Json).map_err(err)
 }
 
 #[derive(Deserialize)]

@@ -170,6 +170,72 @@ pub struct FileEntry {
     pub size: i64,
 }
 
+/// Cumulative token counts. Every field is a real sum from the `usage` block of
+/// `assistant` lines in Claude Code's session transcripts — never estimated.
+#[derive(Debug, Serialize, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenTotals {
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_creation: u64,
+}
+
+/// Per-model usage rollup. `turns` counts model responses (assistant lines) seen
+/// for this model. `priced` is false when no rate table entry matched the model,
+/// in which case `est_cost_usd` is 0 and the tokens are reported as unpriced.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsage {
+    pub model: String,
+    pub totals: TokenTotals,
+    pub turns: u32,
+    pub est_cost_usd: f64,
+    pub priced: bool,
+}
+
+/// Per-day usage rollup (UTC date `YYYY-MM-DD` from each line's `timestamp`).
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DayUsage {
+    pub date: String,
+    pub totals: TokenTotals,
+    pub est_cost_usd: f64,
+}
+
+/// One model family's per-million-token rates, surfaced to the UI so the cost
+/// estimate is transparent about the prices it used (and that they are an
+/// estimate, not a billed figure).
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRate {
+    pub family: String,
+    pub input_per_mtok: f64,
+    pub output_per_mtok: f64,
+    pub cache_write_per_mtok: f64,
+    pub cache_read_per_mtok: f64,
+}
+
+/// Aggregate token analytics read from Claude Code's on-disk session transcripts
+/// (`$CLAUDE_CONFIG_DIR/projects/**/*.jsonl`). Token counts and turn/session
+/// counts are FACTUAL (straight from the transcripts). `est_cost_usd` is an
+/// ESTIMATE: tokens × the published `rates` (as of `rates_as_of`), not a billed
+/// amount. `unpriced_tokens` is the input+output token volume from models with
+/// no rate-table match, excluded from the cost estimate.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeUsage {
+    pub sessions: u32,
+    pub turns: u32,
+    pub totals: TokenTotals,
+    pub est_cost_usd: f64,
+    pub by_model: Vec<ModelUsage>,
+    pub by_day: Vec<DayUsage>,
+    pub rates: Vec<ModelRate>,
+    pub rates_as_of: String,
+    pub unpriced_tokens: u64,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Cli {
@@ -927,6 +993,32 @@ impl DockerClient {
         self.exec_capture(vec!["head", "-c", &cap, "--", &real])
             .await
     }
+
+    /// Aggregate token-usage analytics from Claude Code's on-disk session
+    /// transcripts under `$CLAUDE_CONFIG_DIR/projects/**/*.jsonl` (the runtime
+    /// pins `CLAUDE_CONFIG_DIR=/config/claude`, on the persistent `/config`
+    /// mount). Concatenates every transcript — each JSONL line carries its own
+    /// `sessionId`, so file boundaries don't matter — and folds the `usage`
+    /// blocks of `assistant` lines into real token totals plus an estimated cost
+    /// (see [`parse_claude_usage`]). Errors only when the container is down; a
+    /// missing `projects` dir yields an all-zero report, not an error.
+    pub async fn claude_usage(&self) -> Result<ClaudeUsage, DockerError> {
+        if !self.is_running().await? {
+            return Err(DockerError::ContainerDown(self.container.clone()));
+        }
+        // `find … -exec cat {} +` batches the reads; transcripts are newline-
+        // terminated JSONL so concatenation never fuses two lines. `2>/dev/null`
+        // and the `|| true` keep a missing projects dir from erroring — the
+        // parser simply sees no input. Routed through `sh -c` for the glob/redirect.
+        let raw = self
+            .exec_capture(vec![
+                "sh",
+                "-c",
+                "find /config/claude/projects -type f -name '*.jsonl' -exec cat {} + 2>/dev/null || true",
+            ])
+            .await?;
+        Ok(parse_claude_usage(&raw))
+    }
 }
 
 /// Normalize and confine a browser path to `/workspace`. Empty → the workspace
@@ -987,6 +1079,193 @@ const DIR_ENTRIES_CAP: usize = 500;
 
 /// Cap on bytes returned for a file preview (Files browser): 256 KiB.
 const FILE_READ_CAP: usize = 262_144;
+
+/// As-of label for [`USAGE_RATES`]. Surfaced to the UI so the cost estimate is
+/// honest about how current its prices are.
+const RATES_AS_OF: &str = "2026-05";
+
+/// Published per-million-token list prices (USD) by Claude model family, used
+/// only to ESTIMATE cost from real token counts. Tuple is
+/// `(family, input, output, cache_write_5m, cache_read)`. A model whose name
+/// contains none of these families is left unpriced (its tokens are reported
+/// under `unpriced_tokens` and excluded from the estimate). Update alongside
+/// [`RATES_AS_OF`] when Anthropic's pricing changes.
+const USAGE_RATES: &[(&str, f64, f64, f64, f64)] = &[
+    ("opus", 15.0, 75.0, 18.75, 1.50),
+    ("sonnet", 3.0, 15.0, 3.75, 0.30),
+    ("haiku", 1.0, 5.0, 1.25, 0.10),
+];
+
+/// Match a transcript model id (e.g. `claude-opus-4-7`) to its rate row by
+/// family substring. Returns `(input, output, cache_write, cache_read)` per Mtok.
+fn model_rate(model: &str) -> Option<(f64, f64, f64, f64)> {
+    USAGE_RATES
+        .iter()
+        .find(|(family, ..)| model.contains(family))
+        .map(|&(_, i, o, cw, cr)| (i, o, cw, cr))
+}
+
+/// Estimated USD cost for one usage block at the given rates (per Mtok).
+fn estimate_cost(t: &TokenTotals, rate: (f64, f64, f64, f64)) -> f64 {
+    let (ri, ro, rcw, rcr) = rate;
+    (t.input as f64 * ri
+        + t.output as f64 * ro
+        + t.cache_creation as f64 * rcw
+        + t.cache_read as f64 * rcr)
+        / 1_000_000.0
+}
+
+/// Running per-bucket accumulator (one per model and per day) folded by
+/// [`parse_claude_usage`], then flattened into the serialized rollups.
+#[derive(Default)]
+struct UsageBucket {
+    totals: TokenTotals,
+    turns: u32,
+    est_cost_usd: f64,
+    priced: bool,
+}
+
+impl UsageBucket {
+    fn add(&mut self, t: &TokenTotals, cost: f64, priced: bool) {
+        self.totals.input += t.input;
+        self.totals.output += t.output;
+        self.totals.cache_read += t.cache_read;
+        self.totals.cache_creation += t.cache_creation;
+        self.est_cost_usd += cost;
+        // A bucket counts as priced if any contribution to it was priced.
+        self.priced |= priced;
+    }
+}
+
+/// Fold concatenated Claude Code transcripts (JSONL, one event per line) into a
+/// [`ClaudeUsage`] rollup. Distinct `sessionId`s are counted as sessions; each
+/// `assistant` line is one turn and contributes its `message.usage` token counts
+/// to the global, per-model, and per-day (UTC `timestamp[..10]`) totals. Cost is
+/// estimated per line from [`USAGE_RATES`]; unpriced models contribute their
+/// input+output tokens to `unpriced_tokens` and nothing to the estimate.
+/// Unparseable or non-object lines are skipped, so partial/garbled input
+/// under-reports rather than failing.
+fn parse_claude_usage(raw: &str) -> ClaudeUsage {
+    use std::collections::{BTreeMap, HashSet};
+
+    let mut sessions: HashSet<String> = HashSet::new();
+    // Dedup key for assistant lines: a resumed/forked/compacted session replays
+    // earlier messages into a new transcript, so the same model response (same
+    // `message.id` + `requestId`) recurs across files. Counting each occurrence
+    // would inflate turns + tokens + the cost estimate — breaking the "factual"
+    // contract. We fold each response once. (Distinct `sessionId`s still each
+    // count as a session: a resume IS a real new session, just with replayed
+    // history.) Lines without a `message.id` are never deduped (no safe key).
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut global = UsageBucket::default();
+    let mut by_model: BTreeMap<String, UsageBucket> = BTreeMap::new();
+    let mut by_day: BTreeMap<String, UsageBucket> = BTreeMap::new();
+    let mut unpriced_tokens: u64 = 0;
+
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if let Some(sid) = v.get("sessionId").and_then(|s| s.as_str()) {
+            sessions.insert(sid.to_string());
+        }
+        if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
+            continue;
+        }
+        let msg = v.get("message");
+        // Skip a replayed duplicate before any accumulation.
+        if let Some(id) = msg.and_then(|m| m.get("id")).and_then(|i| i.as_str()) {
+            let req = v.get("requestId").and_then(|r| r.as_str()).unwrap_or("");
+            if !seen.insert(format!("{id}\u{1f}{req}")) {
+                continue;
+            }
+        }
+        let usage = msg.and_then(|m| m.get("usage"));
+        let Some(usage) = usage else { continue };
+        let tok = |k: &str| usage.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
+        let totals = TokenTotals {
+            input: tok("input_tokens"),
+            output: tok("output_tokens"),
+            cache_read: tok("cache_read_input_tokens"),
+            cache_creation: tok("cache_creation_input_tokens"),
+        };
+        let model = msg
+            .and_then(|m| m.get("model"))
+            .and_then(|m| m.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let rate = model_rate(&model);
+        let priced = rate.is_some();
+        let cost = rate.map(|r| estimate_cost(&totals, r)).unwrap_or(0.0);
+        if !priced {
+            unpriced_tokens += totals.input + totals.output;
+        }
+
+        global.add(&totals, cost, priced);
+        global.turns += 1;
+        let m = by_model.entry(model).or_default();
+        m.add(&totals, cost, priced);
+        m.turns += 1;
+
+        if let Some(date) = v
+            .get("timestamp")
+            .and_then(|t| t.as_str())
+            .filter(|t| t.len() >= 10)
+            .map(|t| t[..10].to_string())
+        {
+            by_day.entry(date).or_default().add(&totals, cost, priced);
+        }
+    }
+
+    let mut by_model: Vec<ModelUsage> = by_model
+        .into_iter()
+        .map(|(model, b)| ModelUsage {
+            model,
+            totals: b.totals,
+            turns: b.turns,
+            est_cost_usd: b.est_cost_usd,
+            priced: b.priced,
+        })
+        .collect();
+    // Heaviest spenders first; the UI shows a short ranked list.
+    by_model.sort_by(|a, b| b.est_cost_usd.total_cmp(&a.est_cost_usd));
+
+    let by_day: Vec<DayUsage> = by_day
+        .into_iter()
+        .map(|(date, b)| DayUsage {
+            date,
+            totals: b.totals,
+            est_cost_usd: b.est_cost_usd,
+        })
+        .collect();
+
+    let rates = USAGE_RATES
+        .iter()
+        .map(|&(family, i, o, cw, cr)| ModelRate {
+            family: family.to_string(),
+            input_per_mtok: i,
+            output_per_mtok: o,
+            cache_write_per_mtok: cw,
+            cache_read_per_mtok: cr,
+        })
+        .collect();
+
+    ClaudeUsage {
+        sessions: sessions.len() as u32,
+        turns: global.turns,
+        totals: global.totals,
+        est_cost_usd: global.est_cost_usd,
+        by_model,
+        by_day,
+        rates,
+        rates_as_of: RATES_AS_OF.to_string(),
+        unpriced_tokens,
+    }
+}
 
 /// Parse the US-delimited `git log` output (one commit per line,
 /// `hash\x1fauthor\x1frelative\x1fsubject`). Lines without all four fields —
@@ -1188,7 +1467,8 @@ pub struct AttachHandles {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_version_like, parse_find, parse_git_log, parse_git_status, parse_top, workspace_path,
+        is_version_like, parse_claude_usage, parse_find, parse_git_log, parse_git_status,
+        parse_top, workspace_path,
     };
 
     #[test]
@@ -1352,5 +1632,82 @@ mod tests {
         assert!(workspace_path("/workspace/../etc/passwd").is_err());
         assert!(workspace_path("/etc/passwd").is_err());
         assert!(workspace_path("/workspaceevil").is_err());
+    }
+
+    #[test]
+    fn claude_usage_sums_real_tokens_and_counts_sessions_turns() {
+        // Two sessions; non-assistant lines contribute only their sessionId.
+        let raw = concat!(
+            r#"{"type":"user","sessionId":"s1","message":{"content":"hi"}}"#,
+            "\n",
+            r#"{"type":"assistant","sessionId":"s1","timestamp":"2026-05-22T12:00:00.000Z","message":{"model":"claude-opus-4-7","usage":{"input_tokens":100,"output_tokens":200,"cache_read_input_tokens":1000,"cache_creation_input_tokens":50}}}"#,
+            "\n",
+            r#"{"type":"assistant","sessionId":"s2","timestamp":"2026-05-23T09:00:00.000Z","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":10,"output_tokens":20}}}"#,
+            "\n",
+            "not json at all\n",
+            "\n",
+        );
+        let u = parse_claude_usage(raw);
+        assert_eq!(u.sessions, 2);
+        assert_eq!(u.turns, 2); // two assistant lines
+        assert_eq!(u.totals.input, 110);
+        assert_eq!(u.totals.output, 220);
+        assert_eq!(u.totals.cache_read, 1000);
+        assert_eq!(u.totals.cache_creation, 50);
+        // Opus: 100*15 + 200*75 + 50*18.75 + 1000*1.50 per Mtok.
+        let opus = (100.0 * 15.0 + 200.0 * 75.0 + 50.0 * 18.75 + 1000.0 * 1.50) / 1_000_000.0;
+        let sonnet = (10.0 * 3.0 + 20.0 * 15.0) / 1_000_000.0;
+        assert!((u.est_cost_usd - (opus + sonnet)).abs() < 1e-12);
+        assert_eq!(u.by_day.len(), 2); // grouped by UTC date
+        assert_eq!(u.by_model.len(), 2);
+        assert_eq!(u.unpriced_tokens, 0);
+        assert_eq!(u.rates_as_of, "2026-05");
+    }
+
+    #[test]
+    fn claude_usage_flags_unpriced_models_without_fabricating_cost() {
+        let raw = concat!(
+            r#"{"type":"assistant","sessionId":"s1","timestamp":"2026-05-22T12:00:00.000Z","message":{"model":"some-future-model-x","usage":{"input_tokens":40,"output_tokens":60}}}"#,
+            "\n",
+        );
+        let u = parse_claude_usage(raw);
+        assert_eq!(u.turns, 1);
+        assert_eq!(u.totals.input, 40);
+        assert_eq!(u.est_cost_usd, 0.0); // no rate → no estimate, never guessed
+        assert_eq!(u.unpriced_tokens, 100); // input + output
+        assert_eq!(u.by_model.len(), 1);
+        assert!(!u.by_model[0].priced);
+    }
+
+    #[test]
+    fn claude_usage_dedupes_replayed_assistant_lines() {
+        // The same response (message.id + requestId) replayed into a resumed
+        // session's transcript must be counted once, not twice.
+        let one = r#"{"type":"assistant","sessionId":"s1","requestId":"req-1","timestamp":"2026-05-22T12:00:00.000Z","message":{"id":"msg_abc","model":"claude-opus-4-7","usage":{"input_tokens":100,"output_tokens":200}}}"#;
+        // s2 resumes s1 and replays msg_abc, then adds a genuinely new response.
+        let two = r#"{"type":"assistant","sessionId":"s2","requestId":"req-2","timestamp":"2026-05-23T12:00:00.000Z","message":{"id":"msg_def","model":"claude-opus-4-7","usage":{"input_tokens":10,"output_tokens":20}}}"#;
+        let raw = format!("{one}\n{one}\n{two}\n");
+        let u = parse_claude_usage(&raw);
+        // Two distinct sessions (s1, s2) even though one line was a replay.
+        assert_eq!(u.sessions, 2);
+        // Replayed msg_abc counted once → 2 unique turns, not 3.
+        assert_eq!(u.turns, 2);
+        assert_eq!(u.totals.input, 110);
+        assert_eq!(u.totals.output, 220);
+        // Only the genuinely-new line lands on the second day.
+        assert_eq!(u.by_day.len(), 2);
+    }
+
+    #[test]
+    fn claude_usage_empty_input_is_all_zero_not_error() {
+        let u = parse_claude_usage("");
+        assert_eq!(u.sessions, 0);
+        assert_eq!(u.turns, 0);
+        assert_eq!(u.totals, super::TokenTotals::default());
+        assert_eq!(u.est_cost_usd, 0.0);
+        assert!(u.by_model.is_empty());
+        assert!(u.by_day.is_empty());
+        // Rate table is always surfaced for UI transparency.
+        assert_eq!(u.rates.len(), 3);
     }
 }

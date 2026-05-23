@@ -81,6 +81,8 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       return jget(`/container-git-log?limit=${args.limit ?? 12}`) as Promise<T>;
     case "session_activity":
       return jget("/session-activity") as Promise<T>;
+    case "claude_usage":
+      return jget("/claude-usage") as Promise<T>;
     case "list_sessions":
       return jget("/sessions") as Promise<T>;
     case "create_session":
