@@ -95,7 +95,7 @@ export async function createPane(stash: HTMLElement, sessionName: string): Promi
   });
 
   pane.unlistenExit = await listen<number>(`pty://exit/${paneId}`, () => {
-    term.write("\r\n\x1b[38;2;201;163;107m\x1b[3m  · specimen has departed ·\x1b[0m\r\n");
+    term.write("\r\n\x1b[38;2;201;163;107m\x1b[3m  · session ended ·\x1b[0m\r\n");
   });
 
   term.onData((data) => {

@@ -103,10 +103,6 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
-.bird {
-  shape-rendering: crispEdges;
-}
-
 /* Faint scanline + vignette atmosphere, ported from the vanilla skin. */
 body::before {
   content: "";
