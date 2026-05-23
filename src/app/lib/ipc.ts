@@ -243,6 +243,11 @@ export interface SessionUsage {
   // Count of file-editing tool calls (Edit/Write/MultiEdit/NotebookEdit) the
   // agent made this session — a real tally, not a guess.
   edits: number;
+  // Live context footprint: tokens the model read on its most recent turn
+  // (input + cache). No window maximum — the transcript never records it and it
+  // varies by model/version/tier, so the UI shows this count alone, never a
+  // fabricated used/max ratio.
+  contextUsed: number;
 }
 
 export const ipc = {

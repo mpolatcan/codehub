@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { AgentGlyph } from "../components/primitives/AgentGlyph";
-import { ContextGauge } from "../components/primitives/ContextGauge";
 import { IconBtn } from "../components/primitives/IconBtn";
 import { MetricStat } from "../components/primitives/MetricStat";
 import { StatusDot } from "../components/primitives/StatusDot";
@@ -189,12 +188,14 @@ export function PaneHead({ session }: { session: string }) {
         </IconBtn>
       </div>
 
-      {/* metric row — turn + tokens + edits are REAL for Claude (read from this
-          session's transcript via --session-id; em-dash for other CLIs or before
-          the first response). ctx/cost stay em-dash: no reliable per-session
-          source (cost lives on Usage with its estimate disclosure). */}
+      {/* metric row — ctx + turn + tokens + edits are REAL for Claude (read from
+          this session's transcript via --session-id; em-dash for other CLIs or
+          before the first response). ctx is the live context footprint (tokens
+          read last turn) shown as a bare count: the transcript has no window max
+          and it varies by model/version, so no fabricated used/max ratio. cost
+          stays em-dash: an estimate, surfaced on Usage with its disclosure. */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 12px 7px" }}>
-        <ContextGauge used={0} max={0} label="ctx" width={90} />
+        <MetricStat label="ctx" value={usage ? fmtTokens(usage.contextUsed) : "—"} />
         <span className="vr" style={{ height: 16 }} />
         <MetricStat label="turn" value={usage ? String(usage.turns) : "—"} />
         <MetricStat
