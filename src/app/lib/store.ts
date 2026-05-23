@@ -27,9 +27,9 @@ import {
 } from "./tree";
 
 // Top-level view, switched from the sidebar nav. "hub" is the terminal grid;
-// the rest are full-pane screens. hub/dashboard/containers/settings are live
-// real-data screens; usage/resume/integrations are honest stubs whose real data
-// needs backend CodeHub doesn't capture yet (see PlannedScreen + BACKEND_PLAN).
+// the rest are full-pane screens. hub/dashboard/containers/settings/usage/resume
+// are live real-data screens; only integrations is still an honest stub whose
+// real data needs backend CodeHub doesn't capture yet (see PlannedScreen).
 export type HubView =
   | "hub"
   | "dashboard"
@@ -101,7 +101,13 @@ export const useStore = create<CodeHubState>((set, get) => {
     return `${cli}-${Date.now().toString(36)}-${next.toString(36)}`;
   };
 
-  const registerMeta = (name: string, cli: Cli, mode: Mode, workspaceId: string) => {
+  const registerMeta = (
+    name: string,
+    cli: Cli,
+    mode: Mode,
+    workspaceId: string,
+    claudeId?: string,
+  ) => {
     const num = get().sessionCounter;
     const meta: SessionMeta = {
       cli,
@@ -109,9 +115,16 @@ export const useStore = create<CodeHubState>((set, get) => {
       alias: aliasFor(cli, num),
       mode,
       workspaceId,
+      claudeId,
     };
     set((s) => ({ sessionMeta: { ...s.sessionMeta, [name]: meta } }));
   };
+
+  // Conversation id to correlate a Claude session with its on-disk transcript:
+  // the resumed id when resuming, else a fresh UUID we pin via `--session-id`.
+  // Non-Claude CLIs persist no such transcript, so they have none.
+  const claudeIdFor = (cli: Cli, resume?: string): string | undefined =>
+    cli === "claude" ? (resume ?? crypto.randomUUID()) : undefined;
 
   return {
     workspaces: [],
@@ -156,7 +169,18 @@ export const useStore = create<CodeHubState>((set, get) => {
     newPlate: async (cli, mode, resume) => {
       if (!isRunning()) return;
       const name = uniqueName(cli);
-      await ipc.createSession(name, cli, mode, aliasFor(cli, get().sessionCounter), resume);
+      const claudeId = claudeIdFor(cli, resume);
+      // A resume carries its id via --resume; a fresh Claude session pins a new
+      // one via --session-id (same value, so we can read its transcript back).
+      const sessionId = resume ? undefined : claudeId;
+      await ipc.createSession(
+        name,
+        cli,
+        mode,
+        aliasFor(cli, get().sessionCounter),
+        resume,
+        sessionId,
+      );
       await registry.spawnPane(name);
 
       const plate = get().plateCounter + 1;
@@ -166,7 +190,7 @@ export const useStore = create<CodeHubState>((set, get) => {
         root: leafNode(name),
         focused: name,
       };
-      registerMeta(name, cli, mode, ws.id);
+      registerMeta(name, cli, mode, ws.id, claudeId);
       set((s) => ({
         plateCounter: plate,
         workspaces: [...s.workspaces, ws],
@@ -179,9 +203,17 @@ export const useStore = create<CodeHubState>((set, get) => {
       const ws = get().workspaces.find((w) => w.id === get().sessionMeta[target]?.workspaceId);
       if (!ws || !ws.root) return;
       const name = uniqueName(cli);
-      await ipc.createSession(name, cli, mode, aliasFor(cli, get().sessionCounter));
+      const claudeId = claudeIdFor(cli);
+      await ipc.createSession(
+        name,
+        cli,
+        mode,
+        aliasFor(cli, get().sessionCounter),
+        undefined,
+        claudeId,
+      );
       await registry.spawnPane(name);
-      registerMeta(name, cli, mode, ws.id);
+      registerMeta(name, cli, mode, ws.id, claudeId);
 
       set((s) => ({
         workspaces: updateWs(s.workspaces, ws.id, (w) => ({

@@ -255,6 +255,19 @@ pub struct ClaudeSession {
     pub version: Option<String>,
 }
 
+/// Live per-session token counts for one Claude conversation, read from its own
+/// transcript (`<sessionId>.jsonl`) so the Hub's pane header can show a real
+/// running tally. All FACTUAL: `turns` is deduped model responses, `tokens_in`/
+/// `tokens_out` are summed `usage` counts. Claude-only — the id is the `--session-id`
+/// the session was launched with.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionUsage {
+    pub turns: u32,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Cli {
@@ -489,6 +502,7 @@ impl DockerClient {
         mode: LaunchMode,
         alias: &str,
         resume: Option<&str>,
+        session_id: Option<&str>,
     ) -> Result<(), DockerError> {
         // `-e IS_SANDBOX=1` marks the pane env as a recognized sandbox so Claude's
         // YOLO mode (--dangerously-skip-permissions) runs as root inside the
@@ -520,6 +534,13 @@ impl DockerClient {
         // id comes from the transcript filename (a UUID), never user free-text.
         if let (Cli::Claude, Some(id)) = (cli, resume) {
             cmd.push("--resume");
+            cmd.push(id);
+        } else if let (Cli::Claude, Some(id)) = (cli, session_id) {
+            // Pin a fresh Claude conversation to a known UUID so its transcript
+            // lands at a predictable path (`<id>.jsonl`); that lets the Hub read
+            // back this session's own token tally (see `claude_session_usage`).
+            // Resume already carries an id, so the two are mutually exclusive.
+            cmd.push("--session-id");
             cmd.push(id);
         }
         self.exec_capture(cmd).await?;
@@ -1067,6 +1088,47 @@ impl DockerClient {
             .await?;
         Ok(parse_claude_sessions(&raw))
     }
+
+    /// Live token tally for one Claude session, read from its own transcript
+    /// (`<id>.jsonl`, where `id` is the `--session-id` it was launched with).
+    /// `None` when the id is not a plausible session id (defensive: it is
+    /// interpolated into a path) or the transcript has no usable usage data yet
+    /// (a brand-new session that hasn't responded). Errors only when the
+    /// container is down. Reuses the deduped fold from [`parse_claude_usage`].
+    pub async fn claude_session_usage(
+        &self,
+        id: &str,
+    ) -> Result<Option<SessionUsage>, DockerError> {
+        if !is_session_id(id) {
+            return Ok(None);
+        }
+        if !self.is_running().await? {
+            return Err(DockerError::ContainerDown(self.container.clone()));
+        }
+        // `id` is validated to `[0-9A-Za-z-]` so it carries no path or shell
+        // metacharacters; passed as a plain `cat` argv (no shell). A missing file
+        // just makes `cat` write an error to stderr, which the JSONL parser skips.
+        let path = format!("/config/claude/projects/-workspace/{id}.jsonl");
+        let raw = self.exec_capture(vec!["cat", &path]).await?;
+        let u = parse_claude_usage(&raw);
+        if u.turns == 0 {
+            return Ok(None);
+        }
+        Ok(Some(SessionUsage {
+            turns: u.turns,
+            tokens_in: u.totals.input,
+            tokens_out: u.totals.output,
+        }))
+    }
+}
+
+/// Whether `id` is a plausible Claude session id (a UUID, but we accept any
+/// non-empty `[0-9A-Za-z-]` string up to 64 chars). This is a hard gate before
+/// the id is interpolated into a transcript path — it rejects `..`, `/`, and any
+/// shell metacharacter, so [`DockerClient::claude_session_usage`] can never be
+/// steered outside the transcripts directory.
+fn is_session_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
 /// Normalize and confine a browser path to `/workspace`. Empty → the workspace
@@ -1707,7 +1769,7 @@ pub struct AttachHandles {
 #[cfg(test)]
 mod tests {
     use super::{
-        clip_title, is_synthetic_prompt, is_version_like, parse_claude_sessions,
+        clip_title, is_session_id, is_synthetic_prompt, is_version_like, parse_claude_sessions,
         parse_claude_usage, parse_find, parse_git_log, parse_git_status, parse_top, workspace_path,
     };
 
@@ -1998,6 +2060,19 @@ mod tests {
     #[test]
     fn claude_sessions_empty_input_is_empty_list_not_error() {
         assert!(parse_claude_sessions("").is_empty());
+    }
+
+    #[test]
+    fn session_id_guard_rejects_path_and_shell_metacharacters() {
+        assert!(is_session_id("32ed84f6-5897-4434-9028-41d44f2fdb25"));
+        assert!(is_session_id("abc123"));
+        // Anything that could escape the transcripts dir or reach the shell.
+        assert!(!is_session_id(""));
+        assert!(!is_session_id("../../etc/passwd"));
+        assert!(!is_session_id("a/b"));
+        assert!(!is_session_id("a.jsonl"));
+        assert!(!is_session_id("id; rm -rf /"));
+        assert!(!is_session_id(&"x".repeat(65)));
     }
 
     #[test]

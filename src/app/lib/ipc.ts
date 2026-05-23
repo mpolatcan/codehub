@@ -228,6 +228,15 @@ export interface ClaudeSession {
   version: string | null;
 }
 
+// Live per-session token tally for one Claude conversation, read from its own
+// transcript (the `--session-id` it was launched with). All factual; null when
+// there is no usable data yet (a session that hasn't responded).
+export interface SessionUsage {
+  turns: number;
+  tokensIn: number;
+  tokensOut: number;
+}
+
 export const ipc = {
   containerStatus: () => invoke<ContainerStatus>("container_status"),
   dockerInfo: () => invoke<DockerInfo>("docker_info"),
@@ -267,11 +276,21 @@ export const ipc = {
   // Past Claude conversations from on-disk transcripts (Resume view), newest
   // first; each can be reopened via createSession's `resume` arg.
   claudeSessions: () => invoke<ClaudeSession[]>("claude_sessions"),
+  // Live token tally for one Claude session (the `--session-id`/resumed id it
+  // was launched with); null when no usable data yet. Backs the pane header.
+  claudeSessionUsage: (id: string) => invoke<SessionUsage | null>("claude_session_usage", { id }),
   listSessions: () => invoke<SessionInfo[]>("list_sessions"),
   // `resume` (a Claude transcript id) relaunches that conversation with
-  // `claude --resume <id>` instead of starting fresh.
-  createSession: (name: string, cli: Cli, mode: Mode, alias: string, resume?: string) =>
-    invoke<void>("create_session", { name, cli, mode, alias, resume }),
+  // `claude --resume <id>`. `sessionId` pins a fresh Claude session to a known
+  // UUID (`--session-id`) so its transcript can be read back. Mutually exclusive.
+  createSession: (
+    name: string,
+    cli: Cli,
+    mode: Mode,
+    alias: string,
+    resume?: string,
+    sessionId?: string,
+  ) => invoke<void>("create_session", { name, cli, mode, alias, resume, sessionId }),
   killSession: (name: string) => invoke<void>("kill_session", { name }),
   renameSession: (name: string, alias: string) => invoke<void>("rename_session", { name, alias }),
   attachSession: (name: string, cols: number, rows: number) =>
