@@ -189,10 +189,10 @@ export function PaneHead({ session }: { session: string }) {
         </IconBtn>
       </div>
 
-      {/* metric row — turn + tokens are REAL for Claude (read from this session's
-          transcript via --session-id; em-dash for other CLIs or before the first
-          response). ctx/cost/edits stay em-dash: no reliable per-session source
-          (cost lives on Usage with its estimate disclosure). */}
+      {/* metric row — turn + tokens + edits are REAL for Claude (read from this
+          session's transcript via --session-id; em-dash for other CLIs or before
+          the first response). ctx/cost stay em-dash: no reliable per-session
+          source (cost lives on Usage with its estimate disclosure). */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 12px 7px" }}>
         <ContextGauge used={0} max={0} label="ctx" width={90} />
         <span className="vr" style={{ height: 16 }} />
@@ -202,7 +202,7 @@ export function PaneHead({ session }: { session: string }) {
           value={usage ? fmtTokens(usage.tokensIn + usage.tokensOut) : "—"}
         />
         <MetricStat label="cost" value="—" />
-        <MetricStat label="edits" value="—" />
+        <MetricStat label="edits" value={usage ? String(usage.edits) : "—"} />
         <span style={{ flex: 1 }} />
         <span
           style={{

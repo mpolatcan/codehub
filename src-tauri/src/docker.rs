@@ -258,14 +258,16 @@ pub struct ClaudeSession {
 /// Live per-session token counts for one Claude conversation, read from its own
 /// transcript (`<sessionId>.jsonl`) so the Hub's pane header can show a real
 /// running tally. All FACTUAL: `turns` is deduped model responses, `tokens_in`/
-/// `tokens_out` are summed `usage` counts. Claude-only — the id is the `--session-id`
-/// the session was launched with.
+/// `tokens_out` are summed `usage` counts, `edits` is the count of file-editing
+/// tool calls (Edit/Write/MultiEdit/NotebookEdit) the agent actually made.
+/// Claude-only — the id is the `--session-id` the session was launched with.
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionUsage {
     pub turns: u32,
     pub tokens_in: u64,
     pub tokens_out: u64,
+    pub edits: u32,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -1111,6 +1113,9 @@ impl DockerClient {
         let path = format!("/config/claude/projects/-workspace/{id}.jsonl");
         let raw = self.exec_capture(vec!["cat", &path]).await?;
         let u = parse_claude_usage(&raw);
+        // turns == 0 means no usable response yet → report nothing (em-dash).
+        // edits is read from the same assistant lines, so reporting it only
+        // alongside a real turn keeps the two counts in step.
         if u.turns == 0 {
             return Ok(None);
         }
@@ -1118,6 +1123,7 @@ impl DockerClient {
             turns: u.turns,
             tokens_in: u.totals.input,
             tokens_out: u.totals.output,
+            edits: count_session_edits(&raw),
         }))
     }
 }
@@ -1129,6 +1135,61 @@ impl DockerClient {
 /// steered outside the transcripts directory.
 fn is_session_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// Tool names that mutate a file in the workspace. Counting these `tool_use`
+/// blocks gives a real "edits" tally for a session — what the agent actually
+/// changed, not a guess. Read/Bash/Grep/etc. are reads or shell and are not
+/// counted (a `sed` inside Bash can't be reliably attributed, so we only count
+/// the explicit edit tools rather than over-claim).
+const EDIT_TOOLS: &[&str] = &["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
+/// Count file-editing tool calls in one Claude transcript. Scans `assistant`
+/// lines for `message.content[]` `tool_use` blocks whose `name` is an
+/// [`EDIT_TOOLS`] entry. Deduped by `(message.id, requestId)` exactly as
+/// [`parse_claude_usage`] dedupes turns, so a resumed/replayed transcript does
+/// not double-count edits. Multiple edit tool calls within one response each
+/// count. Unparseable lines are skipped (under-count over corruption).
+fn count_session_edits(raw: &str) -> u32 {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut edits: u32 = 0;
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
+            continue;
+        }
+        let msg = v.get("message");
+        if let Some(id) = msg.and_then(|m| m.get("id")).and_then(|i| i.as_str()) {
+            let req = v.get("requestId").and_then(|r| r.as_str()).unwrap_or("");
+            if !seen.insert(format!("{id}\u{1f}{req}")) {
+                continue;
+            }
+        }
+        let Some(content) = msg
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_array())
+        else {
+            continue;
+        };
+        for block in content {
+            if block.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
+                continue;
+            }
+            if let Some(name) = block.get("name").and_then(|n| n.as_str()) {
+                if EDIT_TOOLS.contains(&name) {
+                    edits += 1;
+                }
+            }
+        }
+    }
+    edits
 }
 
 /// Normalize and confine a browser path to `/workspace`. Empty → the workspace
@@ -1769,8 +1830,9 @@ pub struct AttachHandles {
 #[cfg(test)]
 mod tests {
     use super::{
-        clip_title, is_session_id, is_synthetic_prompt, is_version_like, parse_claude_sessions,
-        parse_claude_usage, parse_find, parse_git_log, parse_git_status, parse_top, workspace_path,
+        clip_title, count_session_edits, is_session_id, is_synthetic_prompt, is_version_like,
+        parse_claude_sessions, parse_claude_usage, parse_find, parse_git_log, parse_git_status,
+        parse_top, workspace_path,
     };
 
     #[test]
@@ -2073,6 +2135,22 @@ mod tests {
         assert!(!is_session_id("a.jsonl"));
         assert!(!is_session_id("id; rm -rf /"));
         assert!(!is_session_id(&"x".repeat(65)));
+    }
+
+    #[test]
+    fn count_session_edits_counts_edit_tools_deduped() {
+        // One response with an Edit + a Read (only Edit counts) and a second
+        // response (different id) with a Write + a MultiEdit. A replay of the
+        // first line must not double-count. Non-assistant + plain text lines
+        // contribute nothing.
+        let edit_read = r#"{"type":"assistant","requestId":"r1","message":{"id":"m1","content":[{"type":"text","text":"ok"},{"type":"tool_use","name":"Edit","input":{}},{"type":"tool_use","name":"Read","input":{}}]}}"#;
+        let write_multi = r#"{"type":"assistant","requestId":"r2","message":{"id":"m2","content":[{"type":"tool_use","name":"Write","input":{}},{"type":"tool_use","name":"MultiEdit","input":{}}]}}"#;
+        let user = r#"{"type":"user","message":{"content":"hi"}}"#;
+        let text_only = r#"{"type":"assistant","requestId":"r3","message":{"id":"m3","content":[{"type":"text","text":"done"}]}}"#;
+        let raw = format!("{edit_read}\n{write_multi}\n{user}\n{text_only}\n{edit_read}\n");
+        // Edit(1) + Write(1) + MultiEdit(1) = 3; the replayed first line is deduped.
+        assert_eq!(count_session_edits(&raw), 3);
+        assert_eq!(count_session_edits(""), 0);
     }
 
     #[test]

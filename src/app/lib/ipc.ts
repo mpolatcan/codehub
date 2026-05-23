@@ -240,6 +240,9 @@ export interface SessionUsage {
   turns: number;
   tokensIn: number;
   tokensOut: number;
+  // Count of file-editing tool calls (Edit/Write/MultiEdit/NotebookEdit) the
+  // agent made this session — a real tally, not a guess.
+  edits: number;
 }
 
 export const ipc = {
