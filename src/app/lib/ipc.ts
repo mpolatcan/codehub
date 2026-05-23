@@ -161,6 +161,58 @@ export interface GitStatus {
   total: number;
 }
 
+// Cumulative token counts; every field is a real sum from Claude Code session
+// transcripts (never estimated).
+export interface TokenTotals {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+}
+
+// Per-model usage rollup. `priced` is false when no rate-table entry matched the
+// model — then `estCostUsd` is 0 and its tokens count toward `unpricedTokens`.
+export interface ModelUsage {
+  model: string;
+  totals: TokenTotals;
+  turns: number;
+  estCostUsd: number;
+  priced: boolean;
+}
+
+// Per-day usage rollup (UTC `YYYY-MM-DD`).
+export interface DayUsage {
+  date: string;
+  totals: TokenTotals;
+  estCostUsd: number;
+}
+
+// One model family's per-million-token rates, surfaced so the cost estimate is
+// transparent about the prices it used.
+export interface ModelRate {
+  family: string;
+  inputPerMtok: number;
+  outputPerMtok: number;
+  cacheWritePerMtok: number;
+  cacheReadPerMtok: number;
+}
+
+// Aggregate token analytics from Claude Code's on-disk session transcripts.
+// Token + turn + session counts are FACTUAL; `estCostUsd` is an ESTIMATE
+// (tokens × `rates`, as of `ratesAsOf`), not a billed amount. `unpricedTokens`
+// is input+output volume from models with no rate match, excluded from the cost.
+export interface ClaudeUsage {
+  sessions: number;
+  turns: number;
+  totals: TokenTotals;
+  estCostUsd: number;
+  byModel: ModelUsage[];
+  byDay: DayUsage[];
+  rates: ModelRate[];
+  ratesAsOf: string;
+  unpricedTokens: number;
+}
+
 export const ipc = {
   containerStatus: () => invoke<ContainerStatus>("container_status"),
   dockerInfo: () => invoke<DockerInfo>("docker_info"),
@@ -194,6 +246,9 @@ export const ipc = {
   containerGitLog: (limit?: number) => invoke<CommitInfo[]>("container_git_log", { limit }),
   // Per-session working/idle activity from output flow (polled by the Hub).
   sessionActivity: () => invoke<SessionActivity[]>("session_activity"),
+  // Token analytics from Claude Code session transcripts (Usage view): real
+  // token/turn/session counts + an estimated cost.
+  claudeUsage: () => invoke<ClaudeUsage>("claude_usage"),
   listSessions: () => invoke<SessionInfo[]>("list_sessions"),
   createSession: (name: string, cli: Cli, mode: Mode, alias: string) =>
     invoke<void>("create_session", { name, cli, mode, alias }),

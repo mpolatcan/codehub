@@ -10,8 +10,8 @@ pub mod pty;
 
 use activity::SessionActivity;
 use docker::{
-    AgentVersion, Cli, CommitInfo, ContainerStats, DockerClient, FileEntry, GitStatus, ImageInfo,
-    LaunchMode, MountInfo, ProcessInfo, RuntimeHealth,
+    AgentVersion, ClaudeUsage, Cli, CommitInfo, ContainerStats, DockerClient, FileEntry, GitStatus,
+    ImageInfo, LaunchMode, MountInfo, ProcessInfo, RuntimeHealth,
 };
 use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle};
 use pty::{PaneEmitter, PtyRegistry, SessionInfo};
@@ -226,6 +226,14 @@ async fn container_git_diff_all(state: tauri::State<'_, AppState>) -> Result<Str
 #[tauri::command]
 async fn container_top(state: tauri::State<'_, AppState>) -> Result<Vec<ProcessInfo>, String> {
     state.docker.top().await.map_err(|e| e.to_string())
+}
+
+/// Aggregate token-usage analytics (Usage view) from Claude Code's on-disk
+/// session transcripts. Token + turn + session counts are factual; cost is an
+/// estimate from a published rate table. Errs only when the container is down.
+#[tauri::command]
+async fn claude_usage(state: tauri::State<'_, AppState>) -> Result<ClaudeUsage, String> {
+    state.docker.claude_usage().await.map_err(|e| e.to_string())
 }
 
 /// Recent commits on `/workspace` (Dashboard "Recent commits"). `limit` defaults
@@ -552,6 +560,7 @@ pub fn run() {
             container_git_diff,
             container_git_diff_all,
             container_top,
+            claude_usage,
             container_git_log,
             list_sessions,
             create_session,
