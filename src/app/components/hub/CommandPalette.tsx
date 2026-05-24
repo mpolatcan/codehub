@@ -49,7 +49,10 @@ export function CommandPalette() {
   const newPlate = useStore((s) => s.newPlate);
   const restartRuntime = useStore((s) => s.restartRuntime);
   const selectWorkspaceDir = useStore((s) => s.selectWorkspaceDir);
-  const recents = useStore((s) => s.config?.recentWorkspaces ?? []);
+  // Default OUTSIDE the selector: returning `?? []` inside hands
+  // useSyncExternalStore a fresh array every render (config starts null) and
+  // spins an infinite render loop. Select the stable ref, default in render.
+  const recents = useStore((s) => s.config?.recentWorkspaces) ?? [];
   const githubRepos = useStore((s) => s.githubRepos);
   const runtimeLive = useStore((s) => s.status?.state === "running");
 

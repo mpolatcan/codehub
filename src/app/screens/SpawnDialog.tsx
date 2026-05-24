@@ -537,7 +537,9 @@ function AccountCard({
 function RepositoryPicker() {
   const dash = "—";
   const workspaceInfo = useStore((s) => s.workspaceInfo);
-  const recents = useStore((s) => s.config?.recentWorkspaces ?? []);
+  // Default outside the selector — a `?? []` inside returns a fresh array per
+  // render and loops useSyncExternalStore (config starts null).
+  const recents = useStore((s) => s.config?.recentWorkspaces) ?? [];
   const running = useStore((s) => s.status?.state === "running");
   const pickWorkspaceDir = useStore((s) => s.pickWorkspaceDir);
   const selectWorkspaceDir = useStore((s) => s.selectWorkspaceDir);
