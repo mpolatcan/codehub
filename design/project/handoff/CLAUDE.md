@@ -1,5 +1,9 @@
 # CodeHub — implementation guide for Claude Code
 
+> **SUPERSEDED (historical).** This was the Aviary→CodeHub migration brief.
+> The migration shipped; the repo is React 19, not 18. Kept as a design-intent
+> record only. For current guidance use the root `./CLAUDE.md`.
+
 > Read this whole file before touching any source. The design is finished;
 > your job is to port it cleanly into the existing Tauri v2 + React codebase
 > formerly known as **Aviary**.

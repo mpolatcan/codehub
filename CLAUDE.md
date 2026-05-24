@@ -87,7 +87,7 @@ Environment knobs:
 | Env var | Purpose | Default |
 |---|---|---|
 | `CODEHUB_CONTAINER` | Container name | `codehub-runtime` |
-| `CODEHUB_IMAGE` | Image tag | `ghcr.io/mpolatcan/codehub-runtime:0.1.2` |
+| `CODEHUB_IMAGE` | Image tag | `ghcr.io/mpolatcan/codehub-runtime:0.1.3` |
 | `CODEHUB_NETWORK_MODE` | Docker network mode | `bridge` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Skip /login in Claude Code | unset |
 
@@ -116,6 +116,7 @@ Environment knobs:
 - **Antigravity install URL is unverified** (`antigravity.google/cli/install.sh` returned an SSL self-signed cert chain error during build). The line is commented out in `runtime/Dockerfile`, and `catalog.ts` `MODE_SUPPORT` caps Antigravity to Standard only. Until confirmed, selecting Antigravity spawns a tmux session that exits immediately.
 - **xterm panes mount via `absolute inset-0`, never flexbox.** `.pane-body` is `position:relative; flex:1` but NOT `display:flex`; a `flex-1` slot collapses to height 0 and the absolutely-positioned `.term-surface` renders blank. `<PaneMount>` fills the slot with `absolute inset-0` + a `ResizeObserver` that re-fits on resize (there is no window-level resize handler — the observer is it).
 - **Global keyboard shortcuts (`useKeyboard`) attach at the capture phase** so they beat xterm's textarea handler. Don't switch to bubble phase, and don't blanket-skip on `TEXTAREA` — xterm's helper IS a textarea, so the rename-input guard keys off the `.pane-name-input` class instead.
+- **Spawn background tasks in the Tauri `setup` hook with `tauri::async_runtime::spawn`, NOT `tokio::spawn`.** `setup` runs on the main thread with no entered tokio runtime, so a bare `tokio::spawn` panics (`there is no reactor running`) — and because it unwinds across the Obj-C `did_finish_launching` boundary, the process *aborts* instead of erroring. Code shared with the dev bridge (which runs under `#[tokio::main]`, where `tokio::spawn` is valid) must not bake in the spawner: expose the loop as a plain `async fn` and let each caller spawn on its own runtime (see `events::event_tailer_loop` + its two call sites). This shipped as a latent startup crash because the subsystem had only ever run via `make dev-web`, never a real Tauri launch.
 
 ## Testing posture
 
