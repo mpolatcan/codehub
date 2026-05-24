@@ -16,11 +16,17 @@ use crate::config::{ConfigStore, Settings};
 use crate::docker::{Cli, DockerClient, LaunchMode};
 use crate::lifecycle::Lifecycle;
 use crate::pty::{PaneEmitter, PtyRegistry};
+// Phase-0 completion contract: reuse the lib.rs response structs so the REST
+// surface serializes identically to the Tauri commands (no duplicate defs).
+use crate::{
+    ActivityEvent, CodexRateLimits, CodexSession, CodexSessionUsage, CodexTokenTotals, CodexUsage,
+    GithubRepo, GithubStatus, PendingPrompt, UpdateStatus,
+};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -95,18 +101,21 @@ pub async fn serve() {
                 .join(".codehub-devserver")
         });
 
+    // Config loads first: the lifecycle reads the effective workspace dir +
+    // account-profile env vars from it at container-create time (mirrors lib.rs).
+    let config = Arc::new(ConfigStore::load(data_dir.join("settings.json")));
     let lifecycle = Arc::new(
         Lifecycle::new(
             container,
             image,
             data_dir.join("config"),
             data_dir.join("workspace"),
+            config.clone(),
         )
         .expect("docker daemon unreachable — is Docker running?"),
     );
     let docker = Arc::new(lifecycle.docker_client());
     let registry = Arc::new(PtyRegistry::new());
-    let config = Arc::new(ConfigStore::load(data_dir.join("settings.json")));
     let (tx, _) = broadcast::channel::<String>(1024);
 
     // Provision the runtime in the background, mirroring lib.rs setup; the
@@ -141,6 +150,15 @@ pub async fn serve() {
         .route("/docker-info", get(docker_info))
         .route("/app-info", get(app_info))
         .route("/config", get(get_config).put(set_config))
+        .route("/pick-directory", post(pick_directory))
+        .route("/workspace-dir", put(set_workspace_dir))
+        .route("/workspace-info", get(workspace_info))
+        .route("/recreate-runtime", post(recreate_runtime))
+        .route(
+            "/account-profiles",
+            get(list_account_profiles).post(add_account_profile),
+        )
+        .route("/account-profiles/:id", delete(remove_account_profile))
         .route("/agent-key-status", get(agent_key_status))
         .route("/agent-versions", get(agent_versions))
         .route("/container-stats", get(container_stats))
@@ -161,6 +179,17 @@ pub async fn serve() {
         .route("/claude-agent-config", get(claude_agent_config))
         .route("/container-git-log", get(container_git_log))
         .route("/session-activity", get(session_activity))
+        // Phase-0 completion contract (stub handlers; mirror lib.rs).
+        .route("/pending-prompts", get(pending_prompts))
+        .route("/respond-prompt", post(respond_prompt))
+        .route("/session-activity-history", get(session_activity_history))
+        .route("/codex-usage", get(codex_usage))
+        .route("/codex-sessions", get(codex_sessions))
+        .route("/codex-session-usage", get(codex_session_usage))
+        .route("/codex-rate-limits", get(codex_rate_limits))
+        .route("/github-status", get(github_status))
+        .route("/github-repos", get(github_repos))
+        .route("/check-update", get(check_update))
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/:name", delete(kill_session))
         .route("/sessions/:name/rename", post(rename_session))
@@ -229,6 +258,74 @@ async fn set_config(
         .set(body)
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+// Tier-2 / Tier-3 — workspace picker + account profiles. Mirror the lib.rs
+// commands one-for-one. The native folder picker can't run in a browser, so
+// pick_directory degrades to null (the UI falls back to a typed path).
+async fn pick_directory() -> impl IntoResponse {
+    Json(None::<String>)
+}
+
+#[derive(Deserialize)]
+struct WorkspaceDirBody {
+    path: String,
+}
+
+async fn set_workspace_dir(
+    State(st): State<AppState>,
+    Json(body): Json<WorkspaceDirBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    if !std::path::Path::new(&body.path).is_dir() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("not a directory: {}", body.path),
+        ));
+    }
+    st.config
+        .set_workspace_dir(body.path)
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+async fn workspace_info(State(st): State<AppState>) -> impl IntoResponse {
+    Json(st.lifecycle.workspace_info().await)
+}
+
+async fn recreate_runtime(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    st.lifecycle.recreate().await.map_err(err)?;
+    let status = st.lifecycle.status().await;
+    broadcast_lifecycle(&st, &status);
+    Ok(Json(status))
+}
+
+async fn list_account_profiles(State(st): State<AppState>) -> impl IntoResponse {
+    Json(crate::profile_statuses(st.config.get().account_profiles))
+}
+
+#[derive(Deserialize)]
+struct AddProfileBody {
+    agent: String,
+    label: String,
+    var_name: String,
+}
+
+async fn add_account_profile(
+    State(st): State<AppState>,
+    Json(body): Json<AddProfileBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    let profile = crate::build_account_profile(&body.agent, &body.label, &body.var_name)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let next = st.config.add_account_profile(profile).map_err(err)?;
+    Ok(Json(crate::profile_statuses(next.account_profiles)))
+}
+
+async fn remove_account_profile(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let next = st.config.remove_account_profile(&id).map_err(err)?;
+    Ok(Json(crate::profile_statuses(next.account_profiles)))
 }
 
 async fn agent_key_status() -> impl IntoResponse {
@@ -387,6 +484,8 @@ struct CreateBody {
     alias: Option<String>,
     resume: Option<String>,
     session_id: Option<String>,
+    /// Account profile id (Tier-3) → resolves to that profile's host env var NAME.
+    account: Option<String>,
 }
 
 async fn create_session(
@@ -400,6 +499,15 @@ async fn create_session(
         .map(LaunchMode::parse)
         .unwrap_or_default();
     let alias = body.alias.unwrap_or_default();
+    // Resolve the chosen account profile to its env var NAME (never a value).
+    let account_var = body.account.as_deref().and_then(|id| {
+        st.config
+            .get()
+            .account_profiles
+            .into_iter()
+            .find(|p| p.id == id)
+            .map(|p| p.var_name)
+    });
     st.docker
         .create_tmux_session(
             &body.name,
@@ -408,6 +516,7 @@ async fn create_session(
             &alias,
             body.resume.as_deref(),
             body.session_id.as_deref(),
+            account_var.as_deref(),
         )
         .await
         .map_err(err)?;
@@ -504,6 +613,102 @@ async fn resize(
 async fn detach(State(st): State<AppState>, Path(id): Path<String>) -> StatusCode {
     st.registry.detach(&id).await;
     StatusCode::NO_CONTENT
+}
+
+// ── Phase-0 completion contract: stub handlers ──────────────────────────────
+// Honest-empty defaults matching lib.rs so `make dev-web` browser mode degrades
+// gracefully. The BE track fills both surfaces together.
+
+async fn pending_prompts() -> impl IntoResponse {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Json(Vec::<PendingPrompt>::new())
+}
+
+#[derive(Deserialize)]
+struct RespondPromptBody {
+    // Parsed to validate the request shape; the stub handler ignores them until
+    // the BE track wires the pty keystroke.
+    #[allow(dead_code)]
+    session: String,
+    #[allow(dead_code)]
+    allow: bool,
+}
+
+async fn respond_prompt(Json(_body): Json<RespondPromptBody>) -> StatusCode {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    StatusCode::NO_CONTENT
+}
+
+#[derive(Deserialize)]
+struct ActivityHistoryQuery {
+    #[allow(dead_code)]
+    session: Option<String>,
+}
+
+async fn session_activity_history(Query(_q): Query<ActivityHistoryQuery>) -> impl IntoResponse {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Json(Vec::<ActivityEvent>::new())
+}
+
+async fn codex_usage() -> impl IntoResponse {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Json(CodexUsage {
+        sessions: 0,
+        turns: 0,
+        totals: CodexTokenTotals::default(),
+        est_cost_usd: 0.0,
+        by_model: Vec::new(),
+        by_day: Vec::new(),
+        rates: Vec::new(),
+        rates_as_of: crate::STUB_RATES_AS_OF.to_string(),
+        unpriced_tokens: 0,
+    })
+}
+
+async fn codex_sessions() -> impl IntoResponse {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Json(Vec::<CodexSession>::new())
+}
+
+#[derive(Deserialize)]
+struct CodexSessionUsageQuery {
+    #[allow(dead_code)]
+    id: String,
+}
+
+async fn codex_session_usage(Query(_q): Query<CodexSessionUsageQuery>) -> impl IntoResponse {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Json(None::<CodexSessionUsage>)
+}
+
+async fn codex_rate_limits() -> impl IntoResponse {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Json(None::<CodexRateLimits>)
+}
+
+async fn github_status() -> impl IntoResponse {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Json(GithubStatus {
+        connected: false,
+        var_name: "GITHUB_TOKEN".to_string(),
+        login: None,
+        scopes: Vec::new(),
+        token_expiry: None,
+    })
+}
+
+async fn github_repos() -> impl IntoResponse {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Json(Vec::<GithubRepo>::new())
+}
+
+async fn check_update() -> impl IntoResponse {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Json(UpdateStatus {
+        current: env!("CARGO_PKG_VERSION").to_string(),
+        available: None,
+        notes: None,
+    })
 }
 
 async fn events(ws: WebSocketUpgrade, State(st): State<AppState>) -> impl IntoResponse {

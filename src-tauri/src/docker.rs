@@ -415,6 +415,18 @@ impl Cli {
         }
     }
 
+    /// The canonical env var each CLI reads its credential from. Used to remap an
+    /// account profile's (possibly custom-named) host var onto the name the CLI
+    /// expects, per session. `Shell` has no credential.
+    pub fn canonical_auth_var(self) -> Option<&'static str> {
+        match self {
+            Cli::Claude => Some("CLAUDE_CODE_OAUTH_TOKEN"),
+            Cli::Codex => Some("OPENAI_API_KEY"),
+            Cli::Antigravity => Some("GOOGLE_API_KEY"),
+            Cli::Shell => None,
+        }
+    }
+
     /// Argv to launch the CLI under the given permission mode. The first element
     /// is the binary; the rest are mode flags. Flags are verified against each
     /// CLI's docs — YOLO variants are safe here because the runtime container is
@@ -485,6 +497,26 @@ fn is_version_like(s: &str) -> bool {
         "permission denied",
     ];
     s.chars().any(|c| c.is_ascii_digit()) && !MARKERS.iter().any(|m| lower.contains(m))
+}
+
+/// A valid POSIX environment variable name (`[A-Za-z_][A-Za-z0-9_]*`). Account
+/// profiles store an env var NAME to remap a session's credential by; this guards
+/// against anything that could break out of the `${NAME}` expansion in the
+/// session-launch shell. Enforced at profile-add time and again at launch.
+pub fn is_env_name(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {},
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Single-quote a string for safe inclusion in a `sh -c` command. Any embedded
+/// single quote is closed, escaped, and reopened (`'\''`). Used to quote the CLI
+/// argv when it runs under the account-remap shell.
+fn shell_single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 #[derive(Clone)]
@@ -616,6 +648,7 @@ impl DockerClient {
         Ok(sessions)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_tmux_session(
         &self,
         name: &str,
@@ -624,6 +657,11 @@ impl DockerClient {
         alias: &str,
         resume: Option<&str>,
         session_id: Option<&str>,
+        // NAME of the host env var holding the chosen account's credential, when
+        // the spawn picked a non-default account profile. Never a value. When it
+        // differs from the CLI's canonical var, the session shell remaps the
+        // canonical var to it BY NAME (see below) so no secret hits the argv.
+        account_var: Option<&str>,
     ) -> Result<(), DockerError> {
         // `-e IS_SANDBOX=1` marks the pane env as a recognized sandbox so Claude's
         // YOLO mode (--dangerously-skip-permissions) runs as root inside the
@@ -636,35 +674,65 @@ impl DockerClient {
         // id. The runtime tmux.conf disables auto/allow-rename so the launched CLI
         // can't clobber it. Falls back to the session name if alias is empty.
         let window = if alias.is_empty() { name } else { alias };
-        let mut cmd = vec![
-            "tmux",
-            "new-session",
-            "-d",
-            "-s",
-            name,
-            "-n",
-            window,
-            "-e",
-            "IS_SANDBOX=1",
-        ];
-        cmd.extend(cli.launch_argv(mode));
+        let mut cmd: Vec<String> = ["tmux", "new-session", "-d", "-s"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        cmd.push(name.to_string());
+        cmd.push("-n".into());
+        cmd.push(window.to_string());
+        cmd.push("-e".into());
+        cmd.push("IS_SANDBOX=1".into());
+
+        // Build the CLI argv (binary + mode flags + resume/session-id) as owned
+        // strings so it can either run directly or be wrapped in a remap shell.
+        let mut argv: Vec<String> = cli
+            .launch_argv(mode)
+            .into_iter()
+            .map(String::from)
+            .collect();
         // Resume reopens a specific past conversation by its transcript id
         // (`claude --resume <id>`). Only Claude persists resumable transcripts and
         // the Resume screen only offers Claude sessions, so this rides on Claude's
         // argv; `--resume` after the mode flags resolves the recorded session. The
         // id comes from the transcript filename (a UUID), never user free-text.
         if let (Cli::Claude, Some(id)) = (cli, resume) {
-            cmd.push("--resume");
-            cmd.push(id);
+            argv.push("--resume".into());
+            argv.push(id.to_string());
         } else if let (Cli::Claude, Some(id)) = (cli, session_id) {
             // Pin a fresh Claude conversation to a known UUID so its transcript
             // lands at a predictable path (`<id>.jsonl`); that lets the Hub read
             // back this session's own token tally (see `claude_session_usage`).
             // Resume already carries an id, so the two are mutually exclusive.
-            cmd.push("--session-id");
-            cmd.push(id);
+            argv.push("--session-id".into());
+            argv.push(id.to_string());
         }
-        self.exec_capture(cmd).await?;
+
+        // Account remap: when a non-default account was chosen, run the CLI under
+        // a login shell that exports the canonical credential var FROM the
+        // profile's host var, referenced by NAME (`${SRC}`). The source var was
+        // forwarded into the container at create-time (lifecycle::auth_env_with),
+        // so the shell expands it in-container — the secret value never appears in
+        // this `docker exec` argv, the tmux command, or `docker top`. Only applies
+        // when the names actually differ and the source is a safe identifier.
+        match (account_var, cli.canonical_auth_var()) {
+            (Some(src), Some(canon)) if src != canon && is_env_name(src) => {
+                let inner = format!(
+                    "export {canon}=\"${{{src}}}\"; exec {}",
+                    argv.iter()
+                        .map(|a| shell_single_quote(a))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+                cmd.push("sh".into());
+                cmd.push("-lc".into());
+                cmd.push(inner);
+            },
+            _ => cmd.extend(argv),
+        }
+
+        self.exec_capture(cmd.iter().map(String::as_str).collect())
+            .await?;
         Ok(())
     }
 
@@ -2369,10 +2437,10 @@ pub struct AttachHandles {
 #[cfg(test)]
 mod tests {
     use super::{
-        clip_title, count_session_edits, is_session_id, is_synthetic_prompt, is_version_like,
-        latest_context_used, parse_agent_config, parse_claude_integrations, parse_claude_sessions,
-        parse_claude_usage, parse_find, parse_frontmatter, parse_git_log, parse_git_status,
-        parse_tools_field, parse_top, workspace_path,
+        clip_title, count_session_edits, is_env_name, is_session_id, is_synthetic_prompt,
+        is_version_like, latest_context_used, parse_agent_config, parse_claude_integrations,
+        parse_claude_sessions, parse_claude_usage, parse_find, parse_frontmatter, parse_git_log,
+        parse_git_status, parse_tools_field, parse_top, workspace_path, Cli,
     };
 
     #[test]
@@ -2858,5 +2926,42 @@ mod tests {
         let clipped = clip_title(&long);
         assert!(clipped.ends_with('…'));
         assert_eq!(clipped.chars().count(), 81); // 80 + ellipsis
+    }
+
+    #[test]
+    fn env_name_validation_guards_remap() {
+        // Valid POSIX env identifiers.
+        assert!(is_env_name("CLAUDE_CODE_OAUTH_TOKEN"));
+        assert!(is_env_name("_x"));
+        assert!(is_env_name("A1_B2"));
+        // Anything that could break out of the `${NAME}` expansion is rejected.
+        assert!(!is_env_name("")); // empty
+        assert!(!is_env_name("1ABC")); // leading digit
+        assert!(!is_env_name("A B")); // space
+        assert!(!is_env_name("A}B")); // brace
+        assert!(!is_env_name("A$(x)")); // command substitution chars
+        assert!(!is_env_name("A-B")); // dash
+    }
+
+    #[test]
+    fn shell_single_quote_neutralizes_quotes() {
+        assert_eq!(super::shell_single_quote("claude"), "'claude'");
+        // An embedded single quote is closed/escaped/reopened, so the result is
+        // inert when pasted into a `sh -c` command line.
+        assert_eq!(super::shell_single_quote("a'b"), "'a'\\''b'");
+    }
+
+    #[test]
+    fn canonical_auth_var_per_cli() {
+        assert_eq!(
+            Cli::Claude.canonical_auth_var(),
+            Some("CLAUDE_CODE_OAUTH_TOKEN")
+        );
+        assert_eq!(Cli::Codex.canonical_auth_var(), Some("OPENAI_API_KEY"));
+        assert_eq!(
+            Cli::Antigravity.canonical_auth_var(),
+            Some("GOOGLE_API_KEY")
+        );
+        assert_eq!(Cli::Shell.canonical_auth_var(), None);
     }
 }

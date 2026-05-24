@@ -1,7 +1,8 @@
+use crate::config::ConfigStore;
 use crate::docker::DockerClient;
 use bollard::container::{
-    Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
-    StartContainerOptions, StopContainerOptions,
+    Config, CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
+    RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
 };
 use bollard::image::CreateImageOptions;
 use bollard::models::{HostConfig, Mount, MountTypeEnum, PortBinding};
@@ -10,6 +11,7 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -60,9 +62,28 @@ fn all_auth_vars() -> impl Iterator<Item = &'static str> {
 /// verbatim into the container so each CLI reads the name it expects. Values are
 /// never logged.
 pub fn auth_env() -> Vec<String> {
-    all_auth_vars()
-        .filter_map(|v| std::env::var(v).ok().map(|val| format!("{v}={val}")))
-        .collect()
+    auth_env_with(&[])
+}
+
+/// Like [`auth_env`] but also forwards any `extra` env var NAMES present on the
+/// host — used to carry custom-named account-profile credentials (e.g.
+/// `CLAUDE_TOKEN_WORK`) into the container so a session can remap the CLI's
+/// canonical var to one of them by NAME, without the value ever appearing on a
+/// command line. Names are deduped against the built-in set. Values never logged.
+pub fn auth_env_with(extra: &[String]) -> Vec<String> {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    let builtin = all_auth_vars().map(|s| s.to_string());
+    for v in builtin.chain(extra.iter().cloned()) {
+        if !seen.insert(v.clone()) {
+            continue;
+        }
+        // Presence probe binds the value only to forward it; never logged.
+        if let Ok(val) = std::env::var(&v) {
+            out.push(format!("{v}={val}"));
+        }
+    }
+    out
 }
 
 /// Presence-only auth status for one CLI. Carries which env var satisfied it by
@@ -140,12 +161,32 @@ pub fn app_info() -> AppInfo {
     }
 }
 
+/// Where `/workspace` mounts from, and whether the container needs recreating to
+/// pick up a changed choice. `mounted` is the host path the *running* container
+/// actually has bound (from `docker inspect`); `effective` is what config selects
+/// now. They differ after the user changes the workspace dir but before the
+/// runtime is recreated — `needs_recreate` flags exactly that.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceInfo {
+    /// Host dir config currently selects for `/workspace`.
+    pub effective: String,
+    /// Host dir the running container actually has bound, if any.
+    pub mounted: Option<String>,
+    /// True when a container exists and its bound dir differs from `effective`.
+    pub needs_recreate: bool,
+}
+
 pub struct Lifecycle {
     pub docker: Docker,
     pub container_name: String,
     pub image: String,
     pub config_dir: PathBuf,
-    pub workspace_dir: PathBuf,
+    /// Built-in per-user workspace dir, used when config selects none.
+    pub default_workspace_dir: PathBuf,
+    /// UI/config store; the effective workspace dir + account profiles are read
+    /// from here at container-create time (Tier-2 / Tier-3).
+    pub config: Arc<ConfigStore>,
 }
 
 impl Lifecycle {
@@ -153,7 +194,8 @@ impl Lifecycle {
         container_name: String,
         image: String,
         config_dir: PathBuf,
-        workspace_dir: PathBuf,
+        default_workspace_dir: PathBuf,
+        config: Arc<ConfigStore>,
     ) -> Result<Self, LifecycleError> {
         let docker = Docker::connect_with_local_defaults()?;
         Ok(Self {
@@ -161,8 +203,31 @@ impl Lifecycle {
             container_name,
             image,
             config_dir,
-            workspace_dir,
+            default_workspace_dir,
+            config,
         })
+    }
+
+    /// Host directory to bind at `/workspace`: the config's `workspace_dir` when
+    /// set and still an existing directory, otherwise the built-in default. A
+    /// configured-but-missing dir falls back rather than failing the container
+    /// create (the dir may live on an unmounted volume).
+    pub fn workspace_dir(&self) -> PathBuf {
+        match self.config.get().workspace_dir {
+            Some(d) if std::path::Path::new(&d).is_dir() => PathBuf::from(d),
+            _ => self.default_workspace_dir.clone(),
+        }
+    }
+
+    /// Env var NAMES referenced by stored account profiles (Tier-3), so they get
+    /// forwarded into the container at create-time. Names only — never values.
+    fn profile_env_vars(&self) -> Vec<String> {
+        self.config
+            .get()
+            .account_profiles
+            .into_iter()
+            .map(|p| p.var_name)
+            .collect()
     }
 
     /// Single source of truth: returns the current state of the runtime container.
@@ -245,7 +310,8 @@ impl Lifecycle {
 
         // create new
         std::fs::create_dir_all(&self.config_dir)?;
-        std::fs::create_dir_all(&self.workspace_dir)?;
+        let workspace_dir = self.workspace_dir();
+        std::fs::create_dir_all(&workspace_dir)?;
 
         let mounts = vec![
             Mount {
@@ -256,7 +322,7 @@ impl Lifecycle {
             },
             Mount {
                 target: Some("/workspace".into()),
-                source: Some(self.workspace_dir.to_string_lossy().to_string()),
+                source: Some(workspace_dir.to_string_lossy().to_string()),
                 typ: Some(MountTypeEnum::BIND),
                 ..Default::default()
             },
@@ -275,9 +341,10 @@ impl Lifecycle {
         };
 
         // Forward every host auth key the CLIs may need (Claude / Codex /
-        // Antigravity) — not just Claude's. Values never touch the logs.
+        // Antigravity) plus any custom-named account-profile vars, so a session
+        // can remap its CLI's canonical var by NAME. Values never touch the logs.
         let mut env = vec!["TMUX_TMPDIR=/tmp/codehub".to_string()];
-        env.extend(auth_env());
+        env.extend(auth_env_with(&self.profile_env_vars()));
 
         let config = Config {
             image: Some(self.image.clone()),
@@ -348,6 +415,50 @@ impl Lifecycle {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Remove the container and recreate it from scratch, so a changed bind-mount
+    /// source (the workspace dir) or a newly-added account-profile env var takes
+    /// effect. Destructive to running tmux sessions — the caller confirms first.
+    pub async fn recreate(&self) -> Result<(), LifecycleError> {
+        self.remove().await?;
+        self.ensure_container().await?;
+        Ok(())
+    }
+
+    /// The configured-vs-mounted workspace dir + whether a recreate is needed to
+    /// reconcile them. `mounted` is read from the running container's actual bind
+    /// mount (`docker inspect`); when no container exists, `needs_recreate` is
+    /// false (the next create will use `effective`).
+    pub async fn workspace_info(&self) -> WorkspaceInfo {
+        let effective = self.workspace_dir().to_string_lossy().to_string();
+        let mounted = self.mounted_workspace_source().await;
+        let needs_recreate = match &mounted {
+            Some(m) => m != &effective,
+            None => false,
+        };
+        WorkspaceInfo {
+            effective,
+            mounted,
+            needs_recreate,
+        }
+    }
+
+    /// Host path the running container has bound at `/workspace`, if any. `None`
+    /// when the container is missing or the daemon is unreachable.
+    async fn mounted_workspace_source(&self) -> Option<String> {
+        let info = self
+            .docker
+            .inspect_container(&self.container_name, None::<InspectContainerOptions>)
+            .await
+            .ok()?;
+        info.mounts?.into_iter().find_map(|m| {
+            if m.destination.as_deref() == Some("/workspace") {
+                m.source
+            } else {
+                None
+            }
+        })
     }
 
     /// Daemon reachability + version. Best-effort: an unreachable daemon yields
@@ -422,6 +533,42 @@ mod tests {
         assert!(!env.iter().any(|e| e.starts_with("GEMINI_API_KEY=")));
         unsafe {
             std::env::remove_var("GOOGLE_API_KEY");
+        }
+    }
+
+    // A custom-named account-profile var present on the host is forwarded into
+    // the container so a session can remap onto it by NAME; absent extras are not.
+    #[test]
+    fn auth_env_with_forwards_present_extras_and_dedups() {
+        unsafe {
+            std::env::set_var("CLAUDE_TOKEN_WORK", "tok-work-present");
+            std::env::remove_var("CLAUDE_TOKEN_ABSENT");
+        }
+        let extra = vec![
+            "CLAUDE_TOKEN_WORK".to_string(),
+            "CLAUDE_TOKEN_ABSENT".to_string(),
+            // duplicate of a built-in name must not produce two entries
+            "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
+        ];
+        let env = auth_env_with(&extra);
+        assert!(
+            env.iter().any(|e| e.starts_with("CLAUDE_TOKEN_WORK=")),
+            "present custom var should be forwarded"
+        );
+        assert!(
+            !env.iter().any(|e| e.starts_with("CLAUDE_TOKEN_ABSENT=")),
+            "absent custom var must not be forwarded"
+        );
+        let canon = env
+            .iter()
+            .filter(|e| e.starts_with("CLAUDE_CODE_OAUTH_TOKEN="))
+            .count();
+        assert!(
+            canon <= 1,
+            "canonical var must not be duplicated by an extra"
+        );
+        unsafe {
+            std::env::remove_var("CLAUDE_TOKEN_WORK");
         }
     }
 }

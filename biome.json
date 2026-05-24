@@ -13,7 +13,8 @@
       "src-tauri/target",
       "src-tauri/gen",
       "src-tauri/icons",
-      "runtime"
+      "runtime",
+      "design"
     ]
   },
   "organizeImports": {

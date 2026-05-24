@@ -1,15 +1,25 @@
 import { create } from "zustand";
 import { SPEC_BY_CLI } from "./catalog";
 import type {
+  AccountProfileStatus,
+  ActivityEvent,
   AgentCli,
   AgentVersion,
   AppSettings,
   Cli,
+  CodexRateLimits,
+  CodexSession,
+  CodexUsage,
   ContainerStatus,
   DockerInfo,
+  GithubRepo,
+  GithubStatus,
   KeyStatus,
   Mode,
+  PendingPrompt,
   SessionActivity,
+  UpdateStatus,
+  WorkspaceInfo,
 } from "./ipc";
 import { ipc, onLifecycle, onLifecycleError } from "./ipc";
 import * as registry from "./panes";
@@ -33,6 +43,7 @@ import {
 // reads the runtime's Claude config (signed-in account + configured MCP servers).
 export type HubView =
   | "hub"
+  | "workspace"
   | "dashboard"
   | "containers"
   | "settings"
@@ -65,6 +76,30 @@ interface CodeHubState {
   // the Settings screen reads + writes it through updateConfig.
   config: AppSettings | null;
 
+  // Tier-2 workspace picker: configured-vs-mounted /workspace + needs-recreate.
+  // Null until first load. Tier-3 account profiles (label-only, with live host-env
+  // presence), loaded for the Settings + spawn dialog account picker.
+  workspaceInfo: WorkspaceInfo | null;
+  accountProfiles: AccountProfileStatus[];
+
+  // ── Phase-0 completion contract (COMPLETION_PLAN.md) ──────────────────────
+  // New slices for the parallel fleet. Backend fns are stubs (honest-empty)
+  // until the BE track lands, so these stay empty/null until then. NOT wired
+  // into bootstrap polling here — the fleet wires each load where it's used.
+  // Sessions awaiting user input right now (pending_prompts).
+  pendingPrompts: PendingPrompt[];
+  // Activity/turn history ring buffer (session_activity_history).
+  activityHistory: ActivityEvent[];
+  // Codex usage analytics + sessions + rate-limit meters (mirrors claude*).
+  codexUsage: CodexUsage | null;
+  codexSessions: CodexSession[];
+  codexRateLimits: CodexRateLimits | null;
+  // GitHub connection (presence-only) + visible repos (Integrations).
+  githubStatus: GithubStatus | null;
+  githubRepos: GithubRepo[];
+  // App update check (Settings → About).
+  updateStatus: UpdateStatus | null;
+
   // imperative bookkeeping (non-reactive counters)
   plateCounter: number;
   sessionCounter: number;
@@ -81,8 +116,21 @@ interface CodeHubState {
   openDetail: (name: string) => void;
   closeDetail: () => void;
   setSessionActivity: (list: SessionActivity[]) => void;
-  newPlate: (cli: Cli, mode: Mode, resume?: string) => Promise<void>;
-  splitSession: (target: string, dir: SplitDir, cli: Cli, mode: Mode) => Promise<void>;
+  newPlate: (
+    cli: Cli,
+    mode: Mode,
+    resume?: string,
+    initialPrompt?: string,
+    account?: string,
+  ) => Promise<void>;
+  splitSession: (
+    target: string,
+    dir: SplitDir,
+    cli: Cli,
+    mode: Mode,
+    initialPrompt?: string,
+    account?: string,
+  ) => Promise<void>;
   closeSession: (name: string) => Promise<void>;
   closeWorkspace: (id: string) => Promise<void>;
   closeAllSessions: () => Promise<void>;
@@ -94,6 +142,33 @@ interface CodeHubState {
   // Merge a patch into the persisted settings. Optimistic: applies locally, then
   // writes through to the backend; reverts on failure.
   updateConfig: (patch: Partial<AppSettings>) => Promise<void>;
+
+  // Tier-2 workspace picker.
+  loadWorkspaceInfo: () => Promise<void>;
+  // Open the native folder dialog and persist the choice. Returns true when the
+  // workspace dir changed (the caller surfaces "restart runtime to apply").
+  pickWorkspaceDir: () => Promise<boolean>;
+  // Persist an already-known path (e.g. an MRU recents click).
+  selectWorkspaceDir: (path: string) => Promise<void>;
+  // Remove + recreate the runtime so a changed mount applies (kills sessions).
+  recreateRuntime: () => Promise<void>;
+
+  // Tier-3 account profiles (label-only).
+  loadAccountProfiles: () => Promise<void>;
+  // Add a profile. Throws (string) on validation failure so the UI shows it.
+  addAccountProfile: (agent: AgentCli, label: string, varName: string) => Promise<void>;
+  removeAccountProfile: (id: string) => Promise<void>;
+
+  // Phase-0 completion contract load actions (best-effort, mirror the existing
+  // load* pattern). Each catches its own failure so it can't block callers.
+  loadPendingPrompts: () => Promise<void>;
+  loadActivityHistory: (session?: string) => Promise<void>;
+  loadCodexUsage: () => Promise<void>;
+  loadCodexSessions: () => Promise<void>;
+  loadCodexRateLimits: () => Promise<void>;
+  loadGithubStatus: () => Promise<void>;
+  loadGithubRepos: () => Promise<void>;
+  loadUpdateStatus: () => Promise<void>;
 }
 
 function updateWs(list: Workspace[], id: string, fn: (w: Workspace) => Workspace): Workspace[] {
@@ -104,6 +179,20 @@ function updateWs(list: Workspace[], id: string, fn: (w: Workspace) => Workspace
 // the tmux window name passed at create time, so both read identically.
 function aliasFor(cli: Cli, num: number): string {
   return `${SPEC_BY_CLI[cli].alias} ${num}`;
+}
+
+// Pre-fill a freshly-spawned pane's agent input with the spawn dialog's initial
+// prompt. Typed, NOT submitted (no trailing Enter) — matches the design (the
+// prompt sits in the input awaiting the user's review) and sidesteps the race
+// against the CLI's own startup before its input box is ready. Fire-and-forget
+// on a short delay so it never blocks session creation.
+function prefillPrompt(name: string, prompt?: string) {
+  const text = prompt?.trim();
+  if (!text) return;
+  setTimeout(() => {
+    const pane = registry.getPane(name);
+    if (pane) void ipc.ptyWrite(pane.paneId, text);
+  }, 1200);
 }
 
 export const useStore = create<CodeHubState>((set, get) => {
@@ -153,6 +242,17 @@ export const useStore = create<CodeHubState>((set, get) => {
     keyStatus: null,
     agentVersions: null,
     config: null,
+    workspaceInfo: null,
+    accountProfiles: [],
+    // Phase-0 completion contract slices (empty/null until the fleet loads them).
+    pendingPrompts: [],
+    activityHistory: [],
+    codexUsage: null,
+    codexSessions: [],
+    codexRateLimits: null,
+    githubStatus: null,
+    githubRepos: [],
+    updateStatus: null,
     plateCounter: 0,
     sessionCounter: 0,
     bootstrapped: false,
@@ -207,7 +307,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       set({ sessionActivity: next });
     },
 
-    newPlate: async (cli, mode, resume) => {
+    newPlate: async (cli, mode, resume, initialPrompt, account) => {
       if (!isRunning()) return;
       const name = uniqueName(cli);
       const claudeId = claudeIdFor(cli, resume);
@@ -221,8 +321,10 @@ export const useStore = create<CodeHubState>((set, get) => {
         aliasFor(cli, get().sessionCounter),
         resume,
         sessionId,
+        account,
       );
       await registry.spawnPane(name);
+      prefillPrompt(name, initialPrompt);
 
       const plate = get().plateCounter + 1;
       const ws: Workspace = {
@@ -239,7 +341,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       }));
     },
 
-    splitSession: async (target, dir, cli, mode) => {
+    splitSession: async (target, dir, cli, mode, initialPrompt, account) => {
       if (!isRunning()) return;
       const ws = get().workspaces.find((w) => w.id === get().sessionMeta[target]?.workspaceId);
       if (!ws || !ws.root) return;
@@ -252,8 +354,10 @@ export const useStore = create<CodeHubState>((set, get) => {
         aliasFor(cli, get().sessionCounter),
         undefined,
         claudeId,
+        account,
       );
       await registry.spawnPane(name);
+      prefillPrompt(name, initialPrompt);
       registerMeta(name, cli, mode, ws.id, claudeId);
 
       set((s) => ({
@@ -422,6 +526,129 @@ export const useStore = create<CodeHubState>((set, get) => {
         applyDensity(prev.density);
       }
     },
+
+    loadWorkspaceInfo: async () => {
+      try {
+        set({ workspaceInfo: await ipc.workspaceInfo() });
+      } catch (e) {
+        console.warn("workspace_info failed", e);
+      }
+    },
+
+    pickWorkspaceDir: async () => {
+      let path: string | null = null;
+      try {
+        path = await ipc.pickDirectory();
+      } catch (e) {
+        console.warn("pick_directory failed", e);
+        return false;
+      }
+      if (!path) return false;
+      await get().selectWorkspaceDir(path);
+      return true;
+    },
+
+    selectWorkspaceDir: async (path) => {
+      try {
+        // Backend validates the dir + bumps the MRU; echoes the full settings.
+        set({ config: await ipc.setWorkspaceDir(path) });
+        await get().loadWorkspaceInfo();
+      } catch (e) {
+        set({ error: `set workspace dir failed: ${e}` });
+      }
+    },
+
+    recreateRuntime: async () => {
+      try {
+        get().setStatus(await ipc.recreateRuntime());
+        await get().loadWorkspaceInfo();
+      } catch (e) {
+        set({ error: `recreate runtime failed: ${e}` });
+      }
+    },
+
+    loadAccountProfiles: async () => {
+      try {
+        set({ accountProfiles: await ipc.listAccountProfiles() });
+      } catch (e) {
+        console.warn("list_account_profiles failed", e);
+      }
+    },
+
+    // Add throws the backend's validation message (a string) so the dialog can
+    // surface it inline; on success the returned list (with presence) replaces ours.
+    addAccountProfile: async (agent, label, varName) => {
+      const list = await ipc.addAccountProfile(agent, label, varName);
+      set({ accountProfiles: list });
+    },
+
+    removeAccountProfile: async (id) => {
+      try {
+        set({ accountProfiles: await ipc.removeAccountProfile(id) });
+      } catch (e) {
+        set({ error: `remove account failed: ${e}` });
+      }
+    },
+
+    // ── Phase-0 completion contract load actions ───────────────────────────
+    // Backend is a stub until the BE track lands, so these resolve to empty/
+    // null; they exist now so the parallel fleet's screens can wire them.
+    loadPendingPrompts: async () => {
+      try {
+        set({ pendingPrompts: await ipc.pendingPrompts() });
+      } catch (e) {
+        console.warn("pending_prompts failed", e);
+      }
+    },
+    loadActivityHistory: async (session) => {
+      try {
+        set({ activityHistory: await ipc.sessionActivityHistory(session) });
+      } catch (e) {
+        console.warn("session_activity_history failed", e);
+      }
+    },
+    loadCodexUsage: async () => {
+      try {
+        set({ codexUsage: await ipc.codexUsage() });
+      } catch (e) {
+        console.warn("codex_usage failed", e);
+      }
+    },
+    loadCodexSessions: async () => {
+      try {
+        set({ codexSessions: await ipc.codexSessions() });
+      } catch (e) {
+        console.warn("codex_sessions failed", e);
+      }
+    },
+    loadCodexRateLimits: async () => {
+      try {
+        set({ codexRateLimits: await ipc.codexRateLimits() });
+      } catch (e) {
+        console.warn("codex_rate_limits failed", e);
+      }
+    },
+    loadGithubStatus: async () => {
+      try {
+        set({ githubStatus: await ipc.githubStatus() });
+      } catch (e) {
+        console.warn("github_status failed", e);
+      }
+    },
+    loadGithubRepos: async () => {
+      try {
+        set({ githubRepos: await ipc.githubRepos() });
+      } catch (e) {
+        console.warn("github_repos failed", e);
+      }
+    },
+    loadUpdateStatus: async () => {
+      try {
+        set({ updateStatus: await ipc.checkUpdate() });
+      } catch (e) {
+        console.warn("check_update failed", e);
+      }
+    },
   };
 });
 
@@ -490,6 +717,10 @@ async function bootstrap(
     .agentVersions()
     .then((agentVersions) => set({ agentVersions }))
     .catch((e) => console.warn("agent_versions failed", e));
+  // Tier-2/Tier-3: workspace mount reconciliation + account profiles (label-only,
+  // with live host-env presence). Independent best-effort reads.
+  void get().loadWorkspaceInfo();
+  void get().loadAccountProfiles();
 
   // Startup behaviors are persisted prefs; the config load races the lifecycle
   // event that triggered us, so ensure it's resolved before reading the flags.

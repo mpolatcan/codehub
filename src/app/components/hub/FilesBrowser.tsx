@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Ico } from "../../components/primitives/icons";
+import { fmtBytes, joinPath as join, orderEntries as order } from "../../lib/fs";
 import { type FileEntry, ipc } from "../../lib/ipc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/dialog";
 
@@ -11,21 +12,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/dialo
 // directory, a down runtime, or a binary file each render an honest line.
 
 const ROOT = "/workspace";
-
-// Append a child segment to a /workspace path (root has no trailing slash).
-function join(dir: string, name: string): string {
-  return dir === "/" ? `/${name}` : `${dir}/${name}`;
-}
-
-// Dirs before files, each group alphabetical (links/other sort with files).
-function order(entries: FileEntry[]): FileEntry[] {
-  return [...entries].sort((a, b) => {
-    const ad = a.kind === "dir";
-    const bd = b.kind === "dir";
-    if (ad !== bd) return ad ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-}
 
 export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => void }) {
   // Current directory, its listing (null = loading, [] = empty/error), and the
@@ -301,12 +287,4 @@ function Note({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
-}
-
-function fmtBytes(n: number): string {
-  if (n <= 0) return "0 B";
-  const units = ["B", "kB", "MB", "GB", "TB"];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  const v = n / 1024 ** i;
-  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
 }

@@ -30,7 +30,6 @@ use objc2::{define_class, msg_send, AnyThread, MainThreadMarker, MainThreadOnly}
 use objc2_app_kit::{
     NSBackingStoreType, NSColor, NSEvent, NSFont, NSPanel, NSScreen, NSStatusWindowLevel,
     NSTextAlignment, NSTextField, NSTrackingArea, NSTrackingAreaOptions, NSView,
-    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
     NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
@@ -222,22 +221,20 @@ fn build(app: AppHandle, mtm: MainThreadMarker) -> Island {
     panel.setHasShadow(true);
     panel.setMovable(false);
 
-    // Flipped content view that receives hover + click.
+    // Flipped content view that receives hover + click. Its own layer is the
+    // CodeHub chrome: a solid `--color-panel` fill with a `--color-rule` hairline,
+    // matching the app's panels (not a translucent macOS HUD blur).
     let view = IslandView::new(mtm, pill);
     view.setWantsLayer(true);
-
-    // Native dark blur sits *behind* the view, rounded into the pill.
-    let blur = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), pill);
-    blur.setMaterial(NSVisualEffectMaterial::HUDWindow);
-    blur.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
-    blur.setState(NSVisualEffectState::Active);
-    blur.setWantsLayer(true);
-    if let Some(layer) = blur.layer() {
+    if let Some(layer) = view.layer() {
+        let bg = color_panel();
+        layer.setBackgroundColor(Some(&bg.CGColor()));
+        let border = color_rule();
+        layer.setBorderColor(Some(&border.CGColor()));
+        layer.setBorderWidth(1.0);
         layer.setCornerRadius(COLLAPSE_H / 2.0);
         layer.setMasksToBounds(true);
     }
-    let blur_view: &NSView = &blur;
-    view.addSubview(blur_view);
 
     // Hover tracking that always matches the (resizing) visible rect.
     let opts = NSTrackingAreaOptions::MouseEnteredAndExited
@@ -260,7 +257,7 @@ fn build(app: AppHandle, mtm: MainThreadMarker) -> Island {
     // Collapsed header: dot + count.
     let header = label(mtm, "●", COLLAPSE_H - 12.0);
     header.setAlignment(NSTextAlignment::Center);
-    header.setTextColor(Some(&dot_color(false, mtm)));
+    header.setTextColor(Some(&dot_color(false)));
     let header_view: &NSView = &header;
     view.addSubview(header_view);
 
@@ -296,9 +293,9 @@ fn rebuild_rows(island: &mut Island, items: &[IslandItem], mtm: MainThreadMarker
 
     for item in items {
         let dot = label(mtm, "●", 11.0);
-        dot.setTextColor(Some(&dot_color(item.working, mtm)));
+        dot.setTextColor(Some(&dot_color(item.working)));
         let name = label(mtm, &item.label, 12.0);
-        name.setTextColor(Some(&NSColor::whiteColor()));
+        name.setTextColor(Some(&color_text()));
         name.setHidden(!island.expanded);
         dot.setHidden(!island.expanded);
         let dv: &NSView = &dot;
@@ -314,9 +311,7 @@ fn rebuild_rows(island: &mut Island, items: &[IslandItem], mtm: MainThreadMarker
     island
         .header
         .setStringValue(&NSString::from_str(&format!("● {}", items.len())));
-    island
-        .header
-        .setTextColor(Some(&dot_color(working > 0, mtm)));
+    island.header.setTextColor(Some(&dot_color(working > 0)));
 }
 
 /// Expand or collapse. The visibility flips happen under the borrow; the
@@ -445,20 +440,13 @@ fn update_pill(island: &mut Island, mtm: MainThreadMarker) {
     island.pill = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
 }
 
-/// Position the blur, header and rows inside the current content bounds (flipped,
-/// top-left origin).
+/// Position the header and rows inside the current content bounds (flipped,
+/// top-left origin). The panel fill/border/radius live on the view's own layer
+/// (set in `build`, radius updated in `apply_frame`), so there is no blur subview
+/// to size here.
 fn layout(island: &Island) {
     let bounds = island.view.bounds();
     let w = bounds.size.width;
-    let h = bounds.size.height;
-
-    // Blur fills the whole content; round it to the view shape.
-    if let Some((blur, _)) = first_subview(island) {
-        blur.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
-        if let Some(layer) = blur.layer() {
-            layer.setCornerRadius(if island.expanded { 14.0 } else { h / 2.0 });
-        }
-    }
 
     // Header centered in the top band.
     island.header.setFrame(NSRect::new(
@@ -480,27 +468,46 @@ fn layout(island: &Island) {
     }
 }
 
-/// The blur view is the island's first subview (added before header/rows).
-fn first_subview(island: &Island) -> Option<(Retained<NSView>, ())> {
-    island.view.subviews().firstObject().map(|v| (v, ()))
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/// A non-editable, transparent label with the given system font size.
+/// A non-editable, transparent label in the monospaced system font (closest
+/// native match to the app's JetBrains Mono chrome).
 fn label(mtm: MainThreadMarker, text: &str, size: f64) -> Retained<NSTextField> {
     let field = NSTextField::labelWithString(&NSString::from_str(text), mtm);
-    let font = NSFont::systemFontOfSize(size);
+    let font = NSFont::monospacedSystemFontOfSize_weight(size, 0.0);
     field.setFont(Some(&font));
     field
 }
 
-/// Working = CodeHub ochre accent (#e8a33d); idle = muted grey.
-fn dot_color(working: bool, _mtm: MainThreadMarker) -> Retained<NSColor> {
+/// sRGB color from 8-bit channels (matches the `@theme` hex tokens 1:1).
+fn srgb(r: u8, g: u8, b: u8) -> Retained<NSColor> {
+    NSColor::colorWithSRGBRed_green_blue_alpha(
+        f64::from(r) / 255.0,
+        f64::from(g) / 255.0,
+        f64::from(b) / 255.0,
+        1.0,
+    )
+}
+
+/// `--color-panel` #16181c — the island fill.
+fn color_panel() -> Retained<NSColor> {
+    srgb(0x16, 0x18, 0x1c)
+}
+/// `--color-rule` #2a2e35 — the island hairline border.
+fn color_rule() -> Retained<NSColor> {
+    srgb(0x2a, 0x2e, 0x35)
+}
+/// `--color-text` #c9cdd4 — primary label text.
+fn color_text() -> Retained<NSColor> {
+    srgb(0xc9, 0xcd, 0xd4)
+}
+
+/// Working = `--color-accent` ochre #e8a33d; idle = `--color-text-faint` #5c636d.
+fn dot_color(working: bool) -> Retained<NSColor> {
     if working {
-        NSColor::colorWithSRGBRed_green_blue_alpha(0.91, 0.64, 0.24, 1.0)
+        srgb(0xe8, 0xa3, 0x3d)
     } else {
-        NSColor::colorWithSRGBRed_green_blue_alpha(0.50, 0.52, 0.55, 1.0)
+        srgb(0x5c, 0x63, 0x6d)
     }
 }
 

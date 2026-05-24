@@ -4,13 +4,12 @@ import { Logo } from "../../components/primitives/Logo";
 import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../../lib/catalog";
-import { type Cli, type Mode, ipc } from "../../lib/ipc";
+import { ipc } from "../../lib/ipc";
 import { useLauncher } from "../../lib/launcher";
+import { useOverlay } from "../../lib/overlay";
 import { confirmCloseRunningSession, useStore } from "../../lib/store";
 import { leavesList } from "../../lib/tree";
 import { Button } from "../../ui/button";
-import { LaunchPanel } from "../LaunchPanel";
-import { Popover, PopoverAnchor, PopoverContent } from "../ui/popover";
 
 // Left sidebar, ported from design/screens/main-hub-a.jsx. Logo, New-agent
 // launcher, view nav, and the live session list grouped by tab (one shared
@@ -29,16 +28,8 @@ export function HubSidebar() {
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const focusSession = useStore((s) => s.focusSession);
   const closeSession = useStore((s) => s.closeSession);
-  const newPlate = useStore((s) => s.newPlate);
-  const openKey = useLauncher((s) => s.openKey);
   const openLaunch = useLauncher((s) => s.open);
-  const closeLaunch = useLauncher((s) => s.close);
-  const isOpen = openKey === NEW_KEY;
-
-  const launch = (cli: Cli, mode: Mode) => {
-    closeLaunch();
-    void newPlate(cli, mode);
-  };
+  const openAbout = useOverlay((s) => s.setAbout);
 
   const sessionCount = Object.keys(sessionMeta).length;
   const runtimeLive = status?.state === "running";
@@ -56,30 +47,37 @@ export function HubSidebar() {
       }}
     >
       <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid var(--bd-soft)" }}>
-        <Logo />
+        <button
+          type="button"
+          title="About CodeHub"
+          onClick={() => openAbout(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            margin: 0,
+            cursor: "pointer",
+            color: "inherit",
+          }}
+        >
+          <Logo />
+        </button>
       </div>
 
       {/* quick actions */}
       <div style={{ padding: "10px 10px 6px", display: "flex", flexDirection: "column", gap: 4 }}>
-        <Popover open={isOpen} onOpenChange={(o) => !o && closeLaunch()}>
-          <PopoverAnchor asChild>
-            <Button
-              onClick={() => openLaunch(NEW_KEY)}
-              style={{ justifyContent: "space-between", width: "100%" }}
-            >
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {Ico.plus}New agent
-              </span>
-              <span style={{ display: "flex", gap: 2, opacity: 0.7 }}>
-                <span className="kbd">⌘</span>
-                <span className="kbd">N</span>
-              </span>
-            </Button>
-          </PopoverAnchor>
-          <PopoverContent side="bottom" align="start" className="modal-panel popover-launch">
-            {isOpen && <LaunchPanel kicker="New tab" onLaunch={launch} />}
-          </PopoverContent>
-        </Popover>
+        <Button
+          onClick={() => openLaunch(NEW_KEY)}
+          style={{ justifyContent: "space-between", width: "100%" }}
+        >
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>{Ico.plus}New agent</span>
+          <span style={{ display: "flex", gap: 2, opacity: 0.7 }}>
+            <span className="kbd">⌘</span>
+            <span className="kbd">N</span>
+          </span>
+        </Button>
       </div>
 
       {/* views */}
@@ -93,6 +91,13 @@ export function HubSidebar() {
         >
           {Ico.hub}
           <span style={{ flex: 1 }}>Hub</span>
+        </div>
+        <div
+          className={`side-item${view === "workspace" ? " active" : ""}`}
+          onClick={() => setView("workspace")}
+        >
+          {Ico.files}
+          <span style={{ flex: 1 }}>Workspace</span>
         </div>
         <div
           className={`side-item${view === "dashboard" ? " active" : ""}`}

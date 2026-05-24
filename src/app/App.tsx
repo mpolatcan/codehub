@@ -1,5 +1,7 @@
 import { useEffect } from "react";
+import { AboutDialog } from "./components/AboutDialog";
 import { Grid } from "./components/Grid";
+import { SpawnModal } from "./components/SpawnModal";
 import { ActivityRail } from "./components/hub/ActivityRail";
 import { BroadcastModal } from "./components/hub/BroadcastModal";
 import { CommandPalette } from "./components/hub/CommandPalette";
@@ -22,6 +24,7 @@ import { Resume } from "./screens/Resume";
 import { SessionDetail } from "./screens/SessionDetail";
 import { Settings } from "./screens/Settings";
 import { Usage } from "./screens/Usage";
+import { Workspace } from "./screens/Workspace";
 
 // App shell. The left sidebar is always present; the main region swaps on the
 // sidebar's view nav (P4). "hub" is the live terminal grid + activity rail; the
@@ -66,6 +69,8 @@ export function App() {
         <SessionDetail session={detailSession} />
       ) : view === "hub" ? (
         <HubView />
+      ) : view === "workspace" ? (
+        <Workspace />
       ) : view === "containers" ? (
         <ContainerInspector />
       ) : view === "settings" ? (
@@ -85,6 +90,8 @@ export function App() {
       <CommandPalette />
       <Shortcuts />
       <BroadcastModal />
+      <SpawnModal />
+      <AboutDialog />
     </div>
   );
 }

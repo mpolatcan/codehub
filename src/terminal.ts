@@ -14,32 +14,35 @@ export interface Pane {
   unlistenExit?: UnlistenFn;
 }
 
-// Terminal theme — cool grey with an amber cursor
+// Terminal theme — mirrors the design tokens (tokens.css). xterm needs literal
+// hex (no CSS vars / oklch), so the ANSI palette is the sRGB conversion of the
+// design accents: green=--live, amber=--wait, red=--err, blue=--a-codex,
+// cyan=--a-antigravity. Surface = --bg-0, text = --fg-1.
 const TERM_THEME = {
-  background: "#131417",
-  foreground: "#c9cdd4",
-  cursor: "#e8a33d",
-  cursorAccent: "#131417",
-  selectionBackground: "#2e333b",
-  selectionForeground: "#e6e9ee",
+  background: "#08090b",
+  foreground: "#aeb2bb",
+  cursor: "#6fda75",
+  cursorAccent: "#08090b",
+  selectionBackground: "#2b323d",
+  selectionForeground: "#ecedf0",
 
-  black: "#1b1e23",
-  red: "#d6604d",
-  green: "#6ee787",
-  yellow: "#e8a33d",
-  blue: "#5a8fd6",
-  magenta: "#b07acb",
-  cyan: "#5ad4e6",
-  white: "#c9cdd4",
+  black: "#1f242d",
+  red: "#ff6f69",
+  green: "#6fda75",
+  yellow: "#f7bc50",
+  blue: "#98b7f8",
+  magenta: "#b48ad6",
+  cyan: "#17d0d8",
+  white: "#aeb2bb",
 
-  brightBlack: "#3e444c",
-  brightRed: "#e8786a",
-  brightGreen: "#8af0a0",
-  brightYellow: "#f6b65a",
-  brightBlue: "#7aa6e6",
-  brightMagenta: "#c79ada",
-  brightCyan: "#7ce0ef",
-  brightWhite: "#e6e9ee",
+  brightBlack: "#3f444d",
+  brightRed: "#ff8981",
+  brightGreen: "#89f58f",
+  brightYellow: "#ffd66c",
+  brightBlue: "#b1d0ff",
+  brightMagenta: "#cba6e6",
+  brightCyan: "#49eaf2",
+  brightWhite: "#ecedf0",
 };
 
 // The pane's xterm surface is created once, parked in `stash`, and then moved
@@ -55,7 +58,7 @@ export async function createPane(
   stash.appendChild(el);
 
   const term = new Terminal({
-    fontFamily: '"JetBrains Mono", "DM Mono", ui-monospace, "SF Mono", Menlo, monospace',
+    fontFamily: '"Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace',
     fontSize,
     fontWeight: 400,
     lineHeight: 1.25,
@@ -99,7 +102,7 @@ export async function createPane(
   });
 
   pane.unlistenExit = await listen<number>(`pty://exit/${paneId}`, () => {
-    term.write("\r\n\x1b[38;2;201;163;107m\x1b[3m  · session ended ·\x1b[0m\r\n");
+    term.write("\r\n\x1b[38;2;106;111;121m\x1b[3m  · session ended ·\x1b[0m\r\n");
   });
 
   term.onData((data) => {

@@ -3,13 +3,10 @@ import { AgentGlyph } from "../../components/primitives/AgentGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
-import type { Cli, Mode } from "../../lib/ipc";
 import { useLauncher } from "../../lib/launcher";
 import { useOverlay } from "../../lib/overlay";
 import { useStore } from "../../lib/store";
 import { leavesList } from "../../lib/tree";
-import { LaunchPanel } from "../LaunchPanel";
-import { Popover, PopoverAnchor, PopoverContent } from "../ui/popover";
 
 // Workspace tab strip, ported from design/screens/main-hub-a.jsx. Each tab is a
 // live workspace; the agent glyphs reflect its panes. The trailing action group
@@ -23,11 +20,7 @@ export function HubTabs() {
   const sessionMeta = useStore((s) => s.sessionMeta);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const closeWorkspace = useStore((s) => s.closeWorkspace);
-  const newPlate = useStore((s) => s.newPlate);
-  const openKey = useLauncher((s) => s.openKey);
   const openLaunch = useLauncher((s) => s.open);
-  const closeLaunch = useLauncher((s) => s.close);
-  const isOpen = openKey === NEW_KEY;
   // Diff button opens the combined "all changes" diff (reuses the rail's
   // DiffViewer + container_git_diff_all); Files opens the /workspace browser.
   // Both reuse the rail-mounted viewers and only matter while the runtime is up.
@@ -49,11 +42,6 @@ export function HubTabs() {
     }
     prevCount.current = workspaces.length;
   }, [workspaces.length]);
-
-  const launch = (cli: Cli, mode: Mode) => {
-    closeLaunch();
-    void newPlate(cli, mode);
-  };
 
   return (
     <div
@@ -149,31 +137,24 @@ export function HubTabs() {
           );
         })}
 
-        {/* new tab */}
-        <Popover open={isOpen} onOpenChange={(o) => !o && closeLaunch()}>
-          <PopoverAnchor asChild>
-            <button
-              type="button"
-              title="New tab (⌘N)"
-              onClick={() => openLaunch(NEW_KEY)}
-              style={{
-                alignSelf: "center",
-                marginLeft: 6,
-                padding: "4px 6px",
-                background: "transparent",
-                border: "none",
-                color: "var(--fg-2)",
-                cursor: "pointer",
-                display: "inline-flex",
-              }}
-            >
-              {Ico.plus}
-            </button>
-          </PopoverAnchor>
-          <PopoverContent side="bottom" align="start" className="modal-panel popover-launch">
-            {isOpen && <LaunchPanel kicker="New tab" onLaunch={launch} />}
-          </PopoverContent>
-        </Popover>
+        {/* new tab — opens the shared spawn modal */}
+        <button
+          type="button"
+          title="New tab (⌘N)"
+          onClick={() => openLaunch(NEW_KEY)}
+          style={{
+            alignSelf: "center",
+            marginLeft: 6,
+            padding: "4px 6px",
+            background: "transparent",
+            border: "none",
+            color: "var(--fg-2)",
+            cursor: "pointer",
+            display: "inline-flex",
+          }}
+        >
+          {Ico.plus}
+        </button>
       </div>
 
       <div style={{ flex: 1 }} />

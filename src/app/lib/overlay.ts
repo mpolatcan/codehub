@@ -17,11 +17,16 @@ interface OverlayState {
   files: boolean;
   // Broadcast composer open/closed — send one prompt to many running sessions.
   broadcast: boolean;
+  // About dialog open/closed — app + environment identity (real data), opened
+  // from the sidebar wordmark. A modal "About this app", separate from the
+  // Settings › About pane which embeds the same facts in the config surface.
+  about: boolean;
   setPalette: (open: boolean) => void;
   setShortcuts: (open: boolean) => void;
   setDiff: (path: string | null) => void;
   setFiles: (open: boolean) => void;
   setBroadcast: (open: boolean) => void;
+  setAbout: (open: boolean) => void;
   togglePalette: () => void;
   toggleShortcuts: () => void;
 }
@@ -32,11 +37,13 @@ export const useOverlay = create<OverlayState>((set) => ({
   diff: null,
   files: false,
   broadcast: false,
+  about: false,
   setPalette: (palette) => set({ palette }),
   setShortcuts: (shortcuts) => set({ shortcuts }),
   setDiff: (diff) => set({ diff }),
   setFiles: (files) => set({ files }),
   setBroadcast: (broadcast) => set({ broadcast }),
+  setAbout: (about) => set({ about }),
   // Opening one overlay closes the other so they never stack.
   togglePalette: () => set((s) => ({ palette: !s.palette, shortcuts: false })),
   toggleShortcuts: () => set((s) => ({ shortcuts: !s.shortcuts, palette: false })),

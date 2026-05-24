@@ -6,12 +6,9 @@ import { StatusDot } from "../components/primitives/StatusDot";
 import { Ico } from "../components/primitives/icons";
 import { fmtTokens, useSessionUsage } from "../hooks/useSessionUsage";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
-import type { Cli, Mode } from "../lib/ipc";
 import { splitKey, useLauncher } from "../lib/launcher";
 import { confirmCloseRunningSession, useStore } from "../lib/store";
 import type { SplitDir } from "../lib/tree";
-import { LaunchPanel } from "./LaunchPanel";
-import { Popover, PopoverAnchor, PopoverContent } from "./ui/popover";
 
 // Pane header, ported from design/screens/main-hub-a.jsx (TerminalPane*). Two
 // rows: identity (status · glyph · name · agent · mode) + a metric row
@@ -23,14 +20,10 @@ export function PaneHead({ session }: { session: string }) {
   const meta = useStore((s) => s.sessionMeta[session]);
   const agentVersions = useStore((s) => s.agentVersions);
   const activity = useStore((s) => s.sessionActivity[session]);
-  const splitSession = useStore((s) => s.splitSession);
   const closeSession = useStore((s) => s.closeSession);
   const renameSession = useStore((s) => s.renameSession);
   const openDetail = useStore((s) => s.openDetail);
-  const openKey = useLauncher((s) => s.openKey);
-  const ctx = useLauncher((s) => s.ctx);
   const openLaunch = useLauncher((s) => s.open);
-  const closeLaunch = useLauncher((s) => s.close);
   const [editing, setEditing] = useState(false);
 
   // Real per-session token tally, read from this Claude conversation's own
@@ -51,7 +44,6 @@ export function PaneHead({ session }: { session: string }) {
   // Shell panes have no CLI version to show; agent versions are keyed by agent.
   const version = meta.cli === "shell" ? null : (agentVersions?.[meta.cli]?.version ?? null);
   const key = splitKey(session);
-  const isOpen = openKey === key;
   // Real per-session signal from pane output flow (session_activity): the agent
   // is "working" while producing output, else quiet. The dot reflects that — it
   // means "is this agent working", independent of which pane you're looking at
@@ -60,12 +52,9 @@ export function PaneHead({ session }: { session: string }) {
   const working = activity?.state === "working";
   const status = working ? "live" : "idle";
 
+  // Open the shared spawn modal with this pane as the split target; SpawnModal
+  // reads the dir/session from the launch context and calls splitSession.
   const armSplit = (dir: SplitDir) => openLaunch(key, { dir, session });
-  const launch = (cli: Cli, mode: Mode) => {
-    const dir = ctx?.dir ?? "row";
-    closeLaunch();
-    void splitSession(session, dir, cli, mode);
-  };
 
   return (
     <div
@@ -147,41 +136,29 @@ export function PaneHead({ session }: { session: string }) {
           {Ico.expand}
         </IconBtn>
 
-        {/* split — same anchored launcher popover as every other surface */}
-        <Popover open={isOpen} onOpenChange={(o) => !o && closeLaunch()}>
-          <PopoverAnchor asChild>
-            {/* Stop mousedown reaching the pane-leaf focus handler: its DOM-focus
-                steal trips Radix's focus-outside dismiss and closes instantly. */}
-            <span
-              style={{ display: "inline-flex", gap: 2 }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <IconBtn
-                title="Split below"
-                style={{ width: 20, height: 20 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  armSplit("col");
-                }}
-              >
-                {Ico.splitH}
-              </IconBtn>
-              <IconBtn
-                title="Split right (⌘\)"
-                style={{ width: 20, height: 20 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  armSplit("row");
-                }}
-              >
-                {Ico.splitV}
-              </IconBtn>
-            </span>
-          </PopoverAnchor>
-          <PopoverContent align="end" className="modal-panel popover-launch">
-            {isOpen && <LaunchPanel kicker="Split — adds to this tab" onLaunch={launch} />}
-          </PopoverContent>
-        </Popover>
+        {/* split — opens the shared spawn modal targeting this pane */}
+        <span style={{ display: "inline-flex", gap: 2 }}>
+          <IconBtn
+            title="Split below"
+            style={{ width: 20, height: 20 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              armSplit("col");
+            }}
+          >
+            {Ico.splitH}
+          </IconBtn>
+          <IconBtn
+            title="Split right (⌘\)"
+            style={{ width: 20, height: 20 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              armSplit("row");
+            }}
+          >
+            {Ico.splitV}
+          </IconBtn>
+        </span>
 
         <IconBtn
           title="Close session (⌘W)"

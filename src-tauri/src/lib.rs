@@ -14,14 +14,15 @@ pub mod lifecycle;
 pub mod pty;
 
 use activity::SessionActivity;
-use config::{ConfigStore, Settings};
+use config::{AccountProfile, ConfigStore, Settings};
 use docker::{
     AgentConfig, AgentVersion, ClaudeIntegrations, ClaudeSession, ClaudeUsage, Cli, CommitInfo,
     ContainerStats, DockerClient, FileEntry, GitStatus, ImageInfo, LaunchMode, MountInfo,
     ProcessInfo, RuntimeHealth, SessionUsage,
 };
-use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle};
+use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle, WorkspaceInfo};
 use pty::{PaneEmitter, PtyRegistry, SessionInfo};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
@@ -133,6 +134,310 @@ fn get_config(state: tauri::State<'_, AppState>) -> Result<Settings, String> {
 #[tauri::command]
 fn set_config(config: Settings, state: tauri::State<'_, AppState>) -> Result<Settings, String> {
     state.config.set(config)
+}
+
+// — Tier-2: workspace / repository picker —
+
+/// Open the OS folder picker and return the chosen absolute path (None when the
+/// user cancels). Native-only; the dev bridge degrades this to null.
+#[tauri::command]
+async fn pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_folder(move |path| {
+        let _ = tx.send(path);
+    });
+    let picked = rx.await.map_err(|e| e.to_string())?;
+    Ok(picked
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.to_string_lossy().to_string()))
+}
+
+/// Set the host directory bound at `/workspace` and bump the MRU recents. The
+/// path must be an existing directory. Does NOT recreate the container — the
+/// mount source is fixed at create-time, so the caller applies it via
+/// `recreate_runtime` (a "restart runtime to apply" affordance).
+#[tauri::command]
+fn set_workspace_dir(path: String, state: tauri::State<'_, AppState>) -> Result<Settings, String> {
+    if !std::path::Path::new(&path).is_dir() {
+        return Err(format!("not a directory: {path}"));
+    }
+    state.config.set_workspace_dir(path)
+}
+
+/// Configured-vs-mounted workspace dir + whether a recreate is needed to apply a
+/// change. Backs the "restart runtime to apply" banner.
+#[tauri::command]
+async fn workspace_info(state: tauri::State<'_, AppState>) -> Result<WorkspaceInfo, String> {
+    Ok(state.lifecycle.workspace_info().await)
+}
+
+/// Remove + recreate the runtime container so a changed workspace mount (or a
+/// newly-added account-profile env var) takes effect. Destructive to running
+/// sessions — the UI confirms first. Emits codehub://lifecycle like the other
+/// lifecycle controls.
+#[tauri::command]
+async fn recreate_runtime(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<ContainerStatus, String> {
+    state
+        .lifecycle
+        .recreate()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = state.lifecycle.status().await;
+    let _ = app.emit("codehub://lifecycle", &status);
+    Ok(status)
+}
+
+// — Tier-3: label-only account profiles (no secrets stored) —
+
+/// An account profile plus whether its host env var is currently present.
+/// Presence-only (`std::env::var(..).is_ok()`) — the value is NEVER read,
+/// returned, or logged, exactly like `agent_key_status`.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountProfileStatus {
+    pub id: String,
+    pub agent: String,
+    pub label: String,
+    /// NAME of the host env var holding the credential. Never the value.
+    pub var_name: String,
+    /// Whether that env var is present on the host right now.
+    pub present: bool,
+}
+
+pub fn profile_statuses(profiles: Vec<AccountProfile>) -> Vec<AccountProfileStatus> {
+    profiles
+        .into_iter()
+        .map(|p| {
+            // Presence probe only — `is_ok()` never binds the secret value.
+            let present = std::env::var(&p.var_name).is_ok();
+            AccountProfileStatus {
+                id: p.id,
+                agent: p.agent,
+                label: p.label,
+                var_name: p.var_name,
+                present,
+            }
+        })
+        .collect()
+}
+
+// ── Phase-0 completion contract (COMPLETION_PLAN.md) ────────────────────────
+// Serde response structs for the new IPC surface. Shapes mirror the frozen TS
+// interfaces in src/app/lib/ipc.ts field-for-field (camelCase via serde rename).
+// These are shared with devserver.rs (it imports them) so the REST + Tauri
+// surfaces serialize identically. The command fns below are STUBS — the BE track
+// fills the bodies; until then they return honest-empty defaults.
+
+/// A session currently awaiting user input (← agent-native hooks, §7).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingPrompt {
+    pub session: String,
+    pub message: Option<String>,
+    /// Unix epoch ms the prompt was raised.
+    pub since: i64,
+}
+
+/// One entry in a session's activity/turn history ring buffer.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityEvent {
+    pub session: String,
+    /// Normalized event kind (matches AgentEventKind in ipc.ts).
+    pub kind: String,
+    /// Unix epoch ms the event was observed.
+    pub at: i64,
+    pub message: Option<String>,
+}
+
+/// Live agent-native hook event (Claude `hooks` / Codex `notify`), normalized.
+/// No backend emitter yet — defined so the `codehub://agent-event` payload type
+/// exists when the BE track wires the stream.
+#[allow(dead_code)] // emitted by the BE track; no producer yet.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentEvent {
+    pub session: String,
+    pub kind: String,
+    pub at: i64,
+    pub message: Option<String>,
+    pub notification_type: Option<String>,
+    pub tool_name: Option<String>,
+}
+
+/// Codex token split (cached-input + reasoning-output reported separately).
+#[derive(Debug, Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexTokenTotals {
+    pub input: u64,
+    pub cached_input: u64,
+    pub output: u64,
+    pub reasoning_output: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexModelUsage {
+    pub model: String,
+    pub totals: CodexTokenTotals,
+    pub turns: u64,
+    pub est_cost_usd: f64,
+    pub priced: bool,
+}
+
+/// Aggregate Codex token analytics — mirrors the claude* usage surface.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexUsage {
+    pub sessions: u64,
+    pub turns: u64,
+    pub totals: CodexTokenTotals,
+    pub est_cost_usd: f64,
+    pub by_model: Vec<CodexModelUsage>,
+    pub by_day: Vec<serde_json::Value>,
+    pub rates: Vec<serde_json::Value>,
+    pub rates_as_of: String,
+    pub unpriced_tokens: u64,
+}
+
+/// One past Codex conversation from its rollout file (Resume view).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSession {
+    pub id: String,
+    pub title: String,
+    pub branch: Option<String>,
+    pub started: String,
+    pub last_active: String,
+    pub turns: u64,
+    pub model: Option<String>,
+    pub version: Option<String>,
+}
+
+/// Live per-session Codex tally from its rollout file.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSessionUsage {
+    pub turns: u64,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    pub edits: u64,
+    pub context_used: u64,
+}
+
+/// Codex rate-limit / plan meters (the on-disk quota source). Every field
+/// nullable → em-dash when absent.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexRateLimits {
+    pub primary_used_pct: Option<f64>,
+    pub primary_window_minutes: Option<u64>,
+    pub primary_resets_at: Option<String>,
+    pub secondary_used_pct: Option<f64>,
+    pub secondary_window_minutes: Option<u64>,
+    pub secondary_resets_at: Option<String>,
+    pub plan_type: Option<String>,
+}
+
+/// GitHub connection (Integrations). Presence-only auth — the token value is
+/// NEVER read or returned.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubStatus {
+    pub connected: bool,
+    pub var_name: String,
+    pub login: Option<String>,
+    pub scopes: Vec<String>,
+    pub token_expiry: Option<String>,
+}
+
+/// One repo visible to the connected GitHub account.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubRepo {
+    pub name_with_owner: String,
+    pub default_branch: Option<String>,
+    pub open_prs: Option<u64>,
+    pub private: bool,
+}
+
+/// App update check (Settings → About). `available` null when up to date.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateStatus {
+    pub current: String,
+    pub available: Option<String>,
+    pub notes: Option<String>,
+}
+
+// Fixed placeholder for stub `ratesAsOf` until the BE track wires a real rate
+// table — an honest "no rates loaded" marker rather than a fabricated date.
+pub(crate) const STUB_RATES_AS_OF: &str = "unloaded";
+
+/// All stored account profiles + live presence of each one's host env var.
+#[tauri::command]
+fn list_account_profiles(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AccountProfileStatus>, String> {
+    Ok(profile_statuses(state.config.get().account_profiles))
+}
+
+/// Validate + construct a label-only account profile (no secret). Shared by the
+/// Tauri command and the dev bridge. Rejects agents with no credential var, an
+/// empty label, and any `var_name` that isn't a safe env identifier.
+pub fn build_account_profile(
+    agent: &str,
+    label: &str,
+    var_name: &str,
+) -> Result<AccountProfile, String> {
+    let cli = Cli::parse(agent).map_err(|e| e.to_string())?;
+    if cli.canonical_auth_var().is_none() {
+        return Err(format!("{agent} has no credential to remap"));
+    }
+    let label = label.trim().to_string();
+    if label.is_empty() {
+        return Err("label is required".into());
+    }
+    let var_name = var_name.trim().to_string();
+    if !docker::is_env_name(&var_name) {
+        return Err(format!(
+            "invalid environment variable name: {var_name} (use letters, digits, underscore)"
+        ));
+    }
+    Ok(AccountProfile {
+        id: uuid::Uuid::new_v4().to_string(),
+        agent: cli.binary().to_string(),
+        label,
+        var_name,
+    })
+}
+
+/// Add a label-only account profile (agent + label + host env var NAME). No
+/// secret is stored. Returns the full updated list + presence.
+#[tauri::command]
+fn add_account_profile(
+    agent: String,
+    label: String,
+    var_name: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AccountProfileStatus>, String> {
+    let profile = build_account_profile(&agent, &label, &var_name)?;
+    let next = state.config.add_account_profile(profile)?;
+    Ok(profile_statuses(next.account_profiles))
+}
+
+/// Remove an account profile by id. Returns the full updated list + presence.
+#[tauri::command]
+fn remove_account_profile(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AccountProfileStatus>, String> {
+    let next = state.config.remove_account_profile(&id)?;
+    Ok(profile_statuses(next.account_profiles))
 }
 
 /// `<cli> --version` for each agent inside the runtime container.
@@ -336,6 +641,7 @@ async fn list_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<SessionI
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn create_session(
     name: String,
     cli: String,
@@ -343,11 +649,25 @@ async fn create_session(
     alias: Option<String>,
     resume: Option<String>,
     session_id: Option<String>,
+    // Account profile id (Tier-3). Resolves to that profile's host env var NAME,
+    // which the session shell remaps the CLI's canonical credential var onto.
+    // Absent / unknown → the default (canonical host env), unchanged behavior.
+    account: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let cli = Cli::parse(&cli).map_err(|e| e.to_string())?;
     let mode = mode.as_deref().map(LaunchMode::parse).unwrap_or_default();
     let alias = alias.unwrap_or_default();
+    // Look up the chosen account profile's env var NAME (never a value).
+    let account_var = account.and_then(|id| {
+        state
+            .config
+            .get()
+            .account_profiles
+            .into_iter()
+            .find(|p| p.id == id)
+            .map(|p| p.var_name)
+    });
     state
         .docker
         .create_tmux_session(
@@ -357,6 +677,7 @@ async fn create_session(
             &alias,
             resume.as_deref(),
             session_id.as_deref(),
+            account_var.as_deref(),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -561,6 +882,100 @@ async fn focus_session_from_companion(name: String, app: tauri::AppHandle) -> Re
     Ok(())
 }
 
+// ── Phase-0 completion contract: stub commands ──────────────────────────────
+// Honest-empty defaults so the live app degrades gracefully; the parallel fleet
+// fills the bodies. NOT panics, NOT Err.
+
+/// Sessions awaiting user input right now (← agent-native hooks, §7).
+#[tauri::command]
+async fn pending_prompts() -> Result<Vec<PendingPrompt>, String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(Vec::new())
+}
+
+/// Answer a pending prompt by writing the accept/deny keystroke to that pane.
+#[tauri::command]
+async fn respond_prompt(_session: String, _allow: bool) -> Result<(), String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(())
+}
+
+/// Activity/turn history ring buffer (all sessions when `session` omitted).
+#[tauri::command]
+async fn session_activity_history(_session: Option<String>) -> Result<Vec<ActivityEvent>, String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(Vec::new())
+}
+
+/// Codex usage analytics from rollout files — mirrors the claude* surface.
+#[tauri::command]
+async fn codex_usage() -> Result<CodexUsage, String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(CodexUsage {
+        sessions: 0,
+        turns: 0,
+        totals: CodexTokenTotals::default(),
+        est_cost_usd: 0.0,
+        by_model: Vec::new(),
+        by_day: Vec::new(),
+        rates: Vec::new(),
+        rates_as_of: STUB_RATES_AS_OF.to_string(),
+        unpriced_tokens: 0,
+    })
+}
+
+/// Past Codex conversations from rollout files (Resume view).
+#[tauri::command]
+async fn codex_sessions() -> Result<Vec<CodexSession>, String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(Vec::new())
+}
+
+/// Live per-session Codex tally; `None` when there is no usable data yet.
+#[tauri::command]
+async fn codex_session_usage(_id: String) -> Result<Option<CodexSessionUsage>, String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(None)
+}
+
+/// Codex rate-limit / plan meters; `None` when no data is on disk.
+#[tauri::command]
+async fn codex_rate_limits() -> Result<Option<CodexRateLimits>, String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(None)
+}
+
+/// GitHub connection status (Integrations). Presence-only; value never read.
+#[tauri::command]
+async fn github_status() -> Result<GithubStatus, String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(GithubStatus {
+        connected: false,
+        var_name: "GITHUB_TOKEN".to_string(),
+        login: None,
+        scopes: Vec::new(),
+        token_expiry: None,
+    })
+}
+
+/// Repos visible to the connected GitHub account.
+#[tauri::command]
+async fn github_repos() -> Result<Vec<GithubRepo>, String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(Vec::new())
+}
+
+/// App update check (Settings → About). `available` null when up to date.
+#[tauri::command]
+async fn check_update() -> Result<UpdateStatus, String> {
+    // STUB (Phase-0 contract, COMPLETION_PLAN.md): BE track fills this.
+    Ok(UpdateStatus {
+        current: env!("CARGO_PKG_VERSION").to_string(),
+        available: None,
+        notes: None,
+    })
+}
+
 /// Bundle identifier used by the app before the Aviary→CodeHub rebrand. The OS
 /// app-data dir is namespaced by this id, so a rebranded build looks at a fresh
 /// (empty) path and existing users would lose their CLI auth + workspace.
@@ -616,6 +1031,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let app_data = app.path().app_data_dir().expect("app_data_dir unavailable");
             // One-time carry-over of pre-rebrand (Aviary) auth + workspace data.
@@ -623,16 +1039,20 @@ pub fn run() {
             let config_dir = app_data.join("config");
             let workspace_dir = app_data.join("workspace");
 
+            // UI preferences — separate file from the container config mount.
+            // Loaded BEFORE the lifecycle: the effective workspace dir + account
+            // profile env vars are read from it at container-create time.
+            let config = Arc::new(ConfigStore::load(app_data.join("settings.json")));
+
             let lifecycle = Arc::new(Lifecycle::new(
                 container_name.clone(),
                 image.clone(),
                 config_dir,
                 workspace_dir,
+                config.clone(),
             )?);
             let docker = Arc::new(lifecycle.docker_client());
             let registry = Arc::new(PtyRegistry::new());
-            // UI preferences — separate file from the container config mount.
-            let config = Arc::new(ConfigStore::load(app_data.join("settings.json")));
 
             #[cfg(target_os = "macos")]
             let island_registry = registry.clone();
@@ -697,6 +1117,13 @@ pub fn run() {
             app_info,
             get_config,
             set_config,
+            pick_directory,
+            set_workspace_dir,
+            workspace_info,
+            recreate_runtime,
+            list_account_profiles,
+            add_account_profile,
+            remove_account_profile,
             agent_key_status,
             agent_versions,
             container_stats,
@@ -729,6 +1156,17 @@ pub fn run() {
             close_companion,
             companion_open,
             focus_session_from_companion,
+            // Phase-0 completion contract (stubs; BE track fills bodies).
+            pending_prompts,
+            respond_prompt,
+            session_activity_history,
+            codex_usage,
+            codex_sessions,
+            codex_session_usage,
+            codex_rate_limits,
+            github_status,
+            github_repos,
+            check_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running codehub");
