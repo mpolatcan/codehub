@@ -12,3 +12,5 @@ src-tauri/gen
 
 # Claude Code agent worktrees (transient sub-agent scratch)
 .claude/worktrees/
+.claude/scheduled_tasks.lock
+
