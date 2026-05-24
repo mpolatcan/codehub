@@ -8,8 +8,15 @@
  * labelled accordingly. The header metric strip (ctx / turn / tokens / edits) IS
  * per-session and REAL for Claude — read from this session's transcript via the
  * shared useSessionUsage hook (same source as the pane header). It is omitted for
- * non-Claude CLIs / before the first response, and cost stays off (it's an
- * estimate, surfaced only on the Usage screen with its disclosure).
+ * non-Claude CLIs / before the first response, and cost / budget stay off:
+ *   • cost is an ESTIMATE (tokens × rates), surfaced only on Usage with its
+ *     disclosure — the per-id usage read carries no cost field anyway.
+ *   • budget has no backend source (no spend-cap is persisted), so the design's
+ *     budget gauge is honestly omitted rather than faked.
+ * Codex per-session usage exists in the backend (codex_session_usage), but the
+ * store's SessionMeta carries only `claudeId`, not a codexId — so a live Codex
+ * pane can't be correlated to its rollout file here. Flagged in the F-DATA-B
+ * report; Codex sessions show identity + workspace inspector, no metric strip.
  */
 import { useEffect, useState } from "react";
 import { PaneMount } from "../components/PaneMount";
@@ -20,7 +27,7 @@ import { StatusDot } from "../components/primitives/StatusDot";
 import { Ico } from "../components/primitives/icons";
 import { fmtTokens, useSessionUsage } from "../hooks/useSessionUsage";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
-import { ipc } from "../lib/ipc";
+import { type ContainerStats, ipc } from "../lib/ipc";
 import { useStore } from "../lib/store";
 
 type Tab = "diff" | "logs";
@@ -29,7 +36,8 @@ export function SessionDetail({ session }: { session: string }) {
   const meta = useStore((s) => s.sessionMeta[session]);
   const agentVersions = useStore((s) => s.agentVersions);
   const activity = useStore((s) => s.sessionActivity[session]);
-  const running = useStore((s) => s.status?.state === "running");
+  const status = useStore((s) => s.status);
+  const running = status?.state === "running";
   const closeDetail = useStore((s) => s.closeDetail);
   const closeSession = useStore((s) => s.closeSession);
   const [tab, setTab] = useState<Tab>("diff");
@@ -57,6 +65,29 @@ export function SessionDetail({ session }: { session: string }) {
       .catch(() => alive && setBranch(null));
     return () => {
       alive = false;
+    };
+  }, [running]);
+
+  // Live runtime resource snapshot for the status bar (cpu/mem). Workspace-wide
+  // (one shared container), polled ~3s; null while down / pre-read → em-dash.
+  const [stats, setStats] = useState<ContainerStats | null>(null);
+  useEffect(() => {
+    if (!running) {
+      setStats(null);
+      return;
+    }
+    let alive = true;
+    const tick = () => {
+      ipc
+        .containerStats()
+        .then((s) => alive && setStats(s))
+        .catch(() => alive && setStats(null));
+    };
+    tick();
+    const h = setInterval(tick, 3000);
+    return () => {
+      alive = false;
+      clearInterval(h);
     };
   }, [running]);
 
@@ -227,8 +258,45 @@ export function SessionDetail({ session }: { session: string }) {
           </div>
         </div>
       </div>
+
+      {/* status bar — live runtime facts (workspace-wide; one shared container).
+          cpu/mem are real container_stats; em-dash while down / pre-read. */}
+      <div
+        className="mono"
+        style={{
+          height: 26,
+          flexShrink: 0,
+          background: "var(--bg-0)",
+          borderTop: "1px solid var(--bd-soft)",
+          display: "flex",
+          alignItems: "center",
+          padding: "0 12px",
+          gap: 14,
+          fontSize: 11,
+          color: "var(--fg-2)",
+        }}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <StatusDot status={running ? "live" : "off"} pulse={running} />
+          {status?.name ?? "codehub-runtime"}
+        </span>
+        <span className="tnum">
+          cpu {stats ? `${stats.cpuPct.toFixed(0)}%` : "—"} · mem{" "}
+          {stats ? fmtMem(stats.memUsed, stats.memLimit) : "—"}
+        </span>
+        <span style={{ flex: 1 }} />
+        <span>⌘D diff</span>
+        <span>⌘L logs</span>
+      </div>
     </main>
   );
+}
+
+// "1.2/4.0 GiB" memory string from raw bytes; falls back to a bare used count
+// when no limit is reported. Binary (GiB) units to match `docker stats`.
+function fmtMem(used: number, limit: number): string {
+  const gib = (n: number) => (n / 1024 ** 3).toFixed(1);
+  return limit > 0 ? `${gib(used)}/${gib(limit)} GiB` : `${gib(used)} GiB`;
 }
 
 // One header metric: muted label + emphasized value, sitting inline in the
