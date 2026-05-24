@@ -10,13 +10,16 @@
  *    density (config store → data-density on <html> → compact chrome).
  *  - General: "confirm before closing a running agent" (config store + ⌘W guard)
  *    + Startup restore/reopen (config store → boot lifecycle session adoption).
- *  - About: build/host identity from `app_info` / `docker_info`.
+ *  - Notifications: the three prefs persist for real (config store); OS delivery
+ *    isn't wired yet, stated honestly in the pane (no fabricated capability).
+ *  - About: build/host identity from `app_info` / `docker_info`; update status
+ *    from `check_update` (honest "up to date" — the updater plugin isn't wired,
+ *    so `available` is null and there is no in-app install).
  *
  * The persisted preferences live in the config store (config::Settings, written
  * to settings.json) — get/set via `ipc.getConfig`/`setConfig`, surfaced through
  * the store's `config` + `updateConfig`. Controls whose feature isn't built yet
- * (notifications, per-agent permissions, multi-repo mounts) render disabled with
- * a `NotYet` caption naming the blocking feature.
+ * (per-agent permissions, cost/context budgets) render disabled until they wire.
  *
  * Copy note: keys are forwarded from the host environment, NOT an OS keychain —
  * wording corrected from the design.
@@ -26,6 +29,7 @@ import { AGENT_META, AgentGlyph, type AgentId } from "@/app/components/primitive
 import { Logo } from "@/app/components/primitives/Logo";
 import { Segmented } from "@/app/components/primitives/Segmented";
 import { StatusDot } from "@/app/components/primitives/StatusDot";
+import { Tag } from "@/app/components/primitives/Tag";
 import { Ico } from "@/app/components/primitives/icons";
 import { CLIS } from "@/app/lib/catalog";
 import {
@@ -44,7 +48,7 @@ import {
 import { useStore } from "@/app/lib/store";
 import { type Theme, useTheme } from "@/app/lib/theme";
 import { Button } from "@/app/ui/button";
-import { type ReactNode, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { AgentDetail } from "./AgentDetail";
 
 export interface SettingsProps {
@@ -60,6 +64,7 @@ const NAV_GROUPS: { label: string; items: { key: string; label: string; soon?: b
       { key: "agents", label: "Agents & API keys" },
       { key: "runtime", label: "Container runtime" },
       { key: "repos", label: "Repositories" },
+      { key: "platform", label: "Platform" },
     ],
   },
   {
@@ -181,6 +186,8 @@ export function Settings({ onStopAll }: SettingsProps) {
           <RuntimePane dockerInfo={dockerInfo} />
         ) : active === "repos" ? (
           <ReposPane />
+        ) : active === "platform" ? (
+          <PlatformPane appInfo={appInfo} />
         ) : active === "shortcuts" ? (
           <ShortcutsPane />
         ) : active === "notifications" ? (
@@ -267,7 +274,10 @@ function AgentsPane({ onStopAll }: { onStopAll?: () => void }) {
         <Button variant="outline" size="sm" disabled>
           {Ico.plus}Add custom agent
         </Button>
+        <RefreshVersionsButton />
       </div>
+
+      <AccountsSection />
 
       <SectionHead label="Defaults for new sessions" />
       {/* Default agent is live (config store → launcher pre-selection). The
@@ -328,10 +338,179 @@ function AgentsPane({ onStopAll }: { onStopAll?: () => void }) {
   );
 }
 
+// Accounts — label-only profiles (Tier-3). Each maps an agent to a host env var
+// NAME (e.g. CLAUDE_TOKEN_WORK); the credential value is never stored or read,
+// only its presence is probed. At spawn, the chosen profile remaps the CLI's
+// canonical credential var onto its var by NAME (see BACKEND_PLAN.md). A newly
+// added var only reaches running containers after a runtime recreate.
+function AccountsSection() {
+  const profiles = useStore((s) => s.accountProfiles);
+  const loadAccountProfiles = useStore((s) => s.loadAccountProfiles);
+  const addAccountProfile = useStore((s) => s.addAccountProfile);
+  const removeAccountProfile = useStore((s) => s.removeAccountProfile);
+
+  const [agent, setAgent] = useState<AgentCli>("claude");
+  const [label, setLabel] = useState("");
+  const [varName, setVarName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void loadAccountProfiles();
+  }, [loadAccountProfiles]);
+
+  const canAdd = label.trim() !== "" && varName.trim() !== "" && !busy;
+  const add = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await addAccountProfile(agent, label.trim(), varName.trim());
+      setLabel("");
+      setVarName("");
+    } catch (e) {
+      // The backend rejects empty labels + invalid env names with a message.
+      setError(String(e).replace(/^Error:\s*/, ""));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <SectionHead label="Accounts" />
+      <p style={{ margin: "0 0 12px", fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
+        Run an agent under a second login by pointing it at another host environment variable.
+        CodeHub stores the variable <strong>name</strong> only — never the credential. Export the
+        variable in your shell, then pick the account in the spawn dialog.
+      </p>
+
+      {profiles.length > 0 && (
+        <div className="ch-card" style={{ padding: 0, marginBottom: 12 }}>
+          {profiles.map((p, i) => (
+            <div
+              key={p.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "10px 14px",
+                borderBottom: i === profiles.length - 1 ? "none" : "1px solid var(--bd-soft)",
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: p.present ? "var(--live)" : "var(--err)",
+                  flexShrink: 0,
+                }}
+                title={p.present ? "host variable present" : "host variable missing"}
+              />
+              <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>
+                {p.label}
+              </span>
+              <Tag>{p.agent}</Tag>
+              <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+                {p.varName}
+              </span>
+              {!p.present && (
+                <span className="mono" style={{ fontSize: 10.5, color: "var(--err)" }}>
+                  not set on host
+                </span>
+              )}
+              <span style={{ flex: 1 }} />
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => void removeAccountProfile(p.id)}
+                aria-label={`Remove ${p.label}`}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="ch-card" style={{ padding: 14 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <Field label="Agent">
+            <select
+              value={agent}
+              onChange={(e) => setAgent(e.target.value as AgentCli)}
+              className="mono"
+              style={selectStyle}
+            >
+              {CLIS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Label">
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Work"
+              spellCheck={false}
+              style={inputStyle}
+            />
+          </Field>
+          <Field label="Host env var">
+            <input
+              value={varName}
+              onChange={(e) => setVarName(e.target.value.toUpperCase())}
+              placeholder="CLAUDE_TOKEN_WORK"
+              spellCheck={false}
+              className="mono"
+              style={{ ...inputStyle, minWidth: 220 }}
+            />
+          </Field>
+          <Button size="sm" disabled={!canAdd} onClick={() => void add()}>
+            {Ico.plus}Add account
+          </Button>
+        </div>
+        {error && <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--err)" }}>{error}</div>}
+      </div>
+      <div style={{ height: 24 }} />
+    </>
+  );
+}
+
+// Small labelled field wrapper for the inline account form.
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span className="lbl">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+const inputStyle: CSSProperties = {
+  background: "var(--bg-0)",
+  border: "1px solid var(--bd)",
+  borderRadius: 6,
+  padding: "7px 10px",
+  fontSize: 12,
+  color: "var(--fg-1)",
+  outline: "none",
+  fontFamily: "var(--sans)",
+};
+
+const selectStyle: CSSProperties = {
+  ...inputStyle,
+  cursor: "pointer",
+};
+
 // About pane — every value is real: version/os/arch from `app_info` (build +
-// host consts), Docker from `docker_info`, agent versions from `agent_versions`.
-// No update check, no changelog, no fabricated build metadata; absent reads
-// render as em-dash rather than placeholders.
+// host consts), Docker from `docker_info`, agent versions from `agent_versions`,
+// update status from `check_update`. No changelog, no fabricated build metadata;
+// absent reads render as em-dash. The update check is honest: the updater plugin
+// isn't wired (available is null today), so it reads "up to date" with no in-app
+// install affordance — never a fabricated release.
 function AboutPane({
   appInfo,
   dockerInfo,
@@ -359,7 +538,7 @@ function AboutPane({
       </h1>
       <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: 13 }}>
         Build and host platform details for this install. Everything here is read from the running
-        binary and the local Docker daemon — CodeHub does not check for updates.
+        binary and the local Docker daemon.
       </p>
 
       {/* hero */}
@@ -382,7 +561,7 @@ function AboutPane({
         >
           <Logo size={30} withText={false} />
         </div>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-0.01em" }}>CodeHub</div>
           <div
             className="mono"
@@ -393,7 +572,10 @@ function AboutPane({
             <span>{platform}</span>
           </div>
         </div>
+        <UpdateBadge fallbackVersion={appInfo?.version ?? null} />
       </div>
+
+      <UpdateRow />
 
       <SectionHead label="Environment" />
       <div
@@ -426,6 +608,88 @@ function AboutPane({
         with Tauri, React, and xterm.js. Agent CLIs and their model providers are owned by their
         respective vendors.
       </p>
+    </div>
+  );
+}
+
+// Compact hero badge reflecting the update check. Honest by construction: the
+// backend's check_update returns available:null today (the Tauri updater plugin
+// isn't wired — Platform pane marks self-update "planned"), so this reads
+// "up to date" rather than inventing a release. When a newer version IS reported
+// it surfaces it; nothing here is fabricated.
+function UpdateBadge({ fallbackVersion }: { fallbackVersion: string | null }) {
+  const update = useStore((s) => s.updateStatus);
+  if (!update) return null;
+  const hasUpdate = update.available != null;
+  const color = hasUpdate ? "var(--wait)" : "var(--live)";
+  return (
+    <div
+      className="mono"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 1,
+        padding: "6px 10px",
+        borderRadius: 6,
+        background: `color-mix(in oklab, ${color} 12%, transparent)`,
+        border: `1px solid color-mix(in oklab, ${color} 35%, transparent)`,
+        color,
+        flexShrink: 0,
+      }}
+    >
+      <span style={{ fontSize: 11 }}>{hasUpdate ? "update available" : "up to date"}</span>
+      <span style={{ fontSize: 13, fontWeight: 600 }}>
+        v{hasUpdate ? update.available : (update.current ?? fallbackVersion ?? "—")}
+      </span>
+    </div>
+  );
+}
+
+// Update-check row: triggers check_update on mount + on demand. The install
+// affordance only appears when a newer version is actually reported; today the
+// backend has no updater wired so it stays honest ("up to date", no install).
+function UpdateRow() {
+  const update = useStore((s) => s.updateStatus);
+  const loadUpdateStatus = useStore((s) => s.loadUpdateStatus);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void loadUpdateStatus();
+  }, [loadUpdateStatus]);
+  const check = async () => {
+    setBusy(true);
+    try {
+      await loadUpdateStatus();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const hasUpdate = update?.available != null;
+  return (
+    <div
+      className="ch-card"
+      style={{ padding: 14, display: "flex", alignItems: "center", gap: 14, marginBottom: 8 }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)", marginBottom: 2 }}>
+          {hasUpdate ? `Update available — v${update?.available}` : "Software update"}
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
+          {update == null
+            ? "Checking for updates…"
+            : hasUpdate
+              ? (update.notes ?? "A newer version is available.")
+              : "You're on the latest version. In-app install isn't wired yet — updates arrive with the auto-updater."}
+        </div>
+      </div>
+      {hasUpdate && (
+        <Button variant="success" size="sm" disabled>
+          Install (soon)
+        </Button>
+      )}
+      <Button variant="outline" size="sm" disabled={busy} onClick={() => void check()}>
+        {busy ? "Checking…" : "Check now"}
+      </Button>
     </div>
   );
 }
@@ -530,6 +794,358 @@ function RuntimePane({ dockerInfo }: { dockerInfo: DockerInfo | null }) {
   );
 }
 
+// Platform — static capability matrix mapping every feature to where it works:
+// Desktop (this build) vs Web (planned). Ported from design/screens/platform.jsx.
+// This is a factual reference doc, not live telemetry — the only dynamic value is
+// the running build's version (real, from app_info). The desktop column states
+// what THIS build ships today; the web column states the planned web build's
+// shape. Where the design's mock implied features CodeHub hasn't built yet
+// (self-update, push, OS toasts), the desktop cell is marked "planned" too rather
+// than claiming support we don't have.
+type Support = "full" | "server" | "degraded" | "planned" | "none";
+type MatrixRow = { group: string } | { name: string; d: Support; w: Support; note?: string };
+
+const PLATFORM_MATRIX: MatrixRow[] = [
+  { group: "Core surfaces" },
+  {
+    name: "Main Hub (workspace tabs, panes, terminals)",
+    d: "full",
+    w: "full",
+    note: "xterm.js inside the browser tab",
+  },
+  { name: "Command palette · ⌘K", d: "full", w: "full" },
+  { name: "Session detail · diff inspector", d: "full", w: "full" },
+  { name: "Broadcast · one prompt → N agents", d: "full", w: "full" },
+  { name: "Resume library · past sessions", d: "full", w: "full" },
+  { name: "Dashboard · Usage · Settings", d: "full", w: "full" },
+
+  { group: "Container runtime" },
+  {
+    name: "Docker daemon access",
+    d: "full",
+    w: "server",
+    note: "Web needs a CodeHub server bridging to a remote daemon",
+  },
+  {
+    name: "Workspace filesystem mount",
+    d: "full",
+    w: "server",
+    note: "Local path on desktop · git URL → server-side checkout on web",
+  },
+  {
+    name: "Built-in container shell (tmux)",
+    d: "full",
+    w: "full",
+    note: "WebSocket from server to xterm.js",
+  },
+  {
+    name: "File browser pane",
+    d: "full",
+    w: "server",
+    note: "Reads container fs through the server proxy",
+  },
+  { name: "Container exec / restart / stop", d: "full", w: "server" },
+
+  { group: "Notifications & ambient" },
+  { name: "In-app notifications (right rail)", d: "full", w: "full" },
+  {
+    name: "Dynamic Island · live activity",
+    d: "full",
+    w: "degraded",
+    note: "macOS only on desktop · pinned top-center widget in the tab on web",
+  },
+  {
+    name: "OS-native toast (macOS / Win / GNOME)",
+    d: "planned",
+    w: "degraded",
+    note: "Not yet built · web would use the browser Notification API",
+  },
+  {
+    name: "Push notifications when app is closed",
+    d: "planned",
+    w: "full",
+    note: "Web Push API via the server",
+  },
+  {
+    name: "Companion · floating monitor window",
+    d: "full",
+    w: "none",
+    note: "Requires an always-on-top window — not possible in a browser",
+  },
+  { name: "Menu bar tray icon", d: "planned", w: "none" },
+
+  { group: "Shortcuts & interactions" },
+  { name: "Per-tab keyboard shortcuts (when focused)", d: "full", w: "full" },
+  {
+    name: "Global shortcuts (when not focused)",
+    d: "planned",
+    w: "none",
+    note: "e.g. expand the island from any app",
+  },
+  {
+    name: "Drag-and-drop files into container",
+    d: "planned",
+    w: "degraded",
+    note: "Browser drop area · no global drop targets",
+  },
+
+  { group: "Storage & security" },
+  {
+    name: "API keys forwarded from host env",
+    d: "full",
+    w: "server",
+    note: "Desktop reads host env vars · web stores secrets server-side",
+  },
+  {
+    name: "Multiple OS users / profiles",
+    d: "full",
+    w: "full",
+    note: "Single-tenant desktop · multi-tenant server on web",
+  },
+  {
+    name: "Offline mode",
+    d: "degraded",
+    w: "none",
+    note: "Local container work still functions on desktop",
+  },
+
+  { group: "Integrations" },
+  { name: "GitHub auth · clone/push/PR", d: "full", w: "full" },
+  {
+    name: "MCP servers (stdio)",
+    d: "full",
+    w: "server",
+    note: "A browser cannot spawn local processes",
+  },
+  { name: "MCP servers (SSE / HTTP)", d: "full", w: "full" },
+
+  { group: "Auto-update & telemetry" },
+  {
+    name: "Self-update from About",
+    d: "planned",
+    w: "none",
+    note: "Updater not wired yet · web is always latest",
+  },
+  { name: "Update notification banner", d: "planned", w: "full" },
+];
+
+const SUPPORT_META: Record<Support, { color: string; icon: string; label: string }> = {
+  full: { color: "var(--live)", icon: "✓", label: "full" },
+  server: { color: "var(--idle)", icon: "◐", label: "server" },
+  degraded: { color: "var(--wait)", icon: "~", label: "degraded" },
+  planned: { color: "var(--fg-2)", icon: "·", label: "planned" },
+  none: { color: "var(--err)", icon: "×", label: "no" },
+};
+
+const MATRIX_COLS = "1fr 104px 104px 1.1fr";
+
+function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
+  return (
+    <div style={{ maxWidth: 880 }}>
+      <PaneHead title="Platform">
+        CodeHub ships desktop-first; web support is on the roadmap. This page maps every feature to
+        where it works — so you and your team know what to expect per build. It is a static
+        reference, not live status.
+      </PaneHead>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+        <PlatformPill version={appInfo?.version ?? null} />
+      </div>
+
+      {/* legend */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          marginBottom: 16,
+          padding: "10px 14px",
+          background: "var(--bg-2)",
+          border: "1px solid var(--bd)",
+          borderRadius: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <span className="lbl" style={{ fontSize: 11 }}>
+          legend
+        </span>
+        <Legend tone="full" label="full support" />
+        <Legend tone="server" label="via server" />
+        <Legend tone="degraded" label="degraded UX" />
+        <Legend tone="planned" label="planned" />
+        <Legend tone="none" label="unavailable" />
+      </div>
+
+      {/* matrix */}
+      <div className="ch-card" style={{ padding: 0, overflow: "hidden" }}>
+        <div
+          className="mono"
+          style={{
+            display: "grid",
+            gridTemplateColumns: MATRIX_COLS,
+            background: "var(--bg-1)",
+            borderBottom: "1px solid var(--bd-soft)",
+            padding: "10px 16px",
+            gap: 12,
+            fontSize: 10.5,
+            color: "var(--fg-2)",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}
+        >
+          <span>feature</span>
+          <span style={{ textAlign: "center" }}>desktop</span>
+          <span style={{ textAlign: "center" }}>web</span>
+          <span>note</span>
+        </div>
+        {PLATFORM_MATRIX.map((r, i) =>
+          "group" in r ? (
+            <div
+              key={r.group}
+              className="mono"
+              style={{
+                padding: "14px 16px 6px",
+                fontSize: 10.5,
+                color: "var(--fg-3)",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                background: "var(--bg-1)",
+                borderTop: i === 0 ? "none" : "1px solid var(--bd-soft)",
+              }}
+            >
+              {r.group}
+            </div>
+          ) : (
+            <div
+              key={r.name}
+              style={{
+                display: "grid",
+                gridTemplateColumns: MATRIX_COLS,
+                gap: 12,
+                padding: "10px 16px",
+                borderBottom: "1px solid var(--bd-soft)",
+                alignItems: "center",
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: "var(--fg-0)" }}>{r.name}</span>
+              <span style={{ textAlign: "center" }}>
+                <SupportChip tone={r.d} />
+              </span>
+              <span style={{ textAlign: "center" }}>
+                <SupportChip tone={r.w} />
+              </span>
+              <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+                {r.note ?? ""}
+              </span>
+            </div>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Two-state pill: which platform this build is. Desktop is live (real version);
+// web is "planned" until that build exists.
+function PlatformPill({ version }: { version: string | null }) {
+  const cells: { id: "desktop" | "web"; label: string; on: boolean }[] = [
+    { id: "desktop", label: version ? `Desktop · v${version}` : "Desktop", on: true },
+    { id: "web", label: "Web · planned", on: false },
+  ];
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        gap: 2,
+        padding: 3,
+        background: "var(--bg-2)",
+        border: "1px solid var(--bd)",
+        borderRadius: 999,
+      }}
+    >
+      {cells.map((c) => (
+        <span
+          key={c.id}
+          className="mono"
+          style={{
+            padding: "6px 14px",
+            borderRadius: 999,
+            fontSize: 12,
+            background: c.on ? "var(--bg-0)" : "transparent",
+            color: c.on ? "var(--fg-0)" : "var(--fg-2)",
+            border: c.on ? "1px solid var(--bd)" : "1px solid transparent",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
+            fontWeight: c.on ? 500 : 400,
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: c.on ? "var(--live)" : "var(--fg-3)",
+            }}
+          />
+          {c.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Legend({ tone, label }: { tone: Support; label: string }) {
+  const color = SUPPORT_META[tone].color;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 11.5,
+        color: "var(--fg-1)",
+      }}
+    >
+      <span
+        style={{
+          width: 10,
+          height: 10,
+          borderRadius: 3,
+          background: `color-mix(in oklab, ${color} 25%, transparent)`,
+          border: `1px solid ${color}`,
+        }}
+      />
+      {label}
+    </span>
+  );
+}
+
+function SupportChip({ tone }: { tone: Support }) {
+  const m = SUPPORT_META[tone];
+  return (
+    <span
+      className="mono"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "3px 8px",
+        borderRadius: 4,
+        fontSize: 11,
+        fontWeight: 500,
+        color: m.color,
+        background: `color-mix(in oklab, ${m.color} 12%, transparent)`,
+        border: `1px solid color-mix(in oklab, ${m.color} 30%, transparent)`,
+      }}
+    >
+      <span>{m.icon}</span>
+      {m.label}
+    </span>
+  );
+}
+
 // Repositories — REAL. CodeHub mounts a single host repo at /workspace; this
 // surfaces that bind (host path) plus its live git state. Multi-repo support
 // would need a backend, so "add" is a disabled stub.
@@ -537,6 +1153,7 @@ function ReposPane() {
   const dash = "—";
   const [mounts, setMounts] = useState<MountInfo[] | null>(null);
   const [git, setGit] = useState<GitStatus | null>(null);
+  const loadWorkspaceInfo = useStore((s) => s.loadWorkspaceInfo);
   useEffect(() => {
     let alive = true;
     ipc
@@ -547,10 +1164,11 @@ function ReposPane() {
       .containerGitStatus()
       .then((g) => alive && setGit(g))
       .catch(() => {});
+    void loadWorkspaceInfo();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [loadWorkspaceInfo]);
 
   const workspace = mounts?.find((m) => m.destination === "/workspace");
   const branchLine = git?.isRepo
@@ -588,16 +1206,121 @@ function ReposPane() {
         </div>
       )}
 
-      <SectionHead label="Add a repository" />
-      <NotYet reason="multiple mounts arrive with multi-repo support" />
-      <div style={{ display: "flex", gap: 8 }}>
-        <Button variant="outline" size="sm" disabled>
-          {Ico.plus}Add repository
+      <SectionHead label="Change workspace" />
+      <WorkspaceChanger />
+      <p style={{ margin: "12px 0 0", fontSize: 11.5, color: "var(--fg-2)" }}>
+        One shared workspace per container. Mounting multiple repositories at once needs the
+        multi-container work (Tier-3) and is not built yet.
+      </p>
+    </div>
+  );
+}
+
+// Real Tier-2 workspace changer: shows the effective host dir, lets it change via
+// the native folder dialog or an MRU recent, and offers a runtime recreate (the
+// bind-mount source is fixed at create-time) when the choice differs from what's
+// mounted. Shared concern with the spawn dialog's RepositoryPicker.
+function WorkspaceChanger() {
+  const workspaceInfo = useStore((s) => s.workspaceInfo);
+  // Default outside the selector — a `?? []` inside returns a fresh array per
+  // render and loops useSyncExternalStore (config starts null).
+  const recents = useStore((s) => s.config?.recentWorkspaces) ?? [];
+  const running = useStore((s) => s.status?.state === "running");
+  const pickWorkspaceDir = useStore((s) => s.pickWorkspaceDir);
+  const selectWorkspaceDir = useStore((s) => s.selectWorkspaceDir);
+  const recreateRuntime = useStore((s) => s.recreateRuntime);
+
+  const effective = workspaceInfo?.effective ?? null;
+  const needsRecreate = workspaceInfo?.needsRecreate ?? false;
+  const otherRecents = recents.filter((p) => p !== effective);
+
+  const restart = () => {
+    if (
+      window.confirm(
+        "Restart the runtime to mount the new workspace? This ends every running session (tmux scrollback is kept).",
+      )
+    ) {
+      void recreateRuntime();
+    }
+  };
+
+  return (
+    <div className="ch-card" style={{ padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span
+          className="mono"
+          style={{
+            fontSize: 12.5,
+            color: "var(--fg-1)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={effective ?? undefined}
+        >
+          {effective ?? "—"}
+        </span>
+        <span style={{ flex: 1 }} />
+        <Button variant="outline" size="sm" onClick={() => void pickWorkspaceDir()}>
+          {Ico.files}Choose folder…
         </Button>
       </div>
-      <p style={{ margin: "10px 0 0", fontSize: 11.5, color: "var(--fg-2)" }}>
-        One shared workspace per container today. Multiple mounts arrive with the settings store.
-      </p>
+
+      {otherRecents.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div className="lbl" style={{ marginBottom: 6 }}>
+            Recent
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {otherRecents.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => void selectWorkspaceDir(p)}
+                className="mono"
+                style={{
+                  textAlign: "left",
+                  background: "var(--bg-1)",
+                  border: "1px solid var(--bd-soft)",
+                  borderRadius: 6,
+                  padding: "6px 10px",
+                  fontSize: 11.5,
+                  color: "var(--fg-2)",
+                  cursor: "pointer",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={p}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {needsRecreate && (
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "10px 12px",
+            background: "color-mix(in oklab, var(--wait) 10%, var(--bg-1))",
+            border: "1px solid color-mix(in oklab, var(--wait) 40%, var(--bd))",
+            borderRadius: 8,
+          }}
+        >
+          <span style={{ fontSize: 12, color: "var(--fg-1)", flex: 1 }}>
+            Workspace changed — restart the runtime to mount it. Ends every running session.
+          </span>
+          <Button variant="outline" size="sm" disabled={!running} onClick={restart}>
+            Restart runtime
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -643,33 +1366,42 @@ function ShortcutsPane() {
   );
 }
 
-// Notifications — desktop notification prefs. Gated on the always-on-top island
-// + tauri-plugin-notification work (Phase 5) and the settings store, so the
-// controls are disabled stubs for now.
+// Notifications — desktop notification PREFERENCES. The three flags persist for
+// real (config::Settings → settings.json), so the toggles are live. Honest
+// caveat: OS delivery isn't built yet (no tauri-plugin-notification — Platform
+// pane marks OS-native toast "planned"), so these record your choice but won't
+// fire a system notification until the notification subsystem lands. We save the
+// preference rather than disabling the control so the setting survives that work.
 function NotificationsPane() {
   return (
     <div style={{ maxWidth: 720 }}>
       <PaneHead title="Notifications">
-        How CodeHub alerts you when an agent needs attention while its window isn't focused. Arrives
-        with the system-notification + dynamic-island work.
+        How CodeHub should alert you when an agent needs attention while its window isn't focused.
       </PaneHead>
 
       <SectionHead label="Desktop notifications" />
-      <NotYet reason="arrives with desktop notifications & the dynamic island" />
+      <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
+        These preferences save now. OS-native delivery (a macOS / Windows / GNOME toast) isn't wired
+        yet — it arrives with the notification subsystem; until then the choices are remembered but
+        no system notification fires.
+      </p>
       <SettingRow
         label="Notify when an agent awaits input"
         desc="OS notification when a backgrounded session hits a permission prompt."
-        control={<Toggle on />}
+        control={<LiveToggle field="notifyAwaitInput" />}
+        live
       />
       <SettingRow
         label="Notify when a turn finishes"
         desc="Ping when an agent completes work in an unfocused session."
-        control={<Toggle />}
+        control={<LiveToggle field="notifyTurnFinish" />}
+        live
       />
       <SettingRow
         label="Play a sound"
         desc="Audible cue alongside the notification."
-        control={<Toggle />}
+        control={<LiveToggle field="playSound" />}
+        live
         last
       />
     </div>
@@ -748,17 +1480,6 @@ function ThemeChoice({ theme, onChange }: { theme: Theme; onChange: (t: Theme) =
         { key: "light", label: "Light" },
       ]}
     />
-  );
-}
-
-// Shared caption for a section whose controls aren't wired yet. `reason` names
-// the feature that unblocks them, so the copy stays honest now that the config
-// store itself exists.
-function NotYet({ reason }: { reason: string }) {
-  return (
-    <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--fg-2)" }}>
-      Not configurable yet — {reason}.
-    </p>
   );
 }
 
@@ -858,6 +1579,30 @@ function FontSizeInput() {
       </span>
       <StepBtn d={1} label="Increase font size" />
     </div>
+  );
+}
+
+// Re-probe each agent binary's reported version (`agent_versions`) on demand and
+// push the fresh map back into the store, so the agent cards + About pane reflect
+// it immediately. The bootstrap fetches this once at launch; this re-runs the
+// same real read (e.g. after upgrading a CLI inside the container) — no fabrication.
+function RefreshVersionsButton() {
+  const [busy, setBusy] = useState(false);
+  const refresh = async () => {
+    setBusy(true);
+    try {
+      const agentVersions = await ipc.agentVersions();
+      useStore.setState({ agentVersions });
+    } catch (e) {
+      console.warn("agent_versions refresh failed", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button variant="ghost" size="sm" disabled={busy} onClick={() => void refresh()}>
+      {busy ? "Refreshing…" : "Refresh versions"}
+    </Button>
   );
 }
 

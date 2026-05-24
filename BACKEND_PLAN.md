@@ -1,6 +1,21 @@
 # CodeHub — Backend capability plan
 
-Status: **planning** · Owner: TBD · Created 2026-05-22
+Status: **partially superseded** · Owner: TBD · Created 2026-05-22
+
+> ⚠️ **Read [`COMPLETION_PLAN.md`](./COMPLETION_PLAN.md) first.** This doc's
+> "big unlock deferred" framing is **stale**: per-turn token/cost/turn capture is
+> already real for **Claude** (`claude_usage`/`claude_sessions`/
+> `claude_session_usage`/`claude_integrations`/`claude_agent_config`, reading
+> `~/.claude/projects/**/*.jsonl`) and is **feasible-now for Codex** too
+> (`~/.codex/sessions/**/rollout-*.jsonl` carries per-turn `token_count` +
+> `rate_limits` + `plan_type` + timing — see COMPLETION_PLAN §1). Only
+> **Antigravity** is genuinely blocked (not installed in the image). Live agent
+> state (awaiting-input/turn/done/edit) is delivered via **agent-native hooks**
+> (Claude `hooks` + Codex `notify`), NOT TUI scraping (COMPLETION_PLAN §7). The
+> provider-billing/quota class of Usage metrics (monthly $, budgets, seats, RPM
+> caps) remains deferred — needs provider billing APIs, out of the env-only model;
+> Codex's on-disk `rate_limits` is the one real exception. The build order,
+> parallel-fleet model, and per-track task lists live in COMPLETION_PLAN.md.
 
 The CodeHub design (handoff bundle) shows several screens — **Empty state**,
 **Spawn dialog**, **Settings** — whose controls assume backend capabilities the

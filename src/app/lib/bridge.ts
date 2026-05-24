@@ -83,6 +83,30 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       return jget("/config") as Promise<T>;
     case "set_config":
       return jsend("PUT", "/config", args.config) as Promise<T>;
+    // Tier-2 workspace picker. The native folder dialog can't run in a browser,
+    // so pick_directory degrades to null (the UI offers a typed path instead).
+    case "pick_directory":
+      return null as T;
+    case "set_workspace_dir":
+      return jsend("PUT", "/workspace-dir", { path: args.path }) as Promise<T>;
+    case "workspace_info":
+      return jget("/workspace-info") as Promise<T>;
+    case "recreate_runtime":
+      return jsend("POST", "/recreate-runtime") as Promise<T>;
+    // Tier-3 label-only account profiles.
+    case "list_account_profiles":
+      return jget("/account-profiles") as Promise<T>;
+    case "add_account_profile":
+      return jsend("POST", "/account-profiles", {
+        agent: args.agent,
+        label: args.label,
+        var_name: args.varName,
+      }) as Promise<T>;
+    case "remove_account_profile":
+      return jsend(
+        "DELETE",
+        `/account-profiles/${encodeURIComponent(String(args.id))}`,
+      ) as Promise<T>;
     case "container_git_diff_all":
       return jget("/container-git-diff-all") as Promise<T>;
     case "container_top":
@@ -91,6 +115,32 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       return jget(`/container-git-log?limit=${args.limit ?? 12}`) as Promise<T>;
     case "session_activity":
       return jget("/session-activity") as Promise<T>;
+    // Phase-0 completion contract (stub backend; mirrors devserver.rs routes).
+    case "pending_prompts":
+      return jget("/pending-prompts") as Promise<T>;
+    case "respond_prompt":
+      return jsend("POST", "/respond-prompt", {
+        session: args.session,
+        allow: args.allow,
+      }) as Promise<T>;
+    case "session_activity_history":
+      return jget(
+        `/session-activity-history?session=${encodeURIComponent(String(args.session ?? ""))}`,
+      ) as Promise<T>;
+    case "codex_usage":
+      return jget("/codex-usage") as Promise<T>;
+    case "codex_sessions":
+      return jget("/codex-sessions") as Promise<T>;
+    case "codex_session_usage":
+      return jget(`/codex-session-usage?id=${encodeURIComponent(String(args.id))}`) as Promise<T>;
+    case "codex_rate_limits":
+      return jget("/codex-rate-limits") as Promise<T>;
+    case "github_status":
+      return jget("/github-status") as Promise<T>;
+    case "github_repos":
+      return jget("/github-repos") as Promise<T>;
+    case "check_update":
+      return jget("/check-update") as Promise<T>;
     case "claude_usage":
       return jget("/claude-usage") as Promise<T>;
     case "claude_sessions":
@@ -111,6 +161,7 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
         alias: args.alias,
         resume: args.resume,
         session_id: args.sessionId,
+        account: args.account,
       }) as Promise<T>;
     case "kill_session":
       return jsend("DELETE", `/sessions/${encodeURIComponent(String(args.name))}`) as Promise<T>;
@@ -134,15 +185,13 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
     case "detach_session":
       return jsend("DELETE", `/panes/${id}`) as Promise<T>;
     // The companion is a second always-on-top OS window — it only exists under
-    // Tauri. Over the browser dev bridge these degrade to honest no-ops (open =
-    // nothing to open, companion_open = false) so the trigger + companion route
-    // still render for inspection without a window manager.
+    // Tauri. Over the browser dev bridge these degrade to honest no-ops so the
+    // trigger + companion route still render for inspection without a window
+    // manager.
     case "open_companion":
     case "close_companion":
     case "focus_session_from_companion":
       return undefined as T;
-    case "companion_open":
-      return false as T;
     default:
       throw new Error(`bridge: unmapped command ${cmd}`);
   }

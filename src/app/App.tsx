@@ -1,5 +1,7 @@
 import { useEffect } from "react";
+import { AboutDialog } from "./components/AboutDialog";
 import { Grid } from "./components/Grid";
+import { SpawnModal } from "./components/SpawnModal";
 import { ActivityRail } from "./components/hub/ActivityRail";
 import { BroadcastModal } from "./components/hub/BroadcastModal";
 import { CommandPalette } from "./components/hub/CommandPalette";
@@ -10,8 +12,11 @@ import { HubTabs } from "./components/hub/HubTabs";
 import { Shortcuts } from "./components/hub/Shortcuts";
 import { WorkspaceBar } from "./components/hub/WorkspaceBar";
 import { useActivityPoll } from "./hooks/useActivityPoll";
+import { useAgentEvents } from "./hooks/useAgentEvents";
+import { useContainerStatsPoll } from "./hooks/useContainerStatsPoll";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { listen } from "./lib/bridge";
+import { ipc } from "./lib/ipc";
 import { useLauncher } from "./lib/launcher";
 import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
 import { ContainerInspector } from "./screens/ContainerInspector";
@@ -22,6 +27,7 @@ import { Resume } from "./screens/Resume";
 import { SessionDetail } from "./screens/SessionDetail";
 import { Settings } from "./screens/Settings";
 import { Usage } from "./screens/Usage";
+import { Workspace } from "./screens/Workspace";
 
 // App shell. The left sidebar is always present; the main region swaps on the
 // sidebar's view nav (P4). "hub" is the live terminal grid + activity rail; the
@@ -31,24 +37,37 @@ export function App() {
   const detailSession = useStore((s) => s.detailSession);
 
   useKeyboard();
+  // One app-wide runtime-stats poll, shared by every resource gauge (see hook).
+  useContainerStatsPoll();
   useEffect(() => {
     void initLifecycle();
   }, []);
 
-  // The always-on-top companion (its own window) jumps here via the backend,
-  // which raises this window and emits codehub://focus-session. Focus that
-  // session in the Hub (setView clears any open detail view). Actions are read
-  // from the store at event time, so this subscribes exactly once.
+  // The always-on-top companion (its own window / the macOS native island)
+  // reaches the app through two backend events:
+  //   - codehub://focus-session  → raise this window + focus that session
+  //   - codehub://island-approve → answer an awaiting permission prompt (the
+  //     native island can't call the respond_prompt command directly from an
+  //     AppKit click, so it relays the tmux session name here). Payload is the
+  //     session name for both. Actions/ipc are read at event time, so this
+  //     subscribes exactly once.
   useEffect(() => {
-    let un: (() => void) | undefined;
+    const uns: Array<() => void> = [];
     void listen<string>("codehub://focus-session", (e) => {
       const s = useStore.getState();
       s.focusSession(e.payload);
       s.setView("hub");
-    }).then((u) => {
-      un = u;
-    });
-    return () => un?.();
+    }).then((u) => uns.push(u));
+    void listen<string>("codehub://island-approve", (e) => {
+      // Fire-and-forget: a stale/expired prompt makes this a no-op, so log
+      // rather than swallow silently if the relay arrives after it resolved.
+      ipc.respondPrompt(e.payload, true).catch((err) => {
+        console.warn("island-approve: respond_prompt failed", err);
+      });
+    }).then((u) => uns.push(u));
+    return () => {
+      for (const un of uns) un();
+    };
   }, []);
 
   return (
@@ -66,6 +85,8 @@ export function App() {
         <SessionDetail session={detailSession} />
       ) : view === "hub" ? (
         <HubView />
+      ) : view === "workspace" ? (
+        <Workspace />
       ) : view === "containers" ? (
         <ContainerInspector />
       ) : view === "settings" ? (
@@ -85,6 +106,8 @@ export function App() {
       <CommandPalette />
       <Shortcuts />
       <BroadcastModal />
+      <SpawnModal />
+      <AboutDialog />
     </div>
   );
 }
@@ -98,6 +121,10 @@ function HubView() {
   const grid = useStore((s) => s.config?.hubLayout === "grid");
   // Real working/idle signal for PaneHead + the rail's Activity section.
   useActivityPoll();
+  // Live awaiting-input + turn-history stream (← agent-native hooks, §7): keeps
+  // pending_prompts (bell dot / toast) + session_activity_history (feed) fresh.
+  // Honest-empty until the BE track lands.
+  useAgentEvents();
 
   return (
     <>
@@ -130,7 +157,7 @@ function HubView() {
             <EmptyHero onNew={() => openLaunch("newtab")} />
           </div>
         )}
-        <HubStatusBar />
+        <HubStatusBar variant={grid ? "grid" : "tabs"} />
       </main>
 
       <ActivityRail />

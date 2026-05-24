@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Ico } from "../../components/primitives/icons";
+import { fmtBytes, joinPath as join, orderEntries as order } from "../../lib/fs";
 import { type FileEntry, ipc } from "../../lib/ipc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/dialog";
 
@@ -12,21 +13,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/dialo
 
 const ROOT = "/workspace";
 
-// Append a child segment to a /workspace path (root has no trailing slash).
-function join(dir: string, name: string): string {
-  return dir === "/" ? `/${name}` : `${dir}/${name}`;
-}
-
-// Dirs before files, each group alphabetical (links/other sort with files).
-function order(entries: FileEntry[]): FileEntry[] {
-  return [...entries].sort((a, b) => {
-    const ad = a.kind === "dir";
-    const bd = b.kind === "dir";
-    if (ad !== bd) return ad ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-}
-
 export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => void }) {
   // Current directory, its listing (null = loading, [] = empty/error), and the
   // selected file's path + contents (null content = loading).
@@ -35,6 +21,7 @@ export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => 
   const [err, setErr] = useState<string | null>(null);
   const [file, setFile] = useState<string | null>(null);
   const [body, setBody] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   // Each open starts fresh at the workspace root.
   useEffect(() => {
@@ -42,6 +29,7 @@ export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => 
       setCwd(ROOT);
       setFile(null);
       setBody(null);
+      setQuery("");
     }
   }, [open]);
 
@@ -83,24 +71,48 @@ export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => 
     if (e.kind === "dir") {
       setFile(null);
       setBody(null);
+      setQuery("");
       setCwd(join(cwd, e.name));
     } else if (e.kind === "file") {
       setFile(join(cwd, e.name));
     }
   };
 
-  const rows = entries ? order(entries) : [];
+  // Client-side name filter over the loaded listing (honest — narrows what the
+  // single directory read returned, never reaches beyond it).
+  const q = query.trim().toLowerCase();
+  const rows = entries ? order(entries).filter((e) => !q || e.name.toLowerCase().includes(q)) : [];
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent style={{ maxWidth: 860, padding: 0 }}>
         <DialogHeader style={{ padding: "16px 18px 10px" }}>
-          <DialogTitle style={{ fontSize: 13, fontWeight: 500 }}>Files</DialogTitle>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <DialogTitle style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>Files</DialogTitle>
+            <input
+              className="mono"
+              placeholder="filter by name…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+              style={{
+                width: 200,
+                padding: "4px 8px",
+                borderRadius: 5,
+                border: "1px solid var(--bd-soft)",
+                background: "var(--bg-0)",
+                color: "var(--fg-0)",
+                fontSize: 11.5,
+                outline: "none",
+              }}
+            />
+          </div>
           <Crumbs
             cwd={cwd}
             onNav={(p) => {
               setFile(null);
               setBody(null);
+              setQuery("");
               setCwd(p);
             }}
           />
@@ -129,7 +141,7 @@ export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => 
             ) : err ? (
               <Note>{err}</Note>
             ) : rows.length === 0 ? (
-              <Note>Empty directory.</Note>
+              <Note>{q ? "No files match the filter." : "Empty directory."}</Note>
             ) : (
               rows.map((e) => (
                 <EntryRow
@@ -301,12 +313,4 @@ function Note({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
-}
-
-function fmtBytes(n: number): string {
-  if (n <= 0) return "0 B";
-  const units = ["B", "kB", "MB", "GB", "TB"];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  const v = n / 1024 ** i;
-  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
 }

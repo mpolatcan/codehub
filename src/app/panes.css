@@ -97,7 +97,7 @@
 }
 .divider:hover::after {
   opacity: 1;
-  background: var(--color-accent);
+  background: var(--fg-0);
 }
 body.dragging {
   cursor: grabbing;
@@ -134,9 +134,8 @@ body.dragging .divider::after {
   }
 }
 .pane-leaf.focused {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent), 0 0 14px rgba(232, 163, 61, 0.28), inset 0 0 30px
-    rgba(0, 0, 0, 0.3);
+  border-color: color-mix(in oklab, var(--fg-0) 28%, var(--bd));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fg-0) 16%, transparent);
 }
 
 /* Inline-renamed pane name field (PaneHead renders the static name with inline
@@ -179,14 +178,14 @@ body.dragging .divider::after {
   white-space: nowrap;
 }
 .mode-badge.badge-auto {
-  color: var(--color-accent-bright);
-  background: rgba(232, 163, 61, 0.14);
-  border: 1px solid var(--color-accent-deep);
+  color: var(--wait);
+  background: color-mix(in oklab, var(--wait) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--wait) 40%, var(--bd));
 }
 .mode-badge.badge-yolo {
-  color: var(--color-danger);
-  background: rgba(214, 96, 77, 0.14);
-  border: 1px solid rgba(214, 96, 77, 0.5);
+  color: var(--err);
+  background: color-mix(in oklab, var(--err) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--err) 50%, var(--bd));
 }
 
 /* ---- Tabs ------------------------------------------------------------- */
@@ -221,7 +220,7 @@ body.dragging .divider::after {
   right: 0;
   bottom: -1px;
   height: 2px;
-  background: var(--color-accent);
+  background: var(--fg-0);
   transform-origin: left center;
   animation: tab-underline 0.32s var(--ease-out-quint);
 }
@@ -253,8 +252,8 @@ body.dragging .divider::after {
 }
 .tab .close:hover {
   opacity: 1;
-  color: var(--color-danger);
-  background: rgba(214, 96, 77, 0.12);
+  color: var(--err);
+  background: color-mix(in oklab, var(--err) 14%, transparent);
 }
 
 /* ---- Launcher (shadcn Popover content) ------------------------------- */
@@ -333,8 +332,8 @@ body.dragging .divider::after {
   border-color: var(--color-accent-deep);
 }
 .agent-row.selected {
-  border-color: var(--color-accent);
-  background: linear-gradient(90deg, rgba(232, 163, 61, 0.1), var(--color-bg-deep) 70%);
+  border-color: var(--fg-2);
+  background: var(--bg-3);
 }
 .agent-row .ar-glyph {
   display: flex;
@@ -362,7 +361,7 @@ body.dragging .divider::after {
   color: transparent;
 }
 .agent-row.selected .ar-tick {
-  color: var(--color-accent);
+  color: var(--fg-0);
 }
 .mode-seg {
   display: flex;
@@ -387,14 +386,14 @@ body.dragging .divider::after {
   color: var(--color-text);
 }
 .mode-opt.selected {
-  border-color: var(--color-accent);
+  border-color: var(--fg-2);
   color: var(--color-text);
-  background: linear-gradient(90deg, rgba(232, 163, 61, 0.1), var(--color-bg-deep) 70%);
+  background: var(--bg-3);
 }
 .mode-opt.mode-yolo.selected {
-  border-color: var(--color-danger);
-  background: linear-gradient(90deg, rgba(214, 96, 77, 0.12), var(--color-bg-deep) 70%);
-  color: var(--color-danger);
+  border-color: color-mix(in oklab, var(--err) 50%, var(--bd));
+  background: color-mix(in oklab, var(--err) 12%, transparent);
+  color: var(--err);
 }
 .mode-opt.disabled {
   opacity: 0.3;
@@ -429,9 +428,9 @@ body.dragging .divider::after {
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: all 0.18s ease;
-  background: var(--color-accent);
+  background: var(--fg-0);
   color: var(--color-bg-deep);
-  border: 1px solid var(--color-accent);
+  border: 1px solid var(--fg-0);
   font-weight: 700;
 }
 .start:hover {

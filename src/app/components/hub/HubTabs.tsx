@@ -3,13 +3,10 @@ import { AgentGlyph } from "../../components/primitives/AgentGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
-import type { Cli, Mode } from "../../lib/ipc";
-import { useLauncher } from "../../lib/launcher";
+import { splitKey, useLauncher } from "../../lib/launcher";
 import { useOverlay } from "../../lib/overlay";
-import { useStore } from "../../lib/store";
+import { activeWorkspace, useStore } from "../../lib/store";
 import { leavesList } from "../../lib/tree";
-import { LaunchPanel } from "../LaunchPanel";
-import { Popover, PopoverAnchor, PopoverContent } from "../ui/popover";
 
 // Workspace tab strip, ported from design/screens/main-hub-a.jsx. Each tab is a
 // live workspace; the agent glyphs reflect its panes. The trailing action group
@@ -23,11 +20,7 @@ export function HubTabs() {
   const sessionMeta = useStore((s) => s.sessionMeta);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const closeWorkspace = useStore((s) => s.closeWorkspace);
-  const newPlate = useStore((s) => s.newPlate);
-  const openKey = useLauncher((s) => s.openKey);
   const openLaunch = useLauncher((s) => s.open);
-  const closeLaunch = useLauncher((s) => s.close);
-  const isOpen = openKey === NEW_KEY;
   // Diff button opens the combined "all changes" diff (reuses the rail's
   // DiffViewer + container_git_diff_all); Files opens the /workspace browser.
   // Both reuse the rail-mounted viewers and only matter while the runtime is up.
@@ -39,6 +32,18 @@ export function HubTabs() {
   // Hub layout toggle (tabs ↔ compare grid), persisted via the config store.
   const layout = useStore((s) => s.config?.hubLayout ?? "tabs");
   const updateConfig = useStore((s) => s.updateConfig);
+  // Focused pane of the active workspace — the split buttons target it (same as
+  // ⌘\ / the PaneHead split controls).
+  const focused = useStore((s) => activeWorkspace(s)?.focused ?? null);
+  // Awaiting-input signal for the bell dot: any session with a pending prompt
+  // (← pending_prompts / live agent-event, §7). Real for Claude/Codex; empty
+  // (no dot) for Antigravity and until the BE track lands.
+  const pendingCount = useStore((s) => s.pendingPrompts.length);
+
+  const armSplit = (dir: "row" | "col") => {
+    if (!focused) return;
+    openLaunch(splitKey(focused), { dir, session: focused });
+  };
 
   const stripRef = useRef<HTMLDivElement>(null);
   const prevCount = useRef(workspaces.length);
@@ -49,11 +54,6 @@ export function HubTabs() {
     }
     prevCount.current = workspaces.length;
   }, [workspaces.length]);
-
-  const launch = (cli: Cli, mode: Mode) => {
-    closeLaunch();
-    void newPlate(cli, mode);
-  };
 
   return (
     <div
@@ -149,31 +149,24 @@ export function HubTabs() {
           );
         })}
 
-        {/* new tab */}
-        <Popover open={isOpen} onOpenChange={(o) => !o && closeLaunch()}>
-          <PopoverAnchor asChild>
-            <button
-              type="button"
-              title="New tab (⌘N)"
-              onClick={() => openLaunch(NEW_KEY)}
-              style={{
-                alignSelf: "center",
-                marginLeft: 6,
-                padding: "4px 6px",
-                background: "transparent",
-                border: "none",
-                color: "var(--fg-2)",
-                cursor: "pointer",
-                display: "inline-flex",
-              }}
-            >
-              {Ico.plus}
-            </button>
-          </PopoverAnchor>
-          <PopoverContent side="bottom" align="start" className="modal-panel popover-launch">
-            {isOpen && <LaunchPanel kicker="New tab" onLaunch={launch} />}
-          </PopoverContent>
-        </Popover>
+        {/* new tab — opens the shared spawn modal */}
+        <button
+          type="button"
+          title="New tab (⌘N)"
+          onClick={() => openLaunch(NEW_KEY)}
+          style={{
+            alignSelf: "center",
+            marginLeft: 6,
+            padding: "4px 6px",
+            background: "transparent",
+            border: "none",
+            color: "var(--fg-2)",
+            cursor: "pointer",
+            display: "inline-flex",
+          }}
+        >
+          {Ico.plus}
+        </button>
       </div>
 
       <div style={{ flex: 1 }} />
@@ -202,6 +195,22 @@ export function HubTabs() {
           {Ico.grid}
         </IconBtn>
         <span className="vr" style={{ height: 16, margin: "0 4px" }} />
+        {/* split the focused pane — column (below) / row (right), like ⌘\ */}
+        <IconBtn
+          title={focused ? "Split focused pane below" : "Split (no focused pane)"}
+          disabled={!focused}
+          onClick={() => armSplit("col")}
+        >
+          {Ico.splitH}
+        </IconBtn>
+        <IconBtn
+          title={focused ? "Split focused pane right (⌘\\)" : "Split (no focused pane)"}
+          disabled={!focused}
+          onClick={() => armSplit("row")}
+        >
+          {Ico.splitV}
+        </IconBtn>
+        <span className="vr" style={{ height: 16, margin: "0 4px" }} />
         <IconBtn
           title={running ? "Browse /workspace files" : "Files (runtime not running)"}
           disabled={!running}
@@ -227,7 +236,31 @@ export function HubTabs() {
         >
           {Ico.diff}
         </IconBtn>
-        <IconBtn title="Notifications (coming soon)">{Ico.bell}</IconBtn>
+        <IconBtn
+          title={
+            pendingCount > 0
+              ? `${pendingCount} session${pendingCount === 1 ? "" : "s"} awaiting input`
+              : "No sessions awaiting input"
+          }
+          active={pendingCount > 0}
+        >
+          <span style={{ position: "relative", display: "inline-flex" }}>
+            {Ico.bell}
+            {pendingCount > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: -1,
+                  right: -1,
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "var(--wait)",
+                }}
+              />
+            )}
+          </span>
+        </IconBtn>
       </div>
     </div>
   );

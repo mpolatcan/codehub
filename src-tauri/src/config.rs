@@ -28,6 +28,61 @@ fn default_true() -> bool {
     true
 }
 
+/// A named account a session can launch under. **Label-only — no secret is ever
+/// stored here.** `var_name` is the NAME of a host environment variable that
+/// holds that account's credential (e.g. `CLAUDE_CODE_OAUTH_TOKEN` for the
+/// default, or `CLAUDE_TOKEN_WORK` for a second login the user exports). The
+/// value lives only in the host environment; CodeHub forwards it into the
+/// container at create-time and remaps the CLI's canonical var by NAME per
+/// session (see `docker::DockerClient::create_tmux_session`), so the secret never
+/// reaches a command line, log, or `docker top`. This honors the env-only
+/// credential decision recorded in BACKEND_PLAN.md.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountProfile {
+    /// Stable opaque id (generated on add); used to select the profile at spawn.
+    pub id: String,
+    /// Which agent this account is for: "claude" | "codex" | "antigravity".
+    pub agent: String,
+    /// Human label shown in the spawn dialog (e.g. "Work", "Personal").
+    pub label: String,
+    /// NAME of the host env var holding the credential. Never the value.
+    pub var_name: String,
+}
+
+/// An account profile plus whether its host env var is currently present.
+/// Presence-only (`std::env::var(..).is_ok()`) — the value is NEVER read,
+/// returned, or logged, exactly like `lifecycle::agent_key_status`.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountProfileStatus {
+    pub id: String,
+    pub agent: String,
+    pub label: String,
+    /// NAME of the host env var holding the credential. Never the value.
+    pub var_name: String,
+    /// Whether that env var is present on the host right now.
+    pub present: bool,
+}
+
+/// Map stored profiles to their live presence status. Presence probe only —
+/// `is_ok()` never binds the secret value.
+pub fn profile_statuses(profiles: Vec<AccountProfile>) -> Vec<AccountProfileStatus> {
+    profiles
+        .into_iter()
+        .map(|p| {
+            let present = std::env::var(&p.var_name).is_ok();
+            AccountProfileStatus {
+                id: p.id,
+                agent: p.agent,
+                label: p.label,
+                var_name: p.var_name,
+                present,
+            }
+        })
+        .collect()
+}
+
 /// All persisted preferences. Serialized to the frontend (and the dev bridge) as
 /// camelCase to match the rest of the IPC surface.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +116,23 @@ pub struct Settings {
     /// CLI pre-selected in the launcher (⌘N). One of the `Cli` ids.
     #[serde(default = "default_agent")]
     pub default_agent: String,
+
+    // — Workspace (Tier-2 repo picker) —
+    /// Host directory bind-mounted at `/workspace`. `None` → the built-in
+    /// per-user default (`app_data/workspace`). Changing it requires recreating
+    /// the runtime container (the mount source is fixed at create-time), surfaced
+    /// in the UI as a "restart runtime to apply" affordance.
+    #[serde(default)]
+    pub workspace_dir: Option<String>,
+    /// Recently-selected workspace directories (MRU, newest first, capped).
+    #[serde(default)]
+    pub recent_workspaces: Vec<String>,
+
+    // — Accounts (Tier-3, label-only — no secrets stored, see AccountProfile) —
+    /// Named per-agent accounts the spawn dialog offers. Each maps to a host
+    /// env var NAME, never a credential value.
+    #[serde(default)]
+    pub account_profiles: Vec<AccountProfile>,
 
     // — Notifications (consumed by the desktop-notification work) —
     #[serde(default = "default_true")]
@@ -120,4 +192,34 @@ impl ConfigStore {
         *self.inner.lock().expect("config mutex") = next.clone();
         Ok(next)
     }
+
+    /// Record the chosen workspace directory and bump it to the front of the MRU
+    /// recents list (deduped, capped). Persists and returns the full settings.
+    /// Caller is responsible for validating the path exists.
+    pub fn set_workspace_dir(&self, dir: String) -> Result<Settings, String> {
+        let mut next = self.get();
+        next.recent_workspaces.retain(|p| p != &dir);
+        next.recent_workspaces.insert(0, dir.clone());
+        next.recent_workspaces.truncate(MAX_RECENT_WORKSPACES);
+        next.workspace_dir = Some(dir);
+        self.set(next)
+    }
+
+    /// Append a label-only account profile (no secret) and persist.
+    pub fn add_account_profile(&self, profile: AccountProfile) -> Result<Settings, String> {
+        let mut next = self.get();
+        next.account_profiles.push(profile);
+        self.set(next)
+    }
+
+    /// Remove the account profile with `id` and persist. Removing a missing id is
+    /// a no-op (still re-persists for idempotency).
+    pub fn remove_account_profile(&self, id: &str) -> Result<Settings, String> {
+        let mut next = self.get();
+        next.account_profiles.retain(|p| p.id != id);
+        self.set(next)
+    }
 }
+
+/// Cap on the MRU workspace-recents list.
+const MAX_RECENT_WORKSPACES: usize = 8;

@@ -87,7 +87,7 @@ Environment knobs:
 | Env var | Purpose | Default |
 |---|---|---|
 | `CODEHUB_CONTAINER` | Container name | `codehub-runtime` |
-| `CODEHUB_IMAGE` | Image tag | `ghcr.io/mpolatcan/codehub-runtime:0.1.2` |
+| `CODEHUB_IMAGE` | Image tag | `ghcr.io/mpolatcan/codehub-runtime:0.1.3` |
 | `CODEHUB_NETWORK_MODE` | Docker network mode | `bridge` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Skip /login in Claude Code | unset |
 
@@ -111,11 +111,12 @@ Environment knobs:
 - **`SHELL ["bash", "-euo", "pipefail", "-c"]` is set in the runtime Dockerfile.** This matters because we use `curl ... | bash` patterns to install CLIs; without pipefail, a failing curl silently succeeds and the CLI is missing from the image. Do not remove it.
 - **macOS Docker Desktop "host network" is gated behind a beta flag.** We default `CODEHUB_NETWORK_MODE=bridge` to keep things portable. Override to `host` only if the user has Docker Desktop 4.34+ with the beta enabled.
 - **The runtime container's entrypoint is `tail -f /dev/null`.** It does NOT launch tmux. The tmux server is started by the first `docker exec ... tmux new-session ...` call. Sessions share `TMUX_TMPDIR=/tmp/codehub`.
-- **The in-pane tmux status bar is themed via `runtime/tmux.conf`** (COPYed to `/root/.tmux.conf`, loaded on tmux server start). It restyles tmux's default green to CodeHub's palette (`bg=#16181c` panel, ochre `#e8a33d` accent) so the bar reads as app chrome. Changing it needs an image rebuild (`make image`); to preview on a live container without a rebuild: `docker cp runtime/tmux.conf codehub-runtime:/root/.tmux.conf && docker exec -e TMUX_TMPDIR=/tmp/codehub codehub-runtime tmux source-file /root/.tmux.conf`. Keep the hexes in sync with the `@theme` block in `theme.css`.
+- **The in-pane tmux status bar is themed via `runtime/tmux.conf`** (COPYed to `/root/.tmux.conf`, loaded on tmux server start). It restyles tmux's default green to CodeHub's palette (`bg=#171b22` panel, neutral `#ecedf0` wordmark) so the bar reads as app chrome. Changing it needs an image rebuild (`make image`); to preview on a live container without a rebuild: `docker cp runtime/tmux.conf codehub-runtime:/root/.tmux.conf && docker exec -e TMUX_TMPDIR=/tmp/codehub codehub-runtime tmux source-file /root/.tmux.conf`. Keep the hexes in sync with the design tokens in `tokens.css` (`--bg-*`/`--fg-*`); xterm's own ANSI palette mirrors the same tokens in `src/terminal.ts` (sRGB conversions of the oklch accents).
 - **The webview drag region** is set via `-webkit-app-region: drag` on the masthead and tabbar (React sets it through the `WebkitAppRegion` style prop). Buttons inside those regions must reset with `WebkitAppRegion: "no-drag"` or clicks get captured by window-drag.
 - **Antigravity install URL is unverified** (`antigravity.google/cli/install.sh` returned an SSL self-signed cert chain error during build). The line is commented out in `runtime/Dockerfile`, and `catalog.ts` `MODE_SUPPORT` caps Antigravity to Standard only. Until confirmed, selecting Antigravity spawns a tmux session that exits immediately.
 - **xterm panes mount via `absolute inset-0`, never flexbox.** `.pane-body` is `position:relative; flex:1` but NOT `display:flex`; a `flex-1` slot collapses to height 0 and the absolutely-positioned `.term-surface` renders blank. `<PaneMount>` fills the slot with `absolute inset-0` + a `ResizeObserver` that re-fits on resize (there is no window-level resize handler — the observer is it).
 - **Global keyboard shortcuts (`useKeyboard`) attach at the capture phase** so they beat xterm's textarea handler. Don't switch to bubble phase, and don't blanket-skip on `TEXTAREA` — xterm's helper IS a textarea, so the rename-input guard keys off the `.pane-name-input` class instead.
+- **Spawn background tasks in the Tauri `setup` hook with `tauri::async_runtime::spawn`, NOT `tokio::spawn`.** `setup` runs on the main thread with no entered tokio runtime, so a bare `tokio::spawn` panics (`there is no reactor running`) — and because it unwinds across the Obj-C `did_finish_launching` boundary, the process *aborts* instead of erroring. Code shared with the dev bridge (which runs under `#[tokio::main]`, where `tokio::spawn` is valid) must not bake in the spawner: expose the loop as a plain `async fn` and let each caller spawn on its own runtime (see `events::event_tailer_loop` + its two call sites). This shipped as a latent startup crash because the subsystem had only ever run via `make dev-web`, never a real Tauri launch.
 
 ## Testing posture
 

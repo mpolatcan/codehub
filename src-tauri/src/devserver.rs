@@ -14,13 +14,15 @@
 
 use crate::config::{ConfigStore, Settings};
 use crate::docker::{Cli, DockerClient, LaunchMode};
+use crate::events::EventsTracker;
 use crate::lifecycle::Lifecycle;
 use crate::pty::{PaneEmitter, PtyRegistry};
+use crate::types::UpdateStatus;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -30,7 +32,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 
 const DEFAULT_CONTAINER: &str = "codehub-runtime";
-const DEFAULT_IMAGE: &str = "ghcr.io/mpolatcan/codehub-runtime:0.1.2";
+const DEFAULT_IMAGE: &str = "ghcr.io/mpolatcan/codehub-runtime:0.1.3";
 const ADDR: &str = "127.0.0.1:4555";
 
 #[derive(Clone)]
@@ -39,6 +41,7 @@ struct AppState {
     docker: Arc<DockerClient>,
     registry: Arc<PtyRegistry>,
     config: Arc<ConfigStore>,
+    events: Arc<EventsTracker>,
     // Pre-serialized `{event, payload}` frames fanned out to every WS client.
     tx: broadcast::Sender<String>,
 }
@@ -95,18 +98,22 @@ pub async fn serve() {
                 .join(".codehub-devserver")
         });
 
+    // Config loads first: the lifecycle reads the effective workspace dir +
+    // account-profile env vars from it at container-create time (mirrors lib.rs).
+    let config = Arc::new(ConfigStore::load(data_dir.join("settings.json")));
     let lifecycle = Arc::new(
         Lifecycle::new(
             container,
             image,
             data_dir.join("config"),
             data_dir.join("workspace"),
+            config.clone(),
         )
         .expect("docker daemon unreachable — is Docker running?"),
     );
     let docker = Arc::new(lifecycle.docker_client());
     let registry = Arc::new(PtyRegistry::new());
-    let config = Arc::new(ConfigStore::load(data_dir.join("settings.json")));
+    let events = Arc::new(EventsTracker::new());
     let (tx, _) = broadcast::channel::<String>(1024);
 
     // Provision the runtime in the background, mirroring lib.rs setup; the
@@ -125,11 +132,34 @@ pub async fn serve() {
         });
     }
 
+    // Start the event tailer for the dev bridge (mirrors lib.rs setup). Reuses the
+    // shared tail in `events` — same attach/parse loop the Tauri app runs — with a
+    // WS-frame sink instead of a window emit. The WsEmitter handles pty output;
+    // this handles hook events.
+    {
+        let tx_for_events = tx.clone();
+        // Runs under `#[tokio::main]`, so spawn the shared loop with tokio directly
+        // (the Tauri app uses tauri::async_runtime — see events::start_event_tailer).
+        tokio::spawn(crate::events::event_tailer_loop(
+            docker.clone(),
+            events.clone(),
+            move |event| {
+                if let Ok(frame) = serde_json::to_string(&serde_json::json!({
+                    "event": "codehub://agent-event",
+                    "payload": event,
+                })) {
+                    let _ = tx_for_events.send(frame);
+                }
+            },
+        ));
+    }
+
     let state = AppState {
         lifecycle,
         docker,
         registry,
         config,
+        events,
         tx,
     };
 
@@ -141,6 +171,15 @@ pub async fn serve() {
         .route("/docker-info", get(docker_info))
         .route("/app-info", get(app_info))
         .route("/config", get(get_config).put(set_config))
+        .route("/pick-directory", post(pick_directory))
+        .route("/workspace-dir", put(set_workspace_dir))
+        .route("/workspace-info", get(workspace_info))
+        .route("/recreate-runtime", post(recreate_runtime))
+        .route(
+            "/account-profiles",
+            get(list_account_profiles).post(add_account_profile),
+        )
+        .route("/account-profiles/:id", delete(remove_account_profile))
         .route("/agent-key-status", get(agent_key_status))
         .route("/agent-versions", get(agent_versions))
         .route("/container-stats", get(container_stats))
@@ -161,6 +200,17 @@ pub async fn serve() {
         .route("/claude-agent-config", get(claude_agent_config))
         .route("/container-git-log", get(container_git_log))
         .route("/session-activity", get(session_activity))
+        // Phase-0 completion contract (stub handlers; mirror lib.rs).
+        .route("/pending-prompts", get(pending_prompts))
+        .route("/respond-prompt", post(respond_prompt))
+        .route("/session-activity-history", get(session_activity_history))
+        .route("/codex-usage", get(codex_usage))
+        .route("/codex-sessions", get(codex_sessions))
+        .route("/codex-session-usage", get(codex_session_usage))
+        .route("/codex-rate-limits", get(codex_rate_limits))
+        .route("/github-status", get(github_status))
+        .route("/github-repos", get(github_repos))
+        .route("/check-update", get(check_update))
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/:name", delete(kill_session))
         .route("/sessions/:name/rename", post(rename_session))
@@ -168,7 +218,7 @@ pub async fn serve() {
         .route("/panes/:id/write", post(write))
         .route("/panes/:id/resize", post(resize))
         .route("/panes/:id", delete(detach))
-        .route("/events", get(events))
+        .route("/events", get(ws_events))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(ADDR).await.expect("bind");
@@ -229,6 +279,74 @@ async fn set_config(
         .set(body)
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+// Tier-2 / Tier-3 — workspace picker + account profiles. Mirror the lib.rs
+// commands one-for-one. The native folder picker can't run in a browser, so
+// pick_directory degrades to null (the UI falls back to a typed path).
+async fn pick_directory() -> impl IntoResponse {
+    Json(None::<String>)
+}
+
+#[derive(Deserialize)]
+struct WorkspaceDirBody {
+    path: String,
+}
+
+async fn set_workspace_dir(
+    State(st): State<AppState>,
+    Json(body): Json<WorkspaceDirBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    if !std::path::Path::new(&body.path).is_dir() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("not a directory: {}", body.path),
+        ));
+    }
+    st.config
+        .set_workspace_dir(body.path)
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+async fn workspace_info(State(st): State<AppState>) -> impl IntoResponse {
+    Json(st.lifecycle.workspace_info().await)
+}
+
+async fn recreate_runtime(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    st.lifecycle.recreate().await.map_err(err)?;
+    let status = st.lifecycle.status().await;
+    broadcast_lifecycle(&st, &status);
+    Ok(Json(status))
+}
+
+async fn list_account_profiles(State(st): State<AppState>) -> impl IntoResponse {
+    Json(crate::profile_statuses(st.config.get().account_profiles))
+}
+
+#[derive(Deserialize)]
+struct AddProfileBody {
+    agent: String,
+    label: String,
+    var_name: String,
+}
+
+async fn add_account_profile(
+    State(st): State<AppState>,
+    Json(body): Json<AddProfileBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    let profile = crate::build_account_profile(&body.agent, &body.label, &body.var_name)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let next = st.config.add_account_profile(profile).map_err(err)?;
+    Ok(Json(crate::profile_statuses(next.account_profiles)))
+}
+
+async fn remove_account_profile(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let next = st.config.remove_account_profile(&id).map_err(err)?;
+    Ok(Json(crate::profile_statuses(next.account_profiles)))
 }
 
 async fn agent_key_status() -> impl IntoResponse {
@@ -387,6 +505,8 @@ struct CreateBody {
     alias: Option<String>,
     resume: Option<String>,
     session_id: Option<String>,
+    /// Account profile id (Tier-3) → resolves to that profile's host env var NAME.
+    account: Option<String>,
 }
 
 async fn create_session(
@@ -400,6 +520,15 @@ async fn create_session(
         .map(LaunchMode::parse)
         .unwrap_or_default();
     let alias = body.alias.unwrap_or_default();
+    // Resolve the chosen account profile to its env var NAME (never a value).
+    let account_var = body.account.as_deref().and_then(|id| {
+        st.config
+            .get()
+            .account_profiles
+            .into_iter()
+            .find(|p| p.id == id)
+            .map(|p| p.var_name)
+    });
     st.docker
         .create_tmux_session(
             &body.name,
@@ -408,6 +537,7 @@ async fn create_session(
             &alias,
             body.resume.as_deref(),
             body.session_id.as_deref(),
+            account_var.as_deref(),
         )
         .await
         .map_err(err)?;
@@ -426,6 +556,7 @@ async fn kill_session(
 ) -> Result<StatusCode, ApiError> {
     // Same ordering as lib.rs: drop pane bookkeeping before killing tmux.
     st.registry.detach_by_session(&name).await;
+    st.events.remove_session(&name);
     st.docker.kill_tmux_session(&name).await.map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -506,7 +637,108 @@ async fn detach(State(st): State<AppState>, Path(id): Path<String>) -> StatusCod
     StatusCode::NO_CONTENT
 }
 
-async fn events(ws: WebSocketUpgrade, State(st): State<AppState>) -> impl IntoResponse {
+// ── Phase-0 completion contract: real handlers (BE track) ───────────────────
+// These now call the same docker/events state as the Tauri commands.
+
+async fn pending_prompts(State(st): State<AppState>) -> impl IntoResponse {
+    Json(st.events.pending_prompts())
+}
+
+#[derive(Deserialize)]
+struct RespondPromptBody {
+    session: String,
+    allow: bool,
+}
+
+async fn respond_prompt(
+    State(st): State<AppState>,
+    Json(body): Json<RespondPromptBody>,
+) -> StatusCode {
+    let cli_opt = st
+        .registry
+        .activity()
+        .snapshot()
+        .into_iter()
+        .find(|a| a.session == body.session)
+        .and_then(|a| a.cli);
+    let Some(cli) = cli_opt else {
+        tracing::warn!(
+            "respond_prompt: no activity record for session {}",
+            body.session
+        );
+        return StatusCode::NO_CONTENT;
+    };
+    let keystroke = if body.allow {
+        crate::events::accept_keystroke(&cli)
+    } else {
+        crate::events::deny_keystroke(&cli)
+    };
+    if let Some(key) = keystroke {
+        if let Some(pane_id) = st.registry.pane_for_session(&body.session).await {
+            let _ = st.registry.write(&pane_id, key.as_bytes()).await;
+        }
+    }
+    st.events.clear_pending(&body.session);
+    StatusCode::NO_CONTENT
+}
+
+#[derive(Deserialize)]
+struct ActivityHistoryQuery {
+    session: Option<String>,
+}
+
+async fn session_activity_history(
+    State(st): State<AppState>,
+    Query(q): Query<ActivityHistoryQuery>,
+) -> impl IntoResponse {
+    Json(st.events.activity_history(q.session.as_deref()))
+}
+
+async fn codex_usage(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    st.docker.codex_usage().await.map(Json).map_err(err)
+}
+
+async fn codex_sessions(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    st.docker.codex_sessions().await.map(Json).map_err(err)
+}
+
+#[derive(Deserialize)]
+struct CodexSessionUsageQuery {
+    id: String,
+}
+
+async fn codex_session_usage(
+    State(st): State<AppState>,
+    Query(q): Query<CodexSessionUsageQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker
+        .codex_session_usage(&q.id)
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+async fn codex_rate_limits(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    st.docker.codex_rate_limits().await.map(Json).map_err(err)
+}
+
+async fn github_status(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    st.docker.github_status().await.map(Json).map_err(err)
+}
+
+async fn github_repos(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    st.docker.github_repos().await.map(Json).map_err(err)
+}
+
+async fn check_update() -> impl IntoResponse {
+    Json(UpdateStatus {
+        current: env!("CARGO_PKG_VERSION").to_string(),
+        available: None,
+        notes: None,
+    })
+}
+
+async fn ws_events(ws: WebSocketUpgrade, State(st): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| client(socket, st.tx.subscribe()))
 }
 

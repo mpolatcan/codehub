@@ -87,10 +87,39 @@ export interface AppSettings {
   reopenLastWorkspace: boolean;
   // Agent defaults
   defaultAgent: Cli;
+  // Workspace (Tier-2 repo picker). workspaceDir null → built-in default mount.
+  workspaceDir: string | null;
+  recentWorkspaces: string[];
+  // Accounts (Tier-3, label-only — no secrets). Each maps an agent to a host
+  // env var NAME; the value is never stored here.
+  accountProfiles: AccountProfile[];
   // Notifications
   notifyAwaitInput: boolean;
   notifyTurnFinish: boolean;
   playSound: boolean;
+}
+
+// A label-only account profile (config::AccountProfile). `varName` is the NAME
+// of a host env var holding that account's credential — never the value.
+export interface AccountProfile {
+  id: string;
+  agent: string;
+  label: string;
+  varName: string;
+}
+
+// An account profile plus whether its host env var is present right now
+// (presence-only, like KeyStatus — the value is never read).
+export interface AccountProfileStatus extends AccountProfile {
+  present: boolean;
+}
+
+// Configured-vs-mounted /workspace dir + whether the runtime needs recreating to
+// apply a change (the bind-mount source is fixed at container create-time).
+export interface WorkspaceInfo {
+  effective: string;
+  mounted: string | null;
+  needsRecreate: boolean;
 }
 
 // Build + host platform identity (Settings → About). All compile-time / runtime
@@ -348,6 +377,169 @@ export interface AgentConfig {
   marketplaces: string[];
 }
 
+// ── Phase-0 completion contract (COMPLETION_PLAN.md) ────────────────────────
+// New surface for the parallel fleet. Shapes are frozen; backend fns are stubs
+// until the BE track fills them. Honesty contract holds: absent data → null /
+// empty / em-dash, never fabricated.
+
+// Live agent-native hook event (Claude `hooks` / Codex `notify`), normalized
+// from the raw in-container event stream (§7). `kind` is the normalized event;
+// optional fields carry what that kind provides (verified shapes in §7.6).
+export type AgentEventKind =
+  | "session_start"
+  | "prompt_submit"
+  | "pre_tool"
+  | "post_tool"
+  | "notification"
+  | "stop"
+  | "stop_failure"
+  | "session_end";
+export interface AgentEvent {
+  // tmux session name (correlated via the CODEHUB_SESSION env, §7.3).
+  session: string;
+  kind: AgentEventKind;
+  // Unix epoch ms the event was observed.
+  at: number;
+  // notification/stop message or error text; null when the kind carries none.
+  message: string | null;
+  // For kind "notification": the typed Notification subtype
+  // ("permission_prompt" | "idle_prompt" | "auth_success" | …) — drives the
+  // awaiting-input vs idle distinction with no message parsing (§7.6).
+  notificationType: string | null;
+  // For kind "pre_tool"/"post_tool": the tool that ran (Bash/Edit/Write/…).
+  toolName: string | null;
+}
+
+// A session currently awaiting user input (a permission_prompt Notification with
+// no resolving event yet). `since` is epoch ms the prompt was raised.
+export interface PendingPrompt {
+  session: string;
+  message: string | null;
+  since: number;
+}
+
+// One entry in a session's activity/turn history ring buffer (Hub ActivityRail
+// feed + Dashboard chart). Mirrors AgentEvent but persisted as history.
+export interface ActivityEvent {
+  session: string;
+  kind: AgentEventKind;
+  at: number;
+  message: string | null;
+}
+
+// Codex token split (it reports cached-input + reasoning-output separately, so
+// it can't reuse Claude's TokenTotals). Every field a real sum from the rollout
+// file's token_count records (never estimated).
+export interface CodexTokenTotals {
+  input: number;
+  cachedInput: number;
+  output: number;
+  reasoningOutput: number;
+}
+
+export interface CodexModelUsage {
+  model: string;
+  totals: CodexTokenTotals;
+  turns: number;
+  estCostUsd: number;
+  priced: boolean;
+}
+
+// One day's Codex usage rollup. Distinct from Claude's DayUsage because Codex
+// carries the cached-input / reasoning-output split (CodexTokenTotals).
+export interface CodexDayUsage {
+  date: string;
+  totals: CodexTokenTotals;
+  estCostUsd: number;
+}
+
+// One model family's Codex per-million-token rates. Distinct from Claude's
+// ModelRate: Codex's rate card has no separate cache-write/read prices, so the
+// backend (CodexModelRate) sends only input/output — never the cache fields.
+export interface CodexModelRate {
+  family: string;
+  inputPerMtok: number;
+  outputPerMtok: number;
+}
+
+// Aggregate Codex token analytics from ~/.codex/sessions/**/rollout-*.jsonl.
+// Token/turn/session counts FACTUAL; estCostUsd ESTIMATED (tokens × rates).
+export interface CodexUsage {
+  sessions: number;
+  turns: number;
+  totals: CodexTokenTotals;
+  estCostUsd: number;
+  byModel: CodexModelUsage[];
+  byDay: CodexDayUsage[];
+  rates: CodexModelRate[];
+  ratesAsOf: string;
+  unpricedTokens: number;
+}
+
+// One past Codex conversation from its rollout file (Resume view). Mirrors
+// ClaudeSession. `turns` = distinct task_started count.
+export interface CodexSession {
+  id: string;
+  title: string;
+  branch: string | null;
+  started: string;
+  lastActive: string;
+  turns: number;
+  model: string | null;
+  version: string | null;
+}
+
+// Live per-session Codex tally from its rollout file. `edits` is 0 when Codex's
+// patch events aren't counted (honest, not faked). contextUsed = the latest
+// token_count's input+cached (model_context_window is also on disk if needed).
+export interface CodexSessionUsage {
+  turns: number;
+  tokensIn: number;
+  tokensOut: number;
+  edits: number;
+  contextUsed: number;
+}
+
+// Codex rate-limit / plan meters — the ONE on-disk quota source (latest
+// token_count line's `rate_limits` + `plan_type`). NO billing API. Every field
+// nullable → em-dash when absent. resetsAt is RFC3339 (or epoch — TBD by parser).
+export interface CodexRateLimits {
+  primaryUsedPct: number | null;
+  primaryWindowMinutes: number | null;
+  primaryResetsAt: string | null;
+  secondaryUsedPct: number | null;
+  secondaryWindowMinutes: number | null;
+  secondaryResetsAt: string | null;
+  planType: string | null;
+}
+
+// GitHub connection (Integrations). Presence-only auth: `connected` reflects the
+// host env var (e.g. GITHUB_TOKEN) being set — the value is NEVER read/returned.
+// login/scopes/tokenExpiry come from the GitHub API when reachable, else null.
+export interface GithubStatus {
+  connected: boolean;
+  varName: string;
+  login: string | null;
+  scopes: string[];
+  tokenExpiry: string | null;
+}
+
+// One repo visible to the connected GitHub account (Integrations repo list).
+export interface GithubRepo {
+  nameWithOwner: string;
+  defaultBranch: string | null;
+  openPrs: number | null;
+  private: boolean;
+}
+
+// App update check (Settings → About). `available` null when up to date; the UI
+// shows an install affordance only when a newer version is present.
+export interface UpdateStatus {
+  current: string;
+  available: string | null;
+  notes: string | null;
+}
+
 export const ipc = {
   containerStatus: () => invoke<ContainerStatus>("container_status"),
   // Runtime lifecycle controls. Each returns the post-action ContainerStatus and
@@ -364,8 +556,27 @@ export const ipc = {
   // whole object and echoes back what landed.
   getConfig: () => invoke<AppSettings>("get_config"),
   setConfig: (config: AppSettings) => invoke<AppSettings>("set_config", { config }),
+  // Tier-2 workspace/repo picker. pickDirectory opens the native folder dialog
+  // (null on cancel, or in browser-mode where there's no native dialog).
+  // setWorkspaceDir validates + persists the choice (echoes the stored config);
+  // workspaceInfo reports configured-vs-mounted + needs-recreate; recreateRuntime
+  // rebuilds the container to apply a changed mount (kills sessions — confirm first).
+  pickDirectory: () => invoke<string | null>("pick_directory"),
+  setWorkspaceDir: (path: string) => invoke<AppSettings>("set_workspace_dir", { path }),
+  workspaceInfo: () => invoke<WorkspaceInfo>("workspace_info"),
+  recreateRuntime: () => invoke<ContainerStatus>("recreate_runtime"),
+  // Tier-3 label-only account profiles (no secrets). list/add/remove each return
+  // the full updated list with live host-env presence per profile.
+  listAccountProfiles: () => invoke<AccountProfileStatus[]>("list_account_profiles"),
+  addAccountProfile: (agent: AgentCli, label: string, varName: string) =>
+    invoke<AccountProfileStatus[]>("add_account_profile", { agent, label, varName }),
+  removeAccountProfile: (id: string) =>
+    invoke<AccountProfileStatus[]>("remove_account_profile", { id }),
   // Agent-only maps (the backend probes claude/codex/antigravity; shell has no
-  // version or key to report).
+  // version or key to report). The backend ALWAYS emits exactly these three
+  // AgentCli keys (lifecycle::agent_key_status / docker::agent_versions build a
+  // fixed 3-entry map), so the non-partial Record<AgentCli, …> is an accurate
+  // contract — keep it in sync if a fourth CLI is ever added (Cli-enum 4-point).
   agentKeyStatus: () => invoke<Record<AgentCli, KeyStatus>>("agent_key_status"),
   agentVersions: () => invoke<Record<AgentCli, AgentVersion>>("agent_versions"),
   containerStats: () => invoke<ContainerStats>("container_stats"),
@@ -414,6 +625,9 @@ export const ipc = {
   // `resume` (a Claude transcript id) relaunches that conversation with
   // `claude --resume <id>`. `sessionId` pins a fresh Claude session to a known
   // UUID (`--session-id`) so its transcript can be read back. Mutually exclusive.
+  // `account` (Tier-3) is an account-profile id; the backend resolves it to that
+  // profile's host env var NAME and remaps the CLI's credential var onto it for
+  // this session. Absent → the default (canonical host env).
   createSession: (
     name: string,
     cli: Cli,
@@ -421,7 +635,8 @@ export const ipc = {
     alias: string,
     resume?: string,
     sessionId?: string,
-  ) => invoke<void>("create_session", { name, cli, mode, alias, resume, sessionId }),
+    account?: string,
+  ) => invoke<void>("create_session", { name, cli, mode, alias, resume, sessionId, account }),
   killSession: (name: string) => invoke<void>("kill_session", { name }),
   renameSession: (name: string, alias: string) => invoke<void>("rename_session", { name, alias }),
   attachSession: (name: string, cols: number, rows: number) =>
@@ -430,15 +645,55 @@ export const ipc = {
   ptyResize: (paneId: string, cols: number, rows: number) =>
     invoke<void>("pty_resize", { paneId, cols, rows }),
   detachSession: (paneId: string) => invoke<void>("detach_session", { paneId }),
-  // Always-on-top companion window (P5). open/close/query the floating monitor;
+  // Always-on-top companion window (P5). open/close the floating monitor;
   // focusSessionFromCompanion raises the main window + emits codehub://focus-session.
   // No-ops over the dev bridge — a second OS window only exists under Tauri.
   openCompanion: () => invoke<void>("open_companion"),
   closeCompanion: () => invoke<void>("close_companion"),
-  companionOpen: () => invoke<boolean>("companion_open"),
   focusSessionFromCompanion: (name: string) =>
     invoke<void>("focus_session_from_companion", { name }),
+  // ── Phase-0 completion contract (stubs until the BE track lands) ──────────
+  // Sessions awaiting user input right now (← agent-native hooks, §7). Real for
+  // Claude/Codex; Antigravity always empty.
+  pendingPrompts: () => invoke<PendingPrompt[]>("pending_prompts"),
+  // Answer a pending prompt by writing the accept/deny keystroke to that pane's
+  // pty (same transport as broadcast — it IS a simulated keypress).
+  respondPrompt: (session: string, allow: boolean) =>
+    invoke<void>("respond_prompt", { session, allow }),
+  // Activity/turn history ring buffer (Hub ActivityRail + Dashboard chart). All
+  // sessions when `session` omitted.
+  sessionActivityHistory: (session?: string) =>
+    invoke<ActivityEvent[]>("session_activity_history", { session }),
+  // Codex usage analytics from rollout files — mirrors the claude* surface.
+  codexUsage: () => invoke<CodexUsage>("codex_usage"),
+  codexSessions: () => invoke<CodexSession[]>("codex_sessions"),
+  // Live per-session Codex tally (parity with claudeSessionUsage). Backend is
+  // real + tested, but no UI consumer yet: wiring the pane-header tally for a
+  // Codex session needs a per-session rollout id on SessionMeta (the deferred
+  // "codexId on SessionMeta" item) — claudeSessionUsage has claudeId, Codex has
+  // no equivalent tracked at create-time. Kept (not removed) as ready parity.
+  codexSessionUsage: (id: string) =>
+    invoke<CodexSessionUsage | null>("codex_session_usage", { id }),
+  // Codex rate-limit / plan meters (on-disk quota source). Null when no data.
+  codexRateLimits: () => invoke<CodexRateLimits | null>("codex_rate_limits"),
+  // GitHub connection (Integrations). PAT presence-only; value never read.
+  githubStatus: () => invoke<GithubStatus>("github_status"),
+  githubRepos: () => invoke<GithubRepo[]>("github_repos"),
+  // App update check (Settings → About).
+  checkUpdate: () => invoke<UpdateStatus>("check_update"),
 } as const;
+
+// Live agent-native hook events (§7). Fires per normalized event; the store fans
+// these into pending-prompt + activity-history slices and toast/bell UI.
+export function onAgentEvent(cb: (e: AgentEvent) => void): Promise<UnlistenFn> {
+  return listen<AgentEvent>("codehub://agent-event", (e) => cb(e.payload));
+}
+
+// Main window raised by the companion's focus jump (P5). The Hub focuses the
+// named session when this fires.
+export function onFocusSession(cb: (name: string) => void): Promise<UnlistenFn> {
+  return listen<string>("codehub://focus-session", (e) => cb(e.payload));
+}
 
 export function onLifecycle(cb: (s: ContainerStatus) => void): Promise<UnlistenFn> {
   return listen<ContainerStatus>("codehub://lifecycle", (e) => cb(e.payload));

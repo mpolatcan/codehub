@@ -6,21 +6,37 @@ pub mod config;
 #[cfg(feature = "devserver")]
 pub mod devserver;
 pub mod docker;
+/// Agent-event hooks subsystem (§7, COMPLETION_PLAN.md).
+pub mod events;
+// Native macOS Dynamic Island companion. On other platforms the companion stays
+// a WebviewWindow (see open_companion below).
+#[cfg(target_os = "macos")]
+pub mod island;
 pub mod lifecycle;
 pub mod pty;
+/// Shared IPC response types (Phase-0 completion contract).
+pub mod types;
 
 use activity::SessionActivity;
-use config::{ConfigStore, Settings};
+use config::{AccountProfile, ConfigStore, Settings};
 use docker::{
     AgentConfig, AgentVersion, ClaudeIntegrations, ClaudeSession, ClaudeUsage, Cli, CommitInfo,
     ContainerStats, DockerClient, FileEntry, GitStatus, ImageInfo, LaunchMode, MountInfo,
     ProcessInfo, RuntimeHealth, SessionUsage,
 };
-use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle};
+use events::EventsTracker;
+use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle, WorkspaceInfo};
 use pty::{PaneEmitter, PtyRegistry, SessionInfo};
+// Re-export Phase-0 contract types so devserver.rs can import them from `crate::`.
+pub use config::{profile_statuses, AccountProfileStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
+pub use types::{
+    ActivityEvent, AgentEvent, CodexDayUsage, CodexModelRate, CodexModelUsage, CodexRateLimits,
+    CodexSession, CodexSessionUsage, CodexTokenTotals, CodexUsage, GithubRepo, GithubStatus,
+    PendingPrompt, UpdateStatus,
+};
 
 /// Bridges a pane's output to the Tauri webview as `pty://data|exit/<id>`
 /// events — the production [`PaneEmitter`].
@@ -40,26 +56,30 @@ pub struct AppState {
     pub docker: Arc<DockerClient>,
     pub registry: Arc<PtyRegistry>,
     pub config: Arc<ConfigStore>,
+    /// Agent-event hook state: pending prompts + activity ring buffer.
+    pub events: Arc<EventsTracker>,
 }
 
 const DEFAULT_CONTAINER: &str = "codehub-runtime";
-const DEFAULT_IMAGE: &str = "ghcr.io/mpolatcan/codehub-runtime:0.1.2";
+const DEFAULT_IMAGE: &str = "ghcr.io/mpolatcan/codehub-runtime:0.1.3";
 
 #[tauri::command]
 async fn container_status(state: tauri::State<'_, AppState>) -> Result<ContainerStatus, String> {
     Ok(state.lifecycle.status().await)
 }
 
-#[tauri::command]
-async fn ensure_runtime(
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle,
+/// Run a lifecycle mutation (start/stop/restart/recreate), then read the fresh
+/// status, broadcast it on `codehub://lifecycle`, and return it. Centralizes the
+/// post-action pattern every lifecycle control shared verbatim. `op` is created
+/// from `state.lifecycle` at the call site; awaiting it here releases that borrow
+/// before the follow-up `status()` read.
+async fn lifecycle_op(
+    state: &AppState,
+    app: &tauri::AppHandle,
+    op: impl std::future::Future<Output = Result<(), lifecycle::LifecycleError>>,
 ) -> Result<ContainerStatus, String> {
-    let status = state
-        .lifecycle
-        .ensure_runtime()
-        .await
-        .map_err(|e| e.to_string())?;
+    op.await.map_err(|e| e.to_string())?;
+    let status = state.lifecycle.status().await;
     let _ = app.emit("codehub://lifecycle", &status);
     Ok(status)
 }
@@ -69,10 +89,7 @@ async fn container_start(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ContainerStatus, String> {
-    state.lifecycle.start().await.map_err(|e| e.to_string())?;
-    let status = state.lifecycle.status().await;
-    let _ = app.emit("codehub://lifecycle", &status);
-    Ok(status)
+    lifecycle_op(&state, &app, state.lifecycle.start()).await
 }
 
 #[tauri::command]
@@ -80,10 +97,7 @@ async fn container_stop(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ContainerStatus, String> {
-    state.lifecycle.stop().await.map_err(|e| e.to_string())?;
-    let status = state.lifecycle.status().await;
-    let _ = app.emit("codehub://lifecycle", &status);
-    Ok(status)
+    lifecycle_op(&state, &app, state.lifecycle.stop()).await
 }
 
 #[tauri::command]
@@ -91,10 +105,7 @@ async fn container_restart(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ContainerStatus, String> {
-    state.lifecycle.restart().await.map_err(|e| e.to_string())?;
-    let status = state.lifecycle.status().await;
-    let _ = app.emit("codehub://lifecycle", &status);
-    Ok(status)
+    lifecycle_op(&state, &app, state.lifecycle.restart()).await
 }
 
 /// Daemon reachability + version for the empty-state pill / Settings.
@@ -129,6 +140,132 @@ fn get_config(state: tauri::State<'_, AppState>) -> Result<Settings, String> {
 #[tauri::command]
 fn set_config(config: Settings, state: tauri::State<'_, AppState>) -> Result<Settings, String> {
     state.config.set(config)
+}
+
+// — Tier-2: workspace / repository picker —
+
+/// Open the OS folder picker and return the chosen absolute path (None when the
+/// user cancels). Native-only; the dev bridge degrades this to null.
+#[tauri::command]
+async fn pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_folder(move |path| {
+        let _ = tx.send(path);
+    });
+    let picked = rx.await.map_err(|e| e.to_string())?;
+    Ok(picked
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.to_string_lossy().to_string()))
+}
+
+/// Set the host directory bound at `/workspace` and bump the MRU recents. The
+/// path must be an existing directory. Does NOT recreate the container — the
+/// mount source is fixed at create-time, so the caller applies it via
+/// `recreate_runtime` (a "restart runtime to apply" affordance).
+#[tauri::command]
+fn set_workspace_dir(path: String, state: tauri::State<'_, AppState>) -> Result<Settings, String> {
+    if !std::path::Path::new(&path).is_dir() {
+        return Err(format!("not a directory: {path}"));
+    }
+    state.config.set_workspace_dir(path)
+}
+
+/// Configured-vs-mounted workspace dir + whether a recreate is needed to apply a
+/// change. Backs the "restart runtime to apply" banner.
+#[tauri::command]
+async fn workspace_info(state: tauri::State<'_, AppState>) -> Result<WorkspaceInfo, String> {
+    Ok(state.lifecycle.workspace_info().await)
+}
+
+/// Remove + recreate the runtime container so a changed workspace mount (or a
+/// newly-added account-profile env var) takes effect. Destructive to running
+/// sessions — the UI confirms first. Emits codehub://lifecycle like the other
+/// lifecycle controls.
+#[tauri::command]
+async fn recreate_runtime(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<ContainerStatus, String> {
+    lifecycle_op(&state, &app, state.lifecycle.recreate()).await
+}
+
+// — Tier-3: label-only account profiles (no secrets stored) —
+// `AccountProfileStatus` + `profile_statuses` live in `config` (next to
+// `AccountProfile`); re-exported above so `crate::` paths + devserver keep
+// working. `build_account_profile` stays here — it bridges `Cli` + `docker`
+// validation with the config type, so it belongs in the glue layer.
+
+// ── Phase-0 completion contract (COMPLETION_PLAN.md) ────────────────────────
+// The response structs live in `types.rs` and are re-exported from `crate::` above
+// so devserver.rs can continue to import them from `crate::`. The commands below
+// now have real implementations (the BE track fills them per COMPLETION_PLAN.md).
+
+// Sentinel kept only for devserver.rs backward-compat during the transition;
+// will be removed once devserver stubs are updated to real state access.
+#[allow(dead_code)]
+pub(crate) const STUB_RATES_AS_OF: &str = "unloaded";
+
+/// All stored account profiles + live presence of each one's host env var.
+#[tauri::command]
+fn list_account_profiles(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AccountProfileStatus>, String> {
+    Ok(profile_statuses(state.config.get().account_profiles))
+}
+
+/// Validate + construct a label-only account profile (no secret). Shared by the
+/// Tauri command and the dev bridge. Rejects agents with no credential var, an
+/// empty label, and any `var_name` that isn't a safe env identifier.
+pub fn build_account_profile(
+    agent: &str,
+    label: &str,
+    var_name: &str,
+) -> Result<AccountProfile, String> {
+    let cli = Cli::parse(agent).map_err(|e| e.to_string())?;
+    if cli.canonical_auth_var().is_none() {
+        return Err(format!("{agent} has no credential to remap"));
+    }
+    let label = label.trim().to_string();
+    if label.is_empty() {
+        return Err("label is required".into());
+    }
+    let var_name = var_name.trim().to_string();
+    if !docker::is_env_name(&var_name) {
+        return Err(format!(
+            "invalid environment variable name: {var_name} (use letters, digits, underscore)"
+        ));
+    }
+    Ok(AccountProfile {
+        id: uuid::Uuid::new_v4().to_string(),
+        agent: cli.binary().to_string(),
+        label,
+        var_name,
+    })
+}
+
+/// Add a label-only account profile (agent + label + host env var NAME). No
+/// secret is stored. Returns the full updated list + presence.
+#[tauri::command]
+fn add_account_profile(
+    agent: String,
+    label: String,
+    var_name: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AccountProfileStatus>, String> {
+    let profile = build_account_profile(&agent, &label, &var_name)?;
+    let next = state.config.add_account_profile(profile)?;
+    Ok(profile_statuses(next.account_profiles))
+}
+
+/// Remove an account profile by id. Returns the full updated list + presence.
+#[tauri::command]
+fn remove_account_profile(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AccountProfileStatus>, String> {
+    let next = state.config.remove_account_profile(&id)?;
+    Ok(profile_statuses(next.account_profiles))
 }
 
 /// `<cli> --version` for each agent inside the runtime container.
@@ -281,6 +418,28 @@ async fn claude_session_usage(
         .map_err(|e| e.to_string())
 }
 
+/// Build the native island's honest one-line Claude metric (e.g.
+/// "14 edits · 184.2k tok") from a real [`SessionUsage`]. Returns `None` when
+/// there is nothing real to show (no edits and no tokens) so the row stays
+/// metric-less rather than displaying a fabricated "0".
+#[cfg(target_os = "macos")]
+fn island_metric(u: &SessionUsage) -> Option<String> {
+    let tok = u.tokens_in.saturating_add(u.tokens_out);
+    if u.edits == 0 && tok == 0 {
+        return None;
+    }
+    let tok_str = if tok >= 1000 {
+        format!("{:.1}k tok", tok as f64 / 1000.0)
+    } else {
+        format!("{tok} tok")
+    };
+    if u.edits > 0 {
+        Some(format!("{} edits · {tok_str}", u.edits))
+    } else {
+        Some(tok_str)
+    }
+}
+
 /// What the runtime's Claude is connected to (Integrations screen): the signed-in
 /// account + configured MCP servers, from on-disk config. Identity only, no
 /// credential. Errs only when the container is down.
@@ -332,6 +491,7 @@ async fn list_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<SessionI
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn create_session(
     name: String,
     cli: String,
@@ -339,11 +499,25 @@ async fn create_session(
     alias: Option<String>,
     resume: Option<String>,
     session_id: Option<String>,
+    // Account profile id (Tier-3). Resolves to that profile's host env var NAME,
+    // which the session shell remaps the CLI's canonical credential var onto.
+    // Absent / unknown → the default (canonical host env), unchanged behavior.
+    account: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let cli = Cli::parse(&cli).map_err(|e| e.to_string())?;
     let mode = mode.as_deref().map(LaunchMode::parse).unwrap_or_default();
     let alias = alias.unwrap_or_default();
+    // Look up the chosen account profile's env var NAME (never a value).
+    let account_var = account.and_then(|id| {
+        state
+            .config
+            .get()
+            .account_profiles
+            .into_iter()
+            .find(|p| p.id == id)
+            .map(|p| p.var_name)
+    });
     state
         .docker
         .create_tmux_session(
@@ -353,6 +527,7 @@ async fn create_session(
             &alias,
             resume.as_deref(),
             session_id.as_deref(),
+            account_var.as_deref(),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -373,6 +548,9 @@ async fn kill_session(name: String, state: tauri::State<'_, AppState>) -> Result
     // Drop local pane bookkeeping first so resize / write attempts mid-kill
     // cannot resurrect a half-dead pane.
     state.registry.detach_by_session(&name).await;
+    // Purge event state so stale pending entries don't outlive the session and
+    // the HashMap key is eventually reclaimed.
+    state.events.remove_session(&name);
     state
         .docker
         .kill_tmux_session(&name)
@@ -457,14 +635,26 @@ async fn session_activity(
     Ok(state.registry.activity().snapshot())
 }
 
-/// Label of the always-on-top companion window.
+/// Label of the always-on-top companion window (non-macOS webview companion).
+#[cfg(not(target_os = "macos"))]
 const COMPANION_LABEL: &str = "companion";
 
-/// Open (or re-focus) the floating, always-on-top companion — a small frameless
-/// window that mirrors the live working/idle state of every running agent so it
-/// stays visible over other apps. The window content is a real route
-/// (`index.html#/companion`) that polls `session_activity`; everything it shows
-/// is the honest activity signal — no fabricated turn/token/approval state.
+/// Open (or re-focus) the companion — a floating overlay that mirrors the live
+/// working/idle state of every running agent so it stays visible over other
+/// apps. Everything it shows is the honest activity signal — no fabricated
+/// turn/token/approval state.
+///
+/// On macOS this is the native Dynamic Island ([`island`]); elsewhere it is a
+/// small frameless `WebviewWindow` loading the real `index.html#/companion`
+/// route.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
+    island::show(&app);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
 #[tauri::command]
 async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
     // Already open → just bring it forward.
@@ -500,20 +690,21 @@ async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Close the companion window if it is open. No-op when it is not.
+/// Close/hide the companion. No-op when it is not open.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn close_companion(app: tauri::AppHandle) -> Result<(), String> {
+    island::hide(&app);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
 #[tauri::command]
 async fn close_companion(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(COMPANION_LABEL) {
         win.close().map_err(|e| e.to_string())?;
     }
     Ok(())
-}
-
-/// Whether the companion window is currently open — lets the trigger render as a
-/// toggle.
-#[tauri::command]
-async fn companion_open(app: tauri::AppHandle) -> Result<bool, String> {
-    Ok(app.get_webview_window(COMPANION_LABEL).is_some())
 }
 
 /// Jump from the companion to a session in the main window: raise + focus the
@@ -528,6 +719,161 @@ async fn focus_session_from_companion(name: String, app: tauri::AppHandle) -> Re
         let _ = main.emit("codehub://focus-session", name);
     }
     Ok(())
+}
+
+// ── Phase-0 completion contract: stub commands ──────────────────────────────
+// Honest-empty defaults so the live app degrades gracefully; the parallel fleet
+// fills the bodies. NOT panics, NOT Err.
+
+/// Sessions awaiting user input right now (← agent-native hooks, §7).
+/// Reads the in-memory [`EventsTracker`] — never fabricated, honest-empty when
+/// no hooks have fired yet.
+#[tauri::command]
+async fn pending_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<PendingPrompt>, String> {
+    Ok(state.events.pending_prompts())
+}
+
+/// Answer a pending prompt by writing the accept/deny keystroke to that pane.
+/// Writes via the same `pty_write` transport as broadcast. Clears the pending
+/// state optimistically so the UI responds before the next hook line arrives.
+/// Provisional keystrokes per §7.6 (unverified — confirmed on first authed run).
+#[tauri::command]
+async fn respond_prompt(
+    session: String,
+    allow: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    // Determine the CLI for this session from the activity snapshot.
+    let cli_opt = state
+        .registry
+        .activity()
+        .snapshot()
+        .into_iter()
+        .find(|a| a.session == session)
+        .and_then(|a| a.cli);
+
+    // If we can't identify the CLI, we don't know which keystroke to send —
+    // sending a wrong key to an unknown prompt is worse than doing nothing.
+    let Some(cli) = cli_opt else {
+        tracing::warn!("respond_prompt: no activity record for session {session}, skipping");
+        return Ok(());
+    };
+
+    let keystroke = if allow {
+        events::accept_keystroke(&cli)
+    } else {
+        events::deny_keystroke(&cli)
+    };
+
+    if let Some(key) = keystroke {
+        // Look up the actual pane_id (UUID) for this session — the registry
+        // keys panes by UUID, not session name.
+        if let Some(pane_id) = state.registry.pane_for_session(&session).await {
+            // Attempt the write; swallow if the pane raced to detach.
+            let _ = state.registry.write(&pane_id, key.as_bytes()).await;
+        } else {
+            tracing::debug!("respond_prompt: no pane attached for session {session}");
+        }
+    }
+
+    // Optimistically clear so the UI reflects the response without waiting for
+    // the next hook line.
+    state.events.clear_pending(&session);
+    Ok(())
+}
+
+/// Activity/turn history ring buffer (all sessions when `session` omitted).
+/// Returns events from the in-memory ring buffer fed by the hook tail task.
+#[tauri::command]
+async fn session_activity_history(
+    session: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ActivityEvent>, String> {
+    Ok(state.events.activity_history(session.as_deref()))
+}
+
+/// Codex usage analytics from rollout files — mirrors the claude* usage surface.
+/// Token + turn + session counts are factual from the on-disk rollout files;
+/// cost is an estimate from a published rate table. Errs only when the container
+/// is down.
+#[tauri::command]
+async fn codex_usage(state: tauri::State<'_, AppState>) -> Result<CodexUsage, String> {
+    state.docker.codex_usage().await.map_err(|e| e.to_string())
+}
+
+/// Past Codex conversations from rollout files (Resume view), newest first.
+/// Errs only when the container is down.
+#[tauri::command]
+async fn codex_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<CodexSession>, String> {
+    state
+        .docker
+        .codex_sessions()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Live per-session Codex tally from its rollout file; `None` when there is no
+/// usable data yet. `id` is the session directory path segment under
+/// `/root/.codex/sessions/` (e.g. "2026/05/24"). Errs only when the container
+/// is down.
+#[tauri::command]
+async fn codex_session_usage(
+    id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<CodexSessionUsage>, String> {
+    state
+        .docker
+        .codex_session_usage(&id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Codex rate-limit / plan meters from the most recent rollout file; `None`
+/// when no data is on disk. The only on-disk quota source — no billing API.
+/// Errs only when the container is down.
+#[tauri::command]
+async fn codex_rate_limits(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<CodexRateLimits>, String> {
+    state
+        .docker
+        .codex_rate_limits()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// GitHub connection status (Integrations). Reads GITHUB_TOKEN presence on the
+/// host — presence-only, the value is NEVER returned. When present, calls the
+/// GitHub API via the already-forwarded token in the container for identity.
+#[tauri::command]
+async fn github_status(state: tauri::State<'_, AppState>) -> Result<GithubStatus, String> {
+    state
+        .docker
+        .github_status()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Repos visible to the connected GitHub account (up to 30, sorted by push
+/// date). Empty when the token is absent or the container is down.
+#[tauri::command]
+async fn github_repos(state: tauri::State<'_, AppState>) -> Result<Vec<GithubRepo>, String> {
+    state.docker.github_repos().await.map_err(|e| e.to_string())
+}
+
+/// App update check (Settings → About). Honest-thin: returns the current
+/// version with `available: null`. A real updater plugin (tauri-plugin-updater)
+/// is deferred to a future PR — wiring it now would add a new Tauri plugin
+/// dependency and a GitHub release feed that doesn't exist yet.
+#[tauri::command]
+async fn check_update() -> Result<UpdateStatus, String> {
+    // Honest: no update feed configured yet. Returns current version so the
+    // About screen always has a real version string to display.
+    Ok(UpdateStatus {
+        current: env!("CARGO_PKG_VERSION").to_string(),
+        available: None,
+        notes: None,
+    })
 }
 
 /// Bundle identifier used by the app before the Aviary→CodeHub rebrand. The OS
@@ -585,6 +931,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let app_data = app.path().app_data_dir().expect("app_data_dir unavailable");
             // One-time carry-over of pre-rebrand (Aviary) auth + workspace data.
@@ -592,23 +939,126 @@ pub fn run() {
             let config_dir = app_data.join("config");
             let workspace_dir = app_data.join("workspace");
 
+            // UI preferences — separate file from the container config mount.
+            // Loaded BEFORE the lifecycle: the effective workspace dir + account
+            // profile env vars are read from it at container-create time.
+            let config = Arc::new(ConfigStore::load(app_data.join("settings.json")));
+
             let lifecycle = Arc::new(Lifecycle::new(
                 container_name.clone(),
                 image.clone(),
                 config_dir,
                 workspace_dir,
+                config.clone(),
             )?);
             let docker = Arc::new(lifecycle.docker_client());
             let registry = Arc::new(PtyRegistry::new());
-            // UI preferences — separate file from the container config mount.
-            let config = Arc::new(ConfigStore::load(app_data.join("settings.json")));
+            let events = Arc::new(EventsTracker::new());
+
+            #[cfg(target_os = "macos")]
+            let island_registry = registry.clone();
+            #[cfg(target_os = "macos")]
+            let island_events = events.clone();
+            #[cfg(target_os = "macos")]
+            let island_docker = docker.clone();
 
             app.manage(AppState {
                 lifecycle: lifecycle.clone(),
-                docker,
+                docker: docker.clone(),
                 registry,
                 config,
+                events: events.clone(),
             });
+
+            // macOS: feed the native Dynamic Island a RICH snapshot while it is on
+            // screen. Every signal is honest:
+            //   - Wait    ← `events.pending_prompts()` (a real permission prompt)
+            //   - Live    ← activity state Working (output within the grace window)
+            //   - Idle    ← otherwise
+            //   - agent   ← the registered cli id (dot identity)
+            //   - metric  ← `claude_session_usage` for Claude sessions only, where a
+            //               transcript with real usage exists; never fabricated.
+            // Done/Err are intentionally NOT emitted: the hook taxonomy folds
+            // `StopFailure` into `stop`, and a finished turn is indistinguishable
+            // from idle without inventing a recency heuristic — so we stay silent
+            // rather than fake them.
+            //
+            // Status refreshes every 1s (responsive awaiting/working). The Claude
+            // metric is heavier (a `cat` of the transcript per session), so it is
+            // re-read on a slower cadence and cached between reads — the island
+            // shows the last real reading, not a stale-frozen or fabricated one.
+            #[cfg(target_os = "macos")]
+            {
+                use std::collections::{HashMap, HashSet};
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // ~1s status cadence; refresh Claude metrics every 5th tick.
+                    const METRIC_EVERY: u64 = 5;
+                    let mut tick = tokio::time::interval(std::time::Duration::from_millis(1000));
+                    let mut metric_cache: HashMap<String, String> = HashMap::new();
+                    let mut ticks: u64 = 0;
+                    loop {
+                        tick.tick().await;
+                        if !island::is_visible() {
+                            continue;
+                        }
+                        let activity = island_registry.activity().snapshot();
+                        let waiting: HashSet<String> = island_events
+                            .pending_prompts()
+                            .into_iter()
+                            .map(|p| p.session)
+                            .collect();
+
+                        // Refresh the Claude metric line on the slow cadence, then
+                        // prune cache entries for sessions that no longer exist.
+                        if ticks % METRIC_EVERY == 0 {
+                            for a in &activity {
+                                let Some(id) = a.claude_id.as_deref() else {
+                                    continue;
+                                };
+                                match island_docker.claude_session_usage(id).await {
+                                    Ok(Some(u)) => {
+                                        if let Some(m) = island_metric(&u) {
+                                            metric_cache.insert(a.session.clone(), m);
+                                        } else {
+                                            metric_cache.remove(&a.session);
+                                        }
+                                    },
+                                    _ => {
+                                        metric_cache.remove(&a.session);
+                                    },
+                                }
+                            }
+                            let live: HashSet<&str> =
+                                activity.iter().map(|a| a.session.as_str()).collect();
+                            metric_cache.retain(|s, _| live.contains(s.as_str()));
+                        }
+                        ticks = ticks.wrapping_add(1);
+
+                        let rows = activity
+                            .into_iter()
+                            .map(|a| {
+                                let status = if waiting.contains(&a.session) {
+                                    island::IslandStatus::Wait
+                                } else if matches!(a.state, activity::ActivityState::Working) {
+                                    island::IslandStatus::Live
+                                } else {
+                                    island::IslandStatus::Idle
+                                };
+                                let metric = metric_cache.get(&a.session).cloned();
+                                island::IslandRow {
+                                    label: a.alias.unwrap_or_else(|| a.session.clone()),
+                                    session: a.session,
+                                    agent: a.cli,
+                                    status,
+                                    metric,
+                                }
+                            })
+                            .collect();
+                        island::update_rich(&handle, island::IslandSnapshot { rows });
+                    }
+                });
+            }
 
             // Kick off runtime provisioning in background; frontend listens for status events.
             let handle = app.handle().clone();
@@ -624,11 +1074,14 @@ pub fn run() {
                 }
             });
 
+            // Start the agent-event hook tail (§7). Streams the events dir inside
+            // the container and feeds the EventsTracker. Retries on disconnect.
+            events::start_event_tailer(docker, events, app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             container_status,
-            ensure_runtime,
             container_start,
             container_stop,
             container_restart,
@@ -636,6 +1089,13 @@ pub fn run() {
             app_info,
             get_config,
             set_config,
+            pick_directory,
+            set_workspace_dir,
+            workspace_info,
+            recreate_runtime,
+            list_account_profiles,
+            add_account_profile,
+            remove_account_profile,
             agent_key_status,
             agent_versions,
             container_stats,
@@ -666,8 +1126,18 @@ pub fn run() {
             session_activity,
             open_companion,
             close_companion,
-            companion_open,
             focus_session_from_companion,
+            // Phase-0 completion contract (stubs; BE track fills bodies).
+            pending_prompts,
+            respond_prompt,
+            session_activity_history,
+            codex_usage,
+            codex_sessions,
+            codex_session_usage,
+            codex_rate_limits,
+            github_status,
+            github_repos,
+            check_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running codehub");

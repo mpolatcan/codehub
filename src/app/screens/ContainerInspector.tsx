@@ -13,6 +13,7 @@
  */
 import { AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { IconBtn } from "@/app/components/primitives/IconBtn";
+import { Spark } from "@/app/components/primitives/Spark";
 import { StatusBadge } from "@/app/components/primitives/StatusBadge";
 import { StatusDot } from "@/app/components/primitives/StatusDot";
 import type { StatusKey } from "@/app/components/primitives/StatusDot";
@@ -31,7 +32,7 @@ import {
 } from "@/app/lib/ipc";
 import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // container_status state → the shared StatusDot/Badge vocabulary.
 const STATE_DOT: Record<ContainerState, StatusKey> = {
@@ -43,6 +44,24 @@ const STATE_DOT: Record<ContainerState, StatusKey> = {
 };
 
 const CONTAINER_MOUNT = "/workspace";
+
+// How many container_stats samples the gauge sparklines retain. At the 2s poll
+// cadence below this is ~1 minute of history — enough to read a trend, small
+// enough to stay cheap.
+const STATS_WINDOW = 30;
+const STATS_POLL_MS = 2000;
+
+// rx+tx bytes/sec from the last two samples. null until two samples exist or if
+// the interval is non-positive; a negative delta (counter reset on restart) is
+// clamped to 0. Returns combined throughput — the gauge labels the direction.
+function deriveNetRate(history: ContainerStats[]): number | null {
+  if (history.length < 2) return null;
+  const prev = history[history.length - 2];
+  const cur = history[history.length - 1];
+  const dRx = Math.max(0, cur.netRx - prev.netRx);
+  const dTx = Math.max(0, cur.netTx - prev.netTx);
+  return ((dRx + dTx) / STATS_POLL_MS) * 1000;
+}
 
 export function ContainerInspector() {
   const status = useStore((s) => s.status);
@@ -63,31 +82,27 @@ export function ContainerInspector() {
   const id = status?.id ?? null;
   const sessions = Object.entries(sessionMeta);
 
-  // Poll container_stats while the runtime is up and this view is mounted (the
-  // gauges are only visible here). One-shot reads, ~2s apart; a failed read
-  // (container stopped mid-poll) clears back to em-dash rather than freezing a
-  // stale number. No backend event stream — polling is the contract.
-  const [stats, setStats] = useState<ContainerStats | null>(null);
+  // Live container_stats come from the single app-wide poll (useContainerStatsPoll)
+  // via the store — the gauges READ it rather than firing their own poll.
+  const stats = useStore((s) => s.containerStats);
+  // Rolling window of the last N samples (newest last) so the gauges can draw a
+  // real sparkline of where each metric has actually been — not a fabricated
+  // series. Cleared whenever the runtime goes down so a restart starts fresh.
+  const [history, setHistory] = useState<ContainerStats[]>([]);
   const running = state === "running";
   useEffect(() => {
-    if (!running) {
-      setStats(null);
+    if (!running || !stats) {
+      setHistory([]);
       return;
     }
-    let alive = true;
-    const tick = () => {
-      ipc
-        .containerStats()
-        .then((s) => alive && setStats(s))
-        .catch(() => alive && setStats(null));
-    };
-    tick();
-    const h = setInterval(tick, 2000);
-    return () => {
-      alive = false;
-      clearInterval(h);
-    };
-  }, [running]);
+    setHistory((h) => [...h, stats].slice(-STATS_WINDOW));
+  }, [running, stats]);
+
+  // Net I/O as a per-second rate from the last two cumulative samples (the design
+  // shows "KB/s", not a running total). Honest: needs ≥2 samples + a positive
+  // interval, else null → em-dash. Bytes are monotonic; a counter reset (restart)
+  // yields a negative delta which we clamp to 0 rather than show a bogus spike.
+  const netRate = useMemo(() => deriveNetRate(history), [history]);
 
   // Tail the container log while running + mounted. Same one-shot polling
   // contract as stats (no backend stream); slower cadence (~4s) since logs are
@@ -362,19 +377,26 @@ export function ContainerInspector() {
               label="CPU"
               value={stats ? `${stats.cpuPct.toFixed(1)}%` : null}
               fill={stats ? Math.min(100, stats.cpuPct) : null}
+              spark={history.map((s) => s.cpuPct)}
             />
             <GaugeCard
               label="Memory"
               value={stats ? fmtBytes(stats.memUsed) : null}
               sub={stats && stats.memLimit > 0 ? `/ ${fmtBytes(stats.memLimit)}` : undefined}
               fill={stats && stats.memLimit > 0 ? (stats.memUsed / stats.memLimit) * 100 : null}
+              spark={history.map((s) => s.memUsed)}
             />
             <GaugeCard
               label="Net I/O"
-              value={stats ? `↓${fmtBytes(stats.netRx)}` : null}
-              sub={stats ? `↑${fmtBytes(stats.netTx)}` : undefined}
+              value={netRate != null ? `${fmtBytes(netRate)}/s` : null}
+              sub={stats ? `↓${fmtBytes(stats.netRx)} ↑${fmtBytes(stats.netTx)}` : undefined}
+              spark={history.map((s) => s.netRx + s.netTx)}
             />
-            <GaugeCard label="Disk" value={stats ? fmtBytes(stats.disk) : null} />
+            <GaugeCard
+              label="Disk"
+              value={stats ? fmtBytes(stats.disk) : null}
+              spark={history.map((s) => s.disk)}
+            />
           </div>
 
           {/* runtime image identity — real `docker image inspect` */}
@@ -639,12 +661,18 @@ function GaugeCard({
   value,
   sub,
   fill,
+  spark,
 }: {
   label: string;
   value?: string | null;
   sub?: string;
   fill?: number | null;
+  // Real per-poll history for this metric (newest last). A line is drawn once
+  // ≥2 samples exist; before that the card falls back to the fill/flat bar so it
+  // never invents a curve from a single point.
+  spark?: number[];
 }) {
+  const hasSpark = !!spark && spark.length >= 2;
   return (
     <div
       className="ch-card"
@@ -666,7 +694,13 @@ function GaugeCard({
           </span>
         )}
       </div>
-      {value && typeof fill === "number" ? (
+      {hasSpark ? (
+        // Real trend line over the rolling window. Width 100% via a flexed wrapper
+        // so it tracks the responsive grid track; height matches the old bar.
+        <div style={{ height: 20, width: "100%" }}>
+          <Spark data={spark} w={150} h={20} color="var(--live)" fill />
+        </div>
+      ) : value && typeof fill === "number" ? (
         <div style={{ height: 20, borderRadius: 4, background: "var(--bg-3)", overflow: "hidden" }}>
           <div
             style={{

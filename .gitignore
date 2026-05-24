@@ -9,3 +9,6 @@ src-tauri/gen
 
 # playwright-cli session artifacts
 .playwright-cli/
+
+# Claude Code agent worktrees (transient sub-agent scratch)
+.claude/worktrees/

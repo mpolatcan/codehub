@@ -1,49 +1,35 @@
 @import "tailwindcss";
 
-/* Field-journal dark skin as Tailwind v4 theme tokens. These mirror the legacy
-   :root tokens in src/style.css so the React app matches the vanilla app, and
-   give shadcn primitives a themed base (the --color-* tokens back the bg and
-   text color utilities). */
+/* Fonts → Tailwind utilities (font-mono / font-sans). Static stacks (Tailwind's
+   @theme requires literal values, not var()): the design uses Geist for sans
+   prose and Geist Mono for mono/data, JetBrains Mono as the mono fallback.
+   --font-pixel is a legacy alias kept so existing chrome classes resolve; it now
+   points at the mono stack (the old Silkscreen HUD face was dropped). */
 @theme {
-  --color-bg: #0f1012;
-  --color-bg-deep: #0b0c0d;
-  --color-panel: #16181c;
-  --color-panel-2: #1b1e23;
-  --color-pane: #131417;
-  --color-rule: #2a2e35;
-  --color-rule-soft: #20242a;
-
-  --color-text: #c9cdd4;
-  --color-text-dim: #8b929c;
-  --color-text-faint: #5c636d;
-  --color-text-ghost: #3e444c;
-  --color-text-bright: #ffffff;
-
-  --color-accent: #e8a33d;
-  --color-accent-bright: #f6b65a;
-  --color-accent-deep: #8f6526;
-  --color-danger: #d6604d;
-  --color-ok: #6ee787;
-
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --font-pixel: "Silkscreen", "JetBrains Mono", monospace;
+  --font-sans: "Geist", ui-sans-serif, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "JetBrains Mono", monospace;
+  --font-pixel: "Geist Mono", ui-monospace, "JetBrains Mono", monospace;
 }
 
-/* ── shadcn color-utility bridge ───────────────────────────────────────────── */
-/* Tailwind v4 only emits bg-/text-/border- color utilities for tokens it knows
-   as --color-*. The CodeHub design tokens (tokens.css) expose plain
-   --primary/--background/… vars; this block — which MUST live here, the file that
-   `@import "tailwindcss"` — registers them so bg-primary, text-foreground,
-   bg-card, border-border etc. actually resolve (otherwise the ui/* shadcn
-   components render colorless). `inline` keeps each value a var() reference, so
-   .light theme switching still works at runtime.
+/* Color-utility + chrome token bridge. Tailwind v4 only emits bg-/text-/border-
+   color utilities for tokens it knows as --color-*, and it treats `--color-` as
+   a reserved namespace — defining --color-* in a plain :root makes Tailwind try
+   to resolve them as theme colors and fail the build on var() values. So every
+   --color-* lives in `@theme inline`, which registers them AND keeps each value
+   a var() reference (so .light theme switching still works at runtime).
 
-   --color-accent is INTENTIONALLY omitted: this legacy skin owns `accent` as its
-   amber brand color and App.tsx still uses text-accent. Bridging it would regress
-   the live UI. shadcn variants that hover/focus on bg-accent are overridden with
-   design vars where they matter (see ui/button.tsx); the rest aren't used by the
-   ported screens and get a holistic pass in P6. */
+   Two groups:
+   1. shadcn semantic tokens (--background/--card/…) → the design tokens in
+      tokens.css, so bg-primary, text-foreground, border-border etc. resolve.
+   2. Legacy "field-journal" chrome tokens (--color-bg/-panel/-text/…) read by
+      panes.css and the App shell. These now ALIAS the design system so the
+      chrome inherits the real palette: surfaces→bg, rules→bd, text→fg, danger→
+      err, ok→live. The legacy amber "accent" maps to the shadcn hover surface
+      (--accent, a subtle grey) — the design reserves color for status, and
+      chrome selection/active affordances use neutral --fg-0 directly in
+      panes.css, not an accent token. */
 @theme inline {
+  /* shadcn semantic tokens */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -56,10 +42,30 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* chrome aliases → design tokens */
+  --color-bg: var(--bg-1);
+  --color-bg-deep: var(--bg-0);
+  --color-panel: var(--bg-2);
+  --color-panel-2: var(--bg-3);
+  --color-pane: var(--bg-0);
+  --color-rule: var(--bd);
+  --color-rule-soft: var(--bd-soft);
+  --color-text: var(--fg-1);
+  --color-text-dim: var(--fg-2);
+  --color-text-faint: var(--fg-3);
+  --color-text-ghost: var(--fg-4);
+  --color-text-bright: var(--fg-0);
+  --color-accent-bright: var(--fg-0);
+  --color-accent-deep: var(--bd-strong);
+  --color-danger: var(--err);
+  --color-ok: var(--live);
 }
 
 :root {
