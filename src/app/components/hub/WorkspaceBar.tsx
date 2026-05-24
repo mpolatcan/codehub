@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Spark } from "../../components/primitives/Spark";
 import { Ico } from "../../components/primitives/icons";
-import { type ContainerStats, ipc } from "../../lib/ipc";
 import { useStore } from "../../lib/store";
 
 // Container-level info bar, ported from design/screens/main-hub-a.jsx.
@@ -14,7 +13,6 @@ import { useStore } from "../../lib/store";
 // HONEST EM-DASH: ci / tests / lint have NO data source in the backend, and cost
 // is a per-workspace estimate we do not aggregate here (it lives on the Usage
 // screen with its disclosure) — all shown as em-dashes, never fabricated.
-const STATS_POLL_MS = 2000;
 // Keep a short rolling window of cpu readings for the sparkline.
 const SPARK_LEN = 24;
 
@@ -29,33 +27,18 @@ export function WorkspaceBar() {
   const dockerInfo = useStore((s) => s.dockerInfo);
   const live = status?.state === "running";
 
-  const [stats, setStats] = useState<ContainerStats | null>(null);
+  // Live cpu/mem come from the single app-wide poll (useContainerStatsPoll) via
+  // the store; the cpu sparkline accumulates a short rolling window locally.
+  const stats = useStore((s) => s.containerStats);
   const [cpuHist, setCpuHist] = useState<number[]>([]);
 
   useEffect(() => {
-    if (!live) {
-      setStats(null);
+    if (!live || !stats) {
       setCpuHist([]);
       return;
     }
-    let alive = true;
-    const tick = () => {
-      ipc
-        .containerStats()
-        .then((s) => {
-          if (!alive) return;
-          setStats(s);
-          setCpuHist((h) => [...h, s.cpuPct].slice(-SPARK_LEN));
-        })
-        .catch(() => alive && setStats(null));
-    };
-    tick();
-    const h = setInterval(tick, STATS_POLL_MS);
-    return () => {
-      alive = false;
-      clearInterval(h);
-    };
-  }, [live]);
+    setCpuHist((h) => [...h, stats.cpuPct].slice(-SPARK_LEN));
+  }, [live, stats]);
 
   const memText =
     stats && stats.memLimit > 0

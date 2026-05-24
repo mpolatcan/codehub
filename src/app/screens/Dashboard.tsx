@@ -33,7 +33,6 @@ import {
   type ClaudeUsage,
   type CodexUsage,
   type CommitInfo,
-  type ContainerStats,
   type GitStatus,
   type PendingPrompt,
   type SessionActivity,
@@ -61,7 +60,8 @@ export function Dashboard() {
   // Live runtime stats (~2s), workspace git (~5s), recent commits (~10s), tmux
   // sessions (~5s) — the Tier-1 reads. Each is a one-shot poll with an alive
   // guard; a failed read clears to null → honest note.
-  const [stats, setStats] = useState<ContainerStats | null>(null);
+  // Resource gauges read the single app-wide stats poll (see useContainerStatsPoll).
+  const stats = useStore((s) => s.containerStats);
   const [git, setGit] = useState<GitStatus | null>(null);
   const [commits, setCommits] = useState<CommitInfo[] | null>(null);
   const [tmux, setTmux] = useState<SessionInfo[] | null>(null);
@@ -80,7 +80,6 @@ export function Dashboard() {
 
   useEffect(() => {
     if (!running) {
-      setStats(null);
       setGit(null);
       setCommits(null);
       setTmux(null);
@@ -103,12 +102,6 @@ export function Dashboard() {
       return setInterval(tick, ms);
     };
     const handles = [
-      poll(
-        () => ipc.containerStats(),
-        setStats,
-        2000,
-        () => setStats(null),
-      ),
       poll(
         () => ipc.containerGitStatus(),
         setGit,

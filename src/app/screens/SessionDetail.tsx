@@ -27,7 +27,7 @@ import { StatusDot } from "../components/primitives/StatusDot";
 import { Ico } from "../components/primitives/icons";
 import { fmtTokens, useSessionUsage } from "../hooks/useSessionUsage";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
-import { type ContainerStats, ipc } from "../lib/ipc";
+import { ipc } from "../lib/ipc";
 import { useStore } from "../lib/store";
 
 type Tab = "diff" | "logs";
@@ -68,28 +68,9 @@ export function SessionDetail({ session }: { session: string }) {
     };
   }, [running]);
 
-  // Live runtime resource snapshot for the status bar (cpu/mem). Workspace-wide
-  // (one shared container), polled ~3s; null while down / pre-read → em-dash.
-  const [stats, setStats] = useState<ContainerStats | null>(null);
-  useEffect(() => {
-    if (!running) {
-      setStats(null);
-      return;
-    }
-    let alive = true;
-    const tick = () => {
-      ipc
-        .containerStats()
-        .then((s) => alive && setStats(s))
-        .catch(() => alive && setStats(null));
-    };
-    tick();
-    const h = setInterval(tick, 3000);
-    return () => {
-      alive = false;
-      clearInterval(h);
-    };
-  }, [running]);
+  // Live runtime resource snapshot (cpu/mem) for the status bar, from the single
+  // app-wide stats poll in the store. Null while down / pre-read → em-dash.
+  const stats = useStore((s) => s.containerStats);
 
   if (!meta) return null;
   const spec = SPEC_BY_CLI[meta.cli];

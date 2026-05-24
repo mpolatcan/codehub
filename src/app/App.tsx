@@ -13,6 +13,7 @@ import { Shortcuts } from "./components/hub/Shortcuts";
 import { WorkspaceBar } from "./components/hub/WorkspaceBar";
 import { useActivityPoll } from "./hooks/useActivityPoll";
 import { useAgentEvents } from "./hooks/useAgentEvents";
+import { useContainerStatsPoll } from "./hooks/useContainerStatsPoll";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { listen } from "./lib/bridge";
 import { useLauncher } from "./lib/launcher";
@@ -35,6 +36,8 @@ export function App() {
   const detailSession = useStore((s) => s.detailSession);
 
   useKeyboard();
+  // One app-wide runtime-stats poll, shared by every resource gauge (see hook).
+  useContainerStatsPoll();
   useEffect(() => {
     void initLifecycle();
   }, []);

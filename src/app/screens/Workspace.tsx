@@ -81,30 +81,10 @@ export function Workspace() {
     };
   }, []);
 
-  // Live resource snapshot of the runtime, polled only while it's up (same
-  // one-shot contract the Container inspector uses). `null` while down / before
-  // the first read → header renders honest em-dashes, never zeros.
-  const running = status?.state === "running";
-  const [stats, setStats] = useState<ContainerStats | null>(null);
-  useEffect(() => {
-    if (!running) {
-      setStats(null);
-      return;
-    }
-    let alive = true;
-    const tick = () => {
-      ipc
-        .containerStats()
-        .then((s) => alive && setStats(s))
-        .catch(() => alive && setStats(null));
-    };
-    tick();
-    const h = setInterval(tick, 2000);
-    return () => {
-      alive = false;
-      clearInterval(h);
-    };
-  }, [running]);
+  // Live resource snapshot (cpu/mem) from the single app-wide stats poll in the
+  // store. Null while down / before the first read → header renders honest
+  // em-dashes, never zeros.
+  const stats = useStore((s) => s.containerStats);
 
   // Per-path git mark (absolute /workspace path → raw XY code) + per-directory
   // modified-file counts, derived once from the real git.files list. The dir

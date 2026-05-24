@@ -82,44 +82,21 @@ export function ContainerInspector() {
   const id = status?.id ?? null;
   const sessions = Object.entries(sessionMeta);
 
-  // Poll container_stats while the runtime is up and this view is mounted (the
-  // gauges are only visible here). One-shot reads, ~2s apart; a failed read
-  // (container stopped mid-poll) clears back to em-dash rather than freezing a
-  // stale number. No backend event stream — polling is the contract.
-  const [stats, setStats] = useState<ContainerStats | null>(null);
-  // Rolling window of the last N polls (newest last) so the gauges can draw a
+  // Live container_stats come from the single app-wide poll (useContainerStatsPoll)
+  // via the store — the gauges READ it rather than firing their own poll.
+  const stats = useStore((s) => s.containerStats);
+  // Rolling window of the last N samples (newest last) so the gauges can draw a
   // real sparkline of where each metric has actually been — not a fabricated
   // series. Cleared whenever the runtime goes down so a restart starts fresh.
   const [history, setHistory] = useState<ContainerStats[]>([]);
   const running = state === "running";
   useEffect(() => {
-    if (!running) {
-      setStats(null);
+    if (!running || !stats) {
       setHistory([]);
       return;
     }
-    let alive = true;
-    const tick = () => {
-      ipc
-        .containerStats()
-        .then((s) => {
-          if (!alive) return;
-          setStats(s);
-          setHistory((h) => [...h, s].slice(-STATS_WINDOW));
-        })
-        .catch(() => {
-          if (!alive) return;
-          setStats(null);
-          setHistory([]);
-        });
-    };
-    tick();
-    const h = setInterval(tick, STATS_POLL_MS);
-    return () => {
-      alive = false;
-      clearInterval(h);
-    };
-  }, [running]);
+    setHistory((h) => [...h, stats].slice(-STATS_WINDOW));
+  }, [running, stats]);
 
   // Net I/O as a per-second rate from the last two cumulative samples (the design
   // shows "KB/s", not a running total). Honest: needs ≥2 samples + a positive

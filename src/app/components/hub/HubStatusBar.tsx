@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
 import { StatusDot } from "../../components/primitives/StatusDot";
-import { type ContainerState, type ContainerStats, ipc } from "../../lib/ipc";
+import type { ContainerState, ContainerStats } from "../../lib/ipc";
 import { activeWorkspace, useStore } from "../../lib/store";
 import { leavesList } from "../../lib/tree";
 
@@ -26,37 +25,15 @@ const STATE_COLOR: Record<ContainerState, string> = {
   unreachable: "var(--err)",
 };
 
-const STATS_POLL_MS = 2000;
-
 function fmtGiB(bytes: number): string {
   return (bytes / 1024 ** 3).toFixed(1);
 }
 
-// Live cpu/mem/net snapshot, shared by both variants. Returns null until the
-// runtime is up + the first poll lands.
+// Live cpu/mem/net snapshot, shared by both variants. Reads the single app-wide
+// poll (useContainerStatsPoll) from the store; null until the runtime is up + the
+// first poll lands.
 function useRuntimeStats(): ContainerStats | null {
-  const running = useStore((s) => s.status?.state === "running");
-  const [stats, setStats] = useState<ContainerStats | null>(null);
-  useEffect(() => {
-    if (!running) {
-      setStats(null);
-      return;
-    }
-    let alive = true;
-    const tick = () => {
-      ipc
-        .containerStats()
-        .then((s) => alive && setStats(s))
-        .catch(() => alive && setStats(null));
-    };
-    tick();
-    const h = setInterval(tick, STATS_POLL_MS);
-    return () => {
-      alive = false;
-      clearInterval(h);
-    };
-  }, [running]);
-  return stats;
+  return useStore((s) => s.containerStats);
 }
 
 const barStyle: React.CSSProperties = {

@@ -10,6 +10,7 @@ import type {
   CodexRateLimits,
   CodexSession,
   CodexUsage,
+  ContainerStats,
   ContainerStatus,
   DockerInfo,
   GithubRepo,
@@ -65,6 +66,13 @@ interface CodeHubState {
   // Live per-session working/idle activity (session_activity), keyed by session
   // name. Polled by the Hub while the runtime is up; empty when down.
   sessionActivity: Record<string, SessionActivity>;
+  // Live cpu/mem/net/disk snapshot of the runtime (container_stats), polled once
+  // app-wide while the runtime is up (useContainerStatsPoll) and shared by every
+  // surface that shows resource gauges. Null while down / before the first read
+  // → headers render honest em-dashes, never zeros. Centralized deliberately: a
+  // single docker `stats` call (~1-2s, stream:false) feeds all consumers instead
+  // of each screen polling independently and contending on the daemon.
+  containerStats: ContainerStats | null;
 
   // Tier-1 reads (BACKEND_PLAN.md), fetched once the runtime is reachable.
   // Presence/version metadata only — never secret values.
@@ -116,6 +124,7 @@ interface CodeHubState {
   openDetail: (name: string) => void;
   closeDetail: () => void;
   setSessionActivity: (list: SessionActivity[]) => void;
+  setContainerStats: (s: ContainerStats | null) => void;
   newPlate: (
     cli: Cli,
     mode: Mode,
@@ -238,6 +247,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     view: "hub",
     detailSession: null,
     sessionActivity: {},
+    containerStats: null,
     dockerInfo: null,
     keyStatus: null,
     agentVersions: null,
@@ -306,6 +316,8 @@ export const useStore = create<CodeHubState>((set, get) => {
       for (const a of list) next[a.session] = a;
       set({ sessionActivity: next });
     },
+
+    setContainerStats: (containerStats) => set({ containerStats }),
 
     newPlate: async (cli, mode, resume, initialPrompt, account) => {
       if (!isRunning()) return;
