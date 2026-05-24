@@ -259,6 +259,13 @@ impl Lifecycle {
 
         if let Some(c) = containers.first() {
             status.id = c.id.clone();
+            // Report the image the container ACTUALLY runs (it may predate a
+            // config default bump), not the configured `self.image` — otherwise
+            // the Containers header claims a tag the container isn't running.
+            // Fall back to the configured image only when the container is gone.
+            if let Some(img) = c.image.clone() {
+                status.image = img;
+            }
             status.state = match c.state.as_deref() {
                 Some("running") => ContainerState::Running,
                 Some("created") | Some("exited") | Some("paused") | Some("dead") => {
