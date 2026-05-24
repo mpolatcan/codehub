@@ -21,6 +21,7 @@ export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => 
   const [err, setErr] = useState<string | null>(null);
   const [file, setFile] = useState<string | null>(null);
   const [body, setBody] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   // Each open starts fresh at the workspace root.
   useEffect(() => {
@@ -28,6 +29,7 @@ export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => 
       setCwd(ROOT);
       setFile(null);
       setBody(null);
+      setQuery("");
     }
   }, [open]);
 
@@ -69,24 +71,48 @@ export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => 
     if (e.kind === "dir") {
       setFile(null);
       setBody(null);
+      setQuery("");
       setCwd(join(cwd, e.name));
     } else if (e.kind === "file") {
       setFile(join(cwd, e.name));
     }
   };
 
-  const rows = entries ? order(entries) : [];
+  // Client-side name filter over the loaded listing (honest — narrows what the
+  // single directory read returned, never reaches beyond it).
+  const q = query.trim().toLowerCase();
+  const rows = entries ? order(entries).filter((e) => !q || e.name.toLowerCase().includes(q)) : [];
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent style={{ maxWidth: 860, padding: 0 }}>
         <DialogHeader style={{ padding: "16px 18px 10px" }}>
-          <DialogTitle style={{ fontSize: 13, fontWeight: 500 }}>Files</DialogTitle>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <DialogTitle style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>Files</DialogTitle>
+            <input
+              className="mono"
+              placeholder="filter by name…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+              style={{
+                width: 200,
+                padding: "4px 8px",
+                borderRadius: 5,
+                border: "1px solid var(--bd-soft)",
+                background: "var(--bg-0)",
+                color: "var(--fg-0)",
+                fontSize: 11.5,
+                outline: "none",
+              }}
+            />
+          </div>
           <Crumbs
             cwd={cwd}
             onNav={(p) => {
               setFile(null);
               setBody(null);
+              setQuery("");
               setCwd(p);
             }}
           />
@@ -115,7 +141,7 @@ export function FilesBrowser({ open, onClose }: { open: boolean; onClose: () => 
             ) : err ? (
               <Note>{err}</Note>
             ) : rows.length === 0 ? (
-              <Note>Empty directory.</Note>
+              <Note>{q ? "No files match the filter." : "Empty directory."}</Note>
             ) : (
               rows.map((e) => (
                 <EntryRow
