@@ -445,6 +445,23 @@ export interface CodexModelUsage {
   priced: boolean;
 }
 
+// One day's Codex usage rollup. Distinct from Claude's DayUsage because Codex
+// carries the cached-input / reasoning-output split (CodexTokenTotals).
+export interface CodexDayUsage {
+  date: string;
+  totals: CodexTokenTotals;
+  estCostUsd: number;
+}
+
+// One model family's Codex per-million-token rates. Distinct from Claude's
+// ModelRate: Codex's rate card has no separate cache-write/read prices, so the
+// backend (CodexModelRate) sends only input/output — never the cache fields.
+export interface CodexModelRate {
+  family: string;
+  inputPerMtok: number;
+  outputPerMtok: number;
+}
+
 // Aggregate Codex token analytics from ~/.codex/sessions/**/rollout-*.jsonl.
 // Token/turn/session counts FACTUAL; estCostUsd ESTIMATED (tokens × rates).
 export interface CodexUsage {
@@ -453,8 +470,8 @@ export interface CodexUsage {
   totals: CodexTokenTotals;
   estCostUsd: number;
   byModel: CodexModelUsage[];
-  byDay: DayUsage[];
-  rates: ModelRate[];
+  byDay: CodexDayUsage[];
+  rates: CodexModelRate[];
   ratesAsOf: string;
   unpricedTokens: number;
 }
@@ -556,7 +573,10 @@ export const ipc = {
   removeAccountProfile: (id: string) =>
     invoke<AccountProfileStatus[]>("remove_account_profile", { id }),
   // Agent-only maps (the backend probes claude/codex/antigravity; shell has no
-  // version or key to report).
+  // version or key to report). The backend ALWAYS emits exactly these three
+  // AgentCli keys (lifecycle::agent_key_status / docker::agent_versions build a
+  // fixed 3-entry map), so the non-partial Record<AgentCli, …> is an accurate
+  // contract — keep it in sync if a fourth CLI is ever added (Cli-enum 4-point).
   agentKeyStatus: () => invoke<Record<AgentCli, KeyStatus>>("agent_key_status"),
   agentVersions: () => invoke<Record<AgentCli, AgentVersion>>("agent_versions"),
   containerStats: () => invoke<ContainerStats>("container_stats"),
@@ -625,12 +645,11 @@ export const ipc = {
   ptyResize: (paneId: string, cols: number, rows: number) =>
     invoke<void>("pty_resize", { paneId, cols, rows }),
   detachSession: (paneId: string) => invoke<void>("detach_session", { paneId }),
-  // Always-on-top companion window (P5). open/close/query the floating monitor;
+  // Always-on-top companion window (P5). open/close the floating monitor;
   // focusSessionFromCompanion raises the main window + emits codehub://focus-session.
   // No-ops over the dev bridge — a second OS window only exists under Tauri.
   openCompanion: () => invoke<void>("open_companion"),
   closeCompanion: () => invoke<void>("close_companion"),
-  companionOpen: () => invoke<boolean>("companion_open"),
   focusSessionFromCompanion: (name: string) =>
     invoke<void>("focus_session_from_companion", { name }),
   // ── Phase-0 completion contract (stubs until the BE track lands) ──────────
@@ -648,6 +667,11 @@ export const ipc = {
   // Codex usage analytics from rollout files — mirrors the claude* surface.
   codexUsage: () => invoke<CodexUsage>("codex_usage"),
   codexSessions: () => invoke<CodexSession[]>("codex_sessions"),
+  // Live per-session Codex tally (parity with claudeSessionUsage). Backend is
+  // real + tested, but no UI consumer yet: wiring the pane-header tally for a
+  // Codex session needs a per-session rollout id on SessionMeta (the deferred
+  // "codexId on SessionMeta" item) — claudeSessionUsage has claudeId, Codex has
+  // no equivalent tracked at create-time. Kept (not removed) as ready parity.
   codexSessionUsage: (id: string) =>
     invoke<CodexSessionUsage | null>("codex_session_usage", { id }),
   // Codex rate-limit / plan meters (on-disk quota source). Null when no data.

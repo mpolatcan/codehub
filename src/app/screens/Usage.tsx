@@ -31,9 +31,12 @@ import { Tag } from "@/app/components/primitives/Tag";
 import { Ico } from "@/app/components/primitives/icons";
 import {
   type ClaudeUsage,
+  type CodexDayUsage,
   type CodexRateLimits,
+  type CodexTokenTotals,
   type CodexUsage,
   type DayUsage,
+  type TokenTotals,
   ipc,
 } from "@/app/lib/ipc";
 import { useLauncher } from "@/app/lib/launcher";
@@ -311,9 +314,9 @@ function AgentUsageCard({
 }) {
   const tokens = totals.input + totals.output;
   // last-13-days sparkline of total tokens/day, oldest→newest (Spark expects it).
-  const spark = usage.byDay
+  const spark = (usage.byDay as Array<DayUsage | CodexDayUsage>)
     .slice(-13)
-    .map((d) => d.totals.input + d.totals.output + d.totals.cacheRead + d.totals.cacheCreation);
+    .map((d) => d.totals.input + d.totals.output + cacheTokens(d.totals));
 
   return (
     <div className="ch-card" style={{ padding: 0, display: "flex", overflow: "hidden" }}>
@@ -757,6 +760,14 @@ function Note({ children }: { children: React.ReactNode }) {
 
 // ── data helpers ────────────────────────────────────────────────────────────
 
+// Cache-token portion of a token-totals object, papering over the Claude/Codex
+// shape split: Claude reports cacheRead + cacheCreation; Codex reports a single
+// cachedInput. (Before the byDay/totals types were Codex-specific these sites
+// read Claude's cache fields off Codex data → NaN; this keeps both honest.)
+function cacheTokens(t: TokenTotals | CodexTokenTotals): number {
+  return "cacheRead" in t ? t.cacheRead + t.cacheCreation : t.cachedInput;
+}
+
 // Collapse a ClaudeUsage's TokenTotals into the card shape (no reasoning split).
 function claudeTotalsToCard(u: ClaudeUsage): CardTokenTotals {
   return {
@@ -812,9 +823,9 @@ function rateTone(r: CodexRateLimits | null): "warn" | "over" | undefined {
 function makeCsvExporter(claude: ClaudeUsage | null, codex: CodexUsage | null): () => void {
   return () => {
     const rows: string[] = ["date,agent,input_tokens,output_tokens,cache_tokens,est_cost_usd"];
-    const add = (agent: string, days: DayUsage[]) => {
+    const add = (agent: string, days: Array<DayUsage | CodexDayUsage>) => {
       for (const d of days) {
-        const cache = d.totals.cacheRead + d.totals.cacheCreation;
+        const cache = cacheTokens(d.totals);
         rows.push(
           `${d.date},${agent},${d.totals.input},${d.totals.output},${cache},${d.estCostUsd.toFixed(4)}`,
         );

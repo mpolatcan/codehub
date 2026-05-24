@@ -50,6 +50,39 @@ pub struct AccountProfile {
     pub var_name: String,
 }
 
+/// An account profile plus whether its host env var is currently present.
+/// Presence-only (`std::env::var(..).is_ok()`) — the value is NEVER read,
+/// returned, or logged, exactly like `lifecycle::agent_key_status`.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountProfileStatus {
+    pub id: String,
+    pub agent: String,
+    pub label: String,
+    /// NAME of the host env var holding the credential. Never the value.
+    pub var_name: String,
+    /// Whether that env var is present on the host right now.
+    pub present: bool,
+}
+
+/// Map stored profiles to their live presence status. Presence probe only —
+/// `is_ok()` never binds the secret value.
+pub fn profile_statuses(profiles: Vec<AccountProfile>) -> Vec<AccountProfileStatus> {
+    profiles
+        .into_iter()
+        .map(|p| {
+            let present = std::env::var(&p.var_name).is_ok();
+            AccountProfileStatus {
+                id: p.id,
+                agent: p.agent,
+                label: p.label,
+                var_name: p.var_name,
+                present,
+            }
+        })
+        .collect()
+}
+
 /// All persisted preferences. Serialized to the frontend (and the dev bridge) as
 /// camelCase to match the rest of the IPC surface.
 #[derive(Debug, Clone, Serialize, Deserialize)]

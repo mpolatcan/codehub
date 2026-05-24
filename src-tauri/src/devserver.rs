@@ -132,95 +132,18 @@ pub async fn serve() {
         });
     }
 
-    // Start the event tailer for the dev bridge (mirrors lib.rs setup).
-    // The WsEmitter handles pty output; the events tailer handles hook events.
+    // Start the event tailer for the dev bridge (mirrors lib.rs setup). Reuses the
+    // shared tail in `events` — same attach/parse loop the Tauri app runs — with a
+    // WS-frame sink instead of a window emit. The WsEmitter handles pty output;
+    // this handles hook events.
     {
-        let docker_for_tail = docker.clone();
-        let events_for_tail = events.clone();
         let tx_for_events = tx.clone();
-        // Wrap tx in a lightweight handle that emits agent-event WS frames.
-        tokio::spawn(async move {
-            use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
-            use futures_util::StreamExt;
-            loop {
-                let _ = docker_for_tail
-                    .exec_capture_pub(vec![
-                        "sh",
-                        "-c",
-                        "mkdir -p /tmp/codehub/events && touch /tmp/codehub/events/.keep",
-                    ])
-                    .await;
-                let res = docker_for_tail
-                    .docker
-                    .create_exec::<String>(
-                        &docker_for_tail.container,
-                        CreateExecOptions {
-                            attach_stdout: Some(true),
-                            attach_stderr: Some(false),
-                            cmd: Some(vec![
-                                "sh".into(),
-                                "-c".into(),
-                                "tail -F /tmp/codehub/events/.keep /tmp/codehub/events/*.jsonl 2>/dev/null".into(),
-                            ]),
-                            env: Some(vec!["TMUX_TMPDIR=/tmp/codehub".into()]),
-                            ..Default::default()
-                        },
-                    )
-                    .await;
-                let exec = match res {
-                    Ok(e) => e,
-                    Err(e) => {
-                        tracing::debug!("devserver event tailer create_exec: {e}");
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        continue;
-                    },
-                };
-                let started = match docker_for_tail
-                    .docker
-                    .start_exec(
-                        &exec.id,
-                        Some(StartExecOptions {
-                            detach: false,
-                            ..Default::default()
-                        }),
-                    )
-                    .await
-                {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::debug!("devserver event tailer start_exec: {e}");
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        continue;
-                    },
-                };
-                if let StartExecResults::Attached { mut output, .. } = started {
-                    let mut buf = String::new();
-                    while let Some(chunk) = output.next().await {
-                        if let Ok(
-                            bollard::container::LogOutput::StdOut { message }
-                            | bollard::container::LogOutput::Console { message },
-                        ) = chunk
-                        {
-                            buf.push_str(&String::from_utf8_lossy(&message));
-                            while let Some(nl) = buf.find('\n') {
-                                let line = buf[..nl].trim().to_string();
-                                let _ = buf.drain(..=nl);
-                                if line.is_empty() || line.starts_with("==>") {
-                                    continue;
-                                }
-                                if let Some(event) = events_for_tail.ingest(&line) {
-                                    if let Ok(frame) = serde_json::to_string(&serde_json::json!({
-                                        "event": "codehub://agent-event",
-                                        "payload": event
-                                    })) {
-                                        let _ = tx_for_events.send(frame);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        crate::events::spawn_event_tailer(docker.clone(), events.clone(), move |event| {
+            if let Ok(frame) = serde_json::to_string(&serde_json::json!({
+                "event": "codehub://agent-event",
+                "payload": event,
+            })) {
+                let _ = tx_for_events.send(frame);
             }
         });
     }

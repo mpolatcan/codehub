@@ -17,8 +17,9 @@
 //! touched on the main thread, so the whole island lives in a main-thread
 //! `thread_local!` and is only accessed inside `run_on_main_thread`. AppKit
 //! event callbacks already run on the main thread, so they reach into the
-//! `thread_local!` directly. A separate `AtomicBool` mirrors visibility so the
-//! cross-thread `companion_open` command can answer without touching the panel.
+//! `thread_local!` directly. A separate `AtomicBool` mirrors visibility so
+//! cross-thread callers (e.g. the activity feed's `is_visible()` gate) can read
+//! it without touching the panel.
 #![cfg(target_os = "macos")]
 
 use std::cell::RefCell;

@@ -85,11 +85,17 @@ impl ActivityTracker {
         Self::default()
     }
 
+    /// Lock the inner map, recovering a poisoned lock — the data is plain
+    /// counters, so a panic mid-update can't leave it logically corrupt.
+    fn lock_inner(&self) -> std::sync::MutexGuard<'_, HashMap<String, Entry>> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Record `len` output bytes for `session` at the current instant. Creates
     /// the entry on first output. A poisoned lock is recovered (the data is
     /// plain counters — a panic mid-update can't leave it logically corrupt).
     pub fn mark(&self, session: &str, len: usize) {
-        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.lock_inner();
         let entry = map.entry(session.to_string()).or_default();
         entry.last_output = Some(Instant::now());
         entry.bytes = entry.bytes.saturating_add(len as u64);
@@ -102,7 +108,7 @@ impl ActivityTracker {
     /// Pre-creates an idle entry if output hasn't started yet, so a freshly
     /// spawned agent shows up immediately.
     pub fn register(&self, session: &str, cli: &str, alias: &str, claude_id: Option<&str>) {
-        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.lock_inner();
         let entry = map.entry(session.to_string()).or_default();
         entry.cli = Some(cli.to_string());
         entry.alias = Some(alias.to_string());
@@ -112,18 +118,13 @@ impl ActivityTracker {
     /// Forget a session (its tmux session was killed / pane detached). Keeps the
     /// snapshot from reporting activity for sessions that no longer exist.
     pub fn remove(&self, session: &str) {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(session);
+        self.lock_inner().remove(session);
     }
 
     /// Current activity for every tracked session, state derived at read time.
     pub fn snapshot(&self) -> Vec<SessionActivity> {
         let now = Instant::now();
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        self.lock_inner()
             .iter()
             .map(|(session, e)| {
                 // No output yet → idle, idle_ms 0 (unknown rather than fabricated).

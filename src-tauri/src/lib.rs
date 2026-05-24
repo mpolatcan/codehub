@@ -28,7 +28,7 @@ use events::EventsTracker;
 use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle, WorkspaceInfo};
 use pty::{PaneEmitter, PtyRegistry, SessionInfo};
 // Re-export Phase-0 contract types so devserver.rs can import them from `crate::`.
-use serde::Serialize;
+pub use config::{profile_statuses, AccountProfileStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
@@ -68,16 +68,18 @@ async fn container_status(state: tauri::State<'_, AppState>) -> Result<Container
     Ok(state.lifecycle.status().await)
 }
 
-#[tauri::command]
-async fn ensure_runtime(
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle,
+/// Run a lifecycle mutation (start/stop/restart/recreate), then read the fresh
+/// status, broadcast it on `codehub://lifecycle`, and return it. Centralizes the
+/// post-action pattern every lifecycle control shared verbatim. `op` is created
+/// from `state.lifecycle` at the call site; awaiting it here releases that borrow
+/// before the follow-up `status()` read.
+async fn lifecycle_op(
+    state: &AppState,
+    app: &tauri::AppHandle,
+    op: impl std::future::Future<Output = Result<(), lifecycle::LifecycleError>>,
 ) -> Result<ContainerStatus, String> {
-    let status = state
-        .lifecycle
-        .ensure_runtime()
-        .await
-        .map_err(|e| e.to_string())?;
+    op.await.map_err(|e| e.to_string())?;
+    let status = state.lifecycle.status().await;
     let _ = app.emit("codehub://lifecycle", &status);
     Ok(status)
 }
@@ -87,10 +89,7 @@ async fn container_start(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ContainerStatus, String> {
-    state.lifecycle.start().await.map_err(|e| e.to_string())?;
-    let status = state.lifecycle.status().await;
-    let _ = app.emit("codehub://lifecycle", &status);
-    Ok(status)
+    lifecycle_op(&state, &app, state.lifecycle.start()).await
 }
 
 #[tauri::command]
@@ -98,10 +97,7 @@ async fn container_stop(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ContainerStatus, String> {
-    state.lifecycle.stop().await.map_err(|e| e.to_string())?;
-    let status = state.lifecycle.status().await;
-    let _ = app.emit("codehub://lifecycle", &status);
-    Ok(status)
+    lifecycle_op(&state, &app, state.lifecycle.stop()).await
 }
 
 #[tauri::command]
@@ -109,10 +105,7 @@ async fn container_restart(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ContainerStatus, String> {
-    state.lifecycle.restart().await.map_err(|e| e.to_string())?;
-    let status = state.lifecycle.status().await;
-    let _ = app.emit("codehub://lifecycle", &status);
-    Ok(status)
+    lifecycle_op(&state, &app, state.lifecycle.restart()).await
 }
 
 /// Daemon reachability + version for the empty-state pill / Settings.
@@ -194,49 +187,14 @@ async fn recreate_runtime(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ContainerStatus, String> {
-    state
-        .lifecycle
-        .recreate()
-        .await
-        .map_err(|e| e.to_string())?;
-    let status = state.lifecycle.status().await;
-    let _ = app.emit("codehub://lifecycle", &status);
-    Ok(status)
+    lifecycle_op(&state, &app, state.lifecycle.recreate()).await
 }
 
 // — Tier-3: label-only account profiles (no secrets stored) —
-
-/// An account profile plus whether its host env var is currently present.
-/// Presence-only (`std::env::var(..).is_ok()`) — the value is NEVER read,
-/// returned, or logged, exactly like `agent_key_status`.
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AccountProfileStatus {
-    pub id: String,
-    pub agent: String,
-    pub label: String,
-    /// NAME of the host env var holding the credential. Never the value.
-    pub var_name: String,
-    /// Whether that env var is present on the host right now.
-    pub present: bool,
-}
-
-pub fn profile_statuses(profiles: Vec<AccountProfile>) -> Vec<AccountProfileStatus> {
-    profiles
-        .into_iter()
-        .map(|p| {
-            // Presence probe only — `is_ok()` never binds the secret value.
-            let present = std::env::var(&p.var_name).is_ok();
-            AccountProfileStatus {
-                id: p.id,
-                agent: p.agent,
-                label: p.label,
-                var_name: p.var_name,
-                present,
-            }
-        })
-        .collect()
-}
+// `AccountProfileStatus` + `profile_statuses` live in `config` (next to
+// `AccountProfile`); re-exported above so `crate::` paths + devserver keep
+// working. `build_account_profile` stays here — it bridges `Cli` + `docker`
+// validation with the config type, so it belongs in the glue layer.
 
 // ── Phase-0 completion contract (COMPLETION_PLAN.md) ────────────────────────
 // The response structs live in `types.rs` and are re-exported from `crate::` above
@@ -749,20 +707,6 @@ async fn close_companion(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether the companion is currently on screen — lets the trigger render as a
-/// toggle.
-#[cfg(target_os = "macos")]
-#[tauri::command]
-async fn companion_open(_app: tauri::AppHandle) -> Result<bool, String> {
-    Ok(island::is_visible())
-}
-
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-async fn companion_open(app: tauri::AppHandle) -> Result<bool, String> {
-    Ok(app.get_webview_window(COMPANION_LABEL).is_some())
-}
-
 /// Jump from the companion to a session in the main window: raise + focus the
 /// main window, then emit `codehub://focus-session` so the app focuses that
 /// session and leaves any open detail view. Missing main window is a no-op.
@@ -1138,7 +1082,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             container_status,
-            ensure_runtime,
             container_start,
             container_stop,
             container_restart,
@@ -1183,7 +1126,6 @@ pub fn run() {
             session_activity,
             open_companion,
             close_companion,
-            companion_open,
             focus_session_from_companion,
             // Phase-0 completion contract (stubs; BE track fills bodies).
             pending_prompts,

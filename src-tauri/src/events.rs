@@ -90,6 +90,12 @@ impl EventsTracker {
         Self::default()
     }
 
+    /// Lock the inner map, recovering a poisoned lock — the state is plain data,
+    /// so a panic mid-update can't leave it logically corrupt.
+    fn lock_inner(&self) -> std::sync::MutexGuard<'_, HashMap<String, SessionState>> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Process one line from the tail stream and update state.
     /// Returns `Some(AgentEvent)` when the line parses into an event the
     /// frontend should receive.
@@ -130,7 +136,7 @@ impl EventsTracker {
             message: ev.message.clone(),
         };
 
-        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.lock_inner();
         let state = map.entry(ev.session.clone()).or_default();
 
         // Update pending-prompt state.
@@ -179,9 +185,7 @@ impl EventsTracker {
 
     /// All sessions currently awaiting a permission prompt.
     pub fn pending_prompts(&self) -> Vec<PendingPrompt> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        self.lock_inner()
             .iter()
             .filter_map(|(session, s)| {
                 s.pending.as_ref().map(|p| PendingPrompt {
@@ -195,7 +199,7 @@ impl EventsTracker {
 
     /// Activity history for one session, or all sessions when `session` is `None`.
     pub fn activity_history(&self, session: Option<&str>) -> Vec<ActivityEvent> {
-        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let map = self.lock_inner();
         match session {
             Some(s) => map
                 .get(s)
@@ -216,7 +220,7 @@ impl EventsTracker {
     /// Clear a session's pending prompt (called after `respond_prompt` so the
     /// cleared state propagates even if the next hook line is slow).
     pub fn clear_pending(&self, session: &str) {
-        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.lock_inner();
         if let Some(state) = map.get_mut(session) {
             state.pending = None;
         }
@@ -224,10 +228,7 @@ impl EventsTracker {
 
     /// Remove all state for a session (called when the session is killed).
     pub fn remove_session(&self, session: &str) {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(session);
+        self.lock_inner().remove(session);
     }
 }
 
@@ -242,12 +243,23 @@ pub fn start_event_tailer(
     tracker: Arc<EventsTracker>,
     app: tauri::AppHandle,
 ) {
+    spawn_event_tailer(docker, tracker, move |event| {
+        let _ = app.emit("codehub://agent-event", event);
+    });
+}
+
+/// Spawn the retrying event tailer with a caller-supplied per-event sink. The
+/// retry loop handles a not-yet-ready container or an absent events dir (`tail -F`
+/// picks up files as they appear). The Tauri app passes a window-emit sink
+/// (`start_event_tailer`); the dev bridge passes a WS-frame sink — one tail
+/// implementation, two transports.
+pub fn spawn_event_tailer<F>(docker: Arc<DockerClient>, tracker: Arc<EventsTracker>, on_event: F)
+where
+    F: Fn(&AgentEvent) + Send + Sync + 'static,
+{
     tokio::spawn(async move {
-        // Retry loop: on any error, wait briefly and try again. This handles
-        // the case where the container isn't ready yet or the events dir doesn't
-        // exist (tail -F creates the watch as soon as the file appears).
         loop {
-            if let Err(e) = run_tail(docker.clone(), tracker.clone(), &app).await {
+            if let Err(e) = run_tail(&docker, &tracker, &on_event).await {
                 tracing::debug!("event tailer stopped ({e}), will retry in 5s");
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -255,10 +267,14 @@ pub fn start_event_tailer(
     });
 }
 
-async fn run_tail(
-    docker: Arc<DockerClient>,
-    tracker: Arc<EventsTracker>,
-    app: &tauri::AppHandle,
+/// One tail attach: drains the events stream until it ends/errors, feeding each
+/// parsed line to the `EventsTracker` and handing every resulting `AgentEvent`
+/// to `on_event`. Transport-agnostic — the Tauri app emits a window event, the
+/// dev bridge forwards a WS frame; both share this body (see `spawn_event_tailer`).
+async fn run_tail<F: Fn(&AgentEvent)>(
+    docker: &DockerClient,
+    tracker: &EventsTracker,
+    on_event: &F,
 ) -> Result<(), TailError> {
     // Ensure the events dir exists before tailing so tail -F doesn't error on
     // an absent glob. `mkdir -p` + a sentinel `.keep` file is idempotent.
@@ -324,7 +340,7 @@ async fn run_tail(
                             continue;
                         }
                         if let Some(event) = tracker.ingest(&line) {
-                            let _ = app.emit("codehub://agent-event", &event);
+                            on_event(&event);
                         }
                     }
                 },

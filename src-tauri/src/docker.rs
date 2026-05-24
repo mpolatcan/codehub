@@ -551,6 +551,17 @@ impl DockerClient {
         Ok(!containers.is_empty())
     }
 
+    /// Guard for running-only commands: returns `ContainerDown` when the runtime
+    /// container is not up. Collapses the `is_running` check repeated by every
+    /// command that requires a live container.
+    async fn require_running(&self) -> Result<(), DockerError> {
+        if self.is_running().await? {
+            Ok(())
+        } else {
+            Err(DockerError::ContainerDown(self.container.clone()))
+        }
+    }
+
     /// Public alias used by `events.rs` for the event-dir setup exec. Merges
     /// stdout + stderr identically to the private version.
     pub async fn exec_capture_pub(&self, cmd: Vec<&str>) -> Result<String, DockerError> {
@@ -606,27 +617,29 @@ impl DockerClient {
     /// rather than an error, so the caller always gets a full map.
     pub async fn agent_versions(&self) -> HashMap<String, AgentVersion> {
         let running = self.is_running().await.unwrap_or(false);
-        let mut out = HashMap::new();
-        for cli in [Cli::Claude, Cli::Codex, Cli::Antigravity] {
-            let version = if running {
-                self.exec_capture(vec![cli.binary(), "--version"])
-                    .await
-                    .ok()
-                    .map(|s| s.lines().next().unwrap_or_default().trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .filter(|s| is_version_like(s))
-            } else {
-                None
-            };
-            out.insert(cli.binary().to_string(), AgentVersion { version });
-        }
-        out
+        let clis = [Cli::Claude, Cli::Codex, Cli::Antigravity];
+        // Probe every CLI concurrently — three independent `--version` execs that
+        // would otherwise serialize into three sequential container round-trips.
+        let versions = futures_util::future::join_all(clis.iter().map(|cli| async move {
+            if !running {
+                return None;
+            }
+            self.exec_capture(vec![cli.binary(), "--version"])
+                .await
+                .ok()
+                .map(|s| s.lines().next().unwrap_or_default().trim().to_string())
+                .filter(|s| !s.is_empty())
+                .filter(|s| is_version_like(s))
+        }))
+        .await;
+        clis.iter()
+            .zip(versions)
+            .map(|(cli, version)| (cli.binary().to_string(), AgentVersion { version }))
+            .collect()
     }
 
     pub async fn list_tmux_sessions(&self) -> Result<Vec<SessionInfo>, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
 
         let out = self
             .exec_capture(vec![
@@ -851,9 +864,7 @@ impl DockerClient {
     /// can't). Errors when the container is down so the caller leaves the gauges
     /// blank rather than showing zeros.
     pub async fn stats(&self) -> Result<ContainerStats, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let s = self
             .docker
             .stats(
@@ -933,9 +944,7 @@ impl DockerClient {
     /// view re-polls. Errors when the container is down so the panel stays on its
     /// honest placeholder rather than showing a stale tail.
     pub async fn logs(&self, tail: u32) -> Result<Vec<String>, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let mut stream = self.docker.logs(
             &self.container,
             Some(LogsOptions::<String> {
@@ -1046,9 +1055,7 @@ impl DockerClient {
     /// `is_repo: false` so the UI shows an honest note rather than a fake-clean
     /// tree. `files` is capped at [`GIT_FILES_CAP`]; `total` is the full count.
     pub async fn git_status(&self) -> Result<GitStatus, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let raw = self
             .exec_capture(vec![
                 "git",
@@ -1073,9 +1080,7 @@ impl DockerClient {
     /// the new file shows as all-added. `path` is passed after `--` so it can
     /// never be read as an option. Errors only when the container is down.
     pub async fn git_diff(&self, path: &str) -> Result<String, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let tracked = self
             .exec_capture(vec![
                 "git",
@@ -1122,9 +1127,7 @@ impl DockerClient {
     /// comes back as an empty string so the UI shows an honest empty state.
     /// Errors only when the container is down.
     pub async fn git_diff_all(&self) -> Result<String, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let out = self
             .exec_capture(vec![
                 "git",
@@ -1150,9 +1153,7 @@ impl DockerClient {
     /// varies by platform, so `parse_top` maps by title rather than by position.
     /// Errors only when the container is down.
     pub async fn top(&self) -> Result<Vec<ProcessInfo>, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let resp = self
             .docker
             .top_processes(&self.container, None::<TopOptions<String>>)
@@ -1168,9 +1169,7 @@ impl DockerClient {
     /// Not-a-repo / no-commits-yet come back as an empty list (the UI shows an
     /// honest note); errors only when the container is down.
     pub async fn git_log(&self, limit: u32) -> Result<Vec<CommitInfo>, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let n = format!("-n{}", limit.clamp(1, GIT_LOG_CAP));
         let raw = self
             .exec_capture(vec![
@@ -1195,9 +1194,7 @@ impl DockerClient {
     /// unlike parsing `ls`. Capped at [`DIR_ENTRIES_CAP`]. Errors when the
     /// container is down or the path escapes the workspace.
     pub async fn list_dir(&self, path: &str) -> Result<Vec<FileEntry>, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let dir = workspace_path(path)?;
         let raw = self
             .exec_capture(vec![
@@ -1220,9 +1217,7 @@ impl DockerClient {
     /// returned UTF-8-lossy (binary files show replacement chars — the UI notes
     /// the cap). Errors when the container is down or the path escapes.
     pub async fn read_file(&self, path: &str) -> Result<String, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let file = workspace_path(path)?;
         // `workspace_path` only validates the path *text*; `head` would still
         // follow a symlink (or a symlinked parent dir) that points out of the
@@ -1252,22 +1247,25 @@ impl DockerClient {
     /// blocks of `assistant` lines into real token totals plus an estimated cost
     /// (see [`parse_claude_usage`]). Errors only when the container is down; a
     /// missing `projects` dir yields an all-zero report, not an error.
+    /// Concatenate every Claude transcript JSONL under the projects dir — the
+    /// shared on-disk source for both [`claude_usage`](Self::claude_usage) and
+    /// [`claude_sessions`](Self::claude_sessions). `find … -exec cat {} +` batches
+    /// the reads; transcripts are newline-terminated JSONL so concatenation never
+    /// fuses two lines. `2>/dev/null` + `|| true` keep a missing projects dir from
+    /// erroring — the parser simply sees no input. Routed through `sh -c` for the
+    /// glob/redirect. Errors only when the container is down.
+    async fn cat_all_transcripts(&self) -> Result<String, DockerError> {
+        self.require_running().await?;
+        self.exec_capture(vec![
+            "sh",
+            "-c",
+            "find /config/claude/projects -type f -name '*.jsonl' -exec cat {} + 2>/dev/null || true",
+        ])
+        .await
+    }
+
     pub async fn claude_usage(&self) -> Result<ClaudeUsage, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
-        // `find … -exec cat {} +` batches the reads; transcripts are newline-
-        // terminated JSONL so concatenation never fuses two lines. `2>/dev/null`
-        // and the `|| true` keep a missing projects dir from erroring — the
-        // parser simply sees no input. Routed through `sh -c` for the glob/redirect.
-        let raw = self
-            .exec_capture(vec![
-                "sh",
-                "-c",
-                "find /config/claude/projects -type f -name '*.jsonl' -exec cat {} + 2>/dev/null || true",
-            ])
-            .await?;
-        Ok(parse_claude_usage(&raw))
+        Ok(parse_claude_usage(&self.cat_all_transcripts().await?))
     }
 
     /// List past Claude Code conversations from their on-disk transcripts (same
@@ -1276,17 +1274,7 @@ impl DockerClient {
     /// for how title/branch/turns are derived. Errors only when the container is
     /// down; a missing `projects` dir yields an empty list, not an error.
     pub async fn claude_sessions(&self) -> Result<Vec<ClaudeSession>, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
-        let raw = self
-            .exec_capture(vec![
-                "sh",
-                "-c",
-                "find /config/claude/projects -type f -name '*.jsonl' -exec cat {} + 2>/dev/null || true",
-            ])
-            .await?;
-        Ok(parse_claude_sessions(&raw))
+        Ok(parse_claude_sessions(&self.cat_all_transcripts().await?))
     }
 
     /// Live token tally for one Claude session, read from its own transcript
@@ -1302,9 +1290,7 @@ impl DockerClient {
         if !is_session_id(id) {
             return Ok(None);
         }
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         // `id` is validated to `[0-9A-Za-z-]` so it carries no path or shell
         // metacharacters; passed as a plain `cat` argv (no shell). A missing file
         // just makes `cat` write an error to stderr, which the JSONL parser skips.
@@ -1332,9 +1318,7 @@ impl DockerClient {
     /// shell, fixed paths); a missing `.mcp.json` just yields a non-JSON read
     /// that the parser ignores. Identity only — no credential is surfaced.
     pub async fn claude_integrations(&self) -> Result<ClaudeIntegrations, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let cfg = self
             .exec_capture(vec!["cat", "/config/claude/.claude.json"])
             .await
@@ -1355,9 +1339,7 @@ impl DockerClient {
     /// always a valid (possibly-empty) [`AgentConfig`] rather than an error.
     /// Errors only when the container is down. Identity/config only — no secret.
     pub async fn claude_agent_config(&self) -> Result<AgentConfig, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let cfg = self
             .exec_capture(vec!["cat", "/config/claude/.claude.json"])
             .await
@@ -1408,17 +1390,22 @@ impl DockerClient {
     /// surface but uses Codex's per-turn `token_count` event payload. Errors only
     /// when the container is down; a missing sessions dir yields an all-zero report.
     pub async fn codex_usage(&self) -> Result<crate::types::CodexUsage, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
-        let raw = self
-            .exec_capture(vec![
-                "sh",
-                "-c",
-                "find /root/.codex/sessions -type f -name 'rollout-*.jsonl' -exec cat {} + 2>/dev/null || true",
-            ])
-            .await?;
-        Ok(parse_codex_usage(&raw))
+        Ok(parse_codex_usage(&self.cat_all_rollouts().await?))
+    }
+
+    /// Concatenate every Codex rollout JSONL under the sessions dir — the shared
+    /// on-disk source for both [`codex_usage`](Self::codex_usage) and
+    /// [`codex_sessions`](Self::codex_sessions). Same batched-`cat`,
+    /// newline-safe, error-swallowing shape as
+    /// [`cat_all_transcripts`](Self::cat_all_transcripts). Errors only when down.
+    async fn cat_all_rollouts(&self) -> Result<String, DockerError> {
+        self.require_running().await?;
+        self.exec_capture(vec![
+            "sh",
+            "-c",
+            "find /root/.codex/sessions -type f -name 'rollout-*.jsonl' -exec cat {} + 2>/dev/null || true",
+        ])
+        .await
     }
 
     // ── GitHub connector ────────────────────────────────────────────────────
@@ -1512,17 +1499,7 @@ impl DockerClient {
 
     /// Past Codex conversations from rollout files (Resume view), newest first.
     pub async fn codex_sessions(&self) -> Result<Vec<crate::types::CodexSession>, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
-        let raw = self
-            .exec_capture(vec![
-                "sh",
-                "-c",
-                "find /root/.codex/sessions -type f -name 'rollout-*.jsonl' -exec cat {} + 2>/dev/null || true",
-            ])
-            .await?;
-        Ok(parse_codex_sessions(&raw))
+        Ok(parse_codex_sessions(&self.cat_all_rollouts().await?))
     }
 
     /// Live per-session Codex tally from the session's own rollout file.
@@ -1543,9 +1520,7 @@ impl DockerClient {
         {
             return Ok(None);
         }
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         let pattern = format!(
             "find /root/.codex/sessions/{session_dir} -type f -name 'rollout-*.jsonl' -exec cat {{}} + 2>/dev/null || true"
         );
@@ -1558,9 +1533,7 @@ impl DockerClient {
     pub async fn codex_rate_limits(
         &self,
     ) -> Result<Option<crate::types::CodexRateLimits>, DockerError> {
-        if !self.is_running().await? {
-            return Err(DockerError::ContainerDown(self.container.clone()));
-        }
+        self.require_running().await?;
         // Read only the most recent rollout file (sorted by name, last = newest).
         let raw = self
             .exec_capture(vec![
@@ -2479,6 +2452,48 @@ struct CodexSessionAcc {
     cumulative: crate::types::CodexTokenTotals,
 }
 
+/// Fold the per-session fields shared by both Codex passes — the timestamp
+/// window (`started`/`last_active`), the active `model`, the turn count
+/// (`task_complete`), and the title (`task_started`) — from one rollout JSONL
+/// value into its accumulator. [`parse_codex_usage`] layers `token_count` cost
+/// accounting on top in the same loop; [`parse_codex_sessions`] needs only this.
+fn codex_acc_common(acc: &mut CodexSessionAcc, v: &serde_json::Value) {
+    if let Some(ts) = v.get("timestamp").and_then(|t| t.as_str()) {
+        if acc.started.as_deref().is_none_or(|s| ts < s) {
+            acc.started = Some(ts.to_string());
+        }
+        if acc.last_active.as_deref().is_none_or(|s| ts > s) {
+            acc.last_active = Some(ts.to_string());
+        }
+    }
+
+    if let Some(model) = v
+        .get("turn_context")
+        .and_then(|tc| tc.get("model"))
+        .and_then(|m| m.as_str())
+    {
+        if !model.is_empty() {
+            acc.model = Some(model.to_string());
+        }
+    }
+
+    match v.get("event_msg").and_then(|e| e.as_str()) {
+        Some("task_complete") => acc.turns = acc.turns.saturating_add(1),
+        Some("task_started") if acc.title.is_none() => {
+            if let Some(t) = v
+                .get("payload")
+                .and_then(|p| p.get("task"))
+                .and_then(|t| t.as_str())
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+            {
+                acc.title = Some(clip_title(t));
+            }
+        },
+        _ => {},
+    }
+}
+
 /// Fold concatenated Codex rollout JSONL into a [`CodexUsage`] aggregate.
 /// Each rollout file maps to one session; the session id is the filename UUID.
 /// All token counts are FACTUAL from the on-disk data; cost is an estimate.
@@ -2517,107 +2532,59 @@ fn parse_codex_usage(raw: &str) -> crate::types::CodexUsage {
                 ..Default::default()
             });
 
-        // Track timestamp window for started/last_active.
-        if let Some(ts) = v.get("timestamp").and_then(|t| t.as_str()) {
-            if acc.started.as_deref().is_none_or(|s| ts < s) {
-                acc.started = Some(ts.to_string());
-            }
-            if acc.last_active.as_deref().is_none_or(|s| ts > s) {
-                acc.last_active = Some(ts.to_string());
-            }
-        }
+        // Shared per-session fields (timestamp window, model, turns, title).
+        codex_acc_common(acc, &v);
 
-        // Capture model from turn_context.
-        if let Some(model) = v
-            .get("turn_context")
-            .and_then(|tc| tc.get("model"))
-            .and_then(|m| m.as_str())
-        {
-            if !model.is_empty() {
-                acc.model = Some(model.to_string());
-            }
-        }
+        // Usage-only: fold this turn's token deltas into the cost totals.
+        if v.get("event_msg").and_then(|e| e.as_str()) == Some("token_count") {
+            let Some(info) = v.get("payload").and_then(|p| p.get("info")) else {
+                continue;
+            };
+            let tok =
+                |obj: &serde_json::Value, k: &str| obj.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
 
-        let event_msg = match v.get("event_msg").and_then(|e| e.as_str()) {
-            Some(e) => e,
-            None => continue,
-        };
-
-        match event_msg {
-            "token_count" => {
-                let payload = match v.get("payload") {
-                    Some(p) => p,
-                    None => continue,
+            // Use total_token_usage (cumulative) for the session total.
+            if let Some(total) = info.get("total_token_usage") {
+                acc.cumulative = crate::types::CodexTokenTotals {
+                    input: tok(total, "input"),
+                    cached_input: tok(total, "cached_input"),
+                    output: tok(total, "output"),
+                    reasoning_output: tok(total, "reasoning_output"),
                 };
-                let info = match payload.get("info") {
-                    Some(i) => i,
-                    None => continue,
+            }
+
+            // Use last_token_usage (this-turn delta) for by-model/by-day.
+            if let Some(last) = info.get("last_token_usage") {
+                let delta = crate::types::CodexTokenTotals {
+                    input: tok(last, "input"),
+                    cached_input: tok(last, "cached_input"),
+                    output: tok(last, "output"),
+                    reasoning_output: tok(last, "reasoning_output"),
                 };
+                let model_key = acc.model.clone().unwrap_or_else(|| "unknown".to_string());
+                let rate = codex_model_rate(&model_key);
+                let delta_cost = rate.map(|r| codex_estimate_cost(&delta, r)).unwrap_or(0.0);
+                let me = by_model.entry(model_key).or_default();
+                me.0.input += delta.input;
+                me.0.cached_input += delta.cached_input;
+                me.0.output += delta.output;
+                me.0.reasoning_output += delta.reasoning_output;
+                me.1 += 1;
 
-                // Use total_token_usage (cumulative) for the session total.
-                let total_usage = info.get("total_token_usage");
-                let tok = |obj: &serde_json::Value, k: &str| {
-                    obj.get(k).and_then(|n| n.as_u64()).unwrap_or(0)
-                };
-
-                if let Some(total) = total_usage {
-                    acc.cumulative = crate::types::CodexTokenTotals {
-                        input: tok(total, "input"),
-                        cached_input: tok(total, "cached_input"),
-                        output: tok(total, "output"),
-                        reasoning_output: tok(total, "reasoning_output"),
-                    };
-                }
-
-                // Use last_token_usage (this-turn delta) for by-model/by-day.
-                if let Some(last) = info.get("last_token_usage") {
-                    let delta = crate::types::CodexTokenTotals {
-                        input: tok(last, "input"),
-                        cached_input: tok(last, "cached_input"),
-                        output: tok(last, "output"),
-                        reasoning_output: tok(last, "reasoning_output"),
-                    };
-                    let model_key = acc.model.clone().unwrap_or_else(|| "unknown".to_string());
-                    let rate = codex_model_rate(&model_key);
-                    let delta_cost = rate.map(|r| codex_estimate_cost(&delta, r)).unwrap_or(0.0);
-                    let me = by_model.entry(model_key).or_default();
-                    me.0.input += delta.input;
-                    me.0.cached_input += delta.cached_input;
-                    me.0.output += delta.output;
-                    me.0.reasoning_output += delta.reasoning_output;
-                    me.1 += 1;
-
-                    if let Some(date) = v
-                        .get("timestamp")
-                        .and_then(|t| t.as_str())
-                        .filter(|t| t.len() >= 10)
-                        .map(|t| t[..10].to_string())
-                    {
-                        let de = by_day.entry(date).or_default();
-                        de.0.input += delta.input;
-                        de.0.cached_input += delta.cached_input;
-                        de.0.output += delta.output;
-                        de.0.reasoning_output += delta.reasoning_output;
-                        de.1 += delta_cost;
-                    }
-                }
-            },
-            "task_complete" => {
-                acc.turns = acc.turns.saturating_add(1);
-            },
-            "task_started" if acc.title.is_none() => {
-                // Pick up the title from the first task_started (if available).
-                if let Some(t) = v
-                    .get("payload")
-                    .and_then(|p| p.get("task"))
+                if let Some(date) = v
+                    .get("timestamp")
                     .and_then(|t| t.as_str())
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty())
+                    .filter(|t| t.len() >= 10)
+                    .map(|t| t[..10].to_string())
                 {
-                    acc.title = Some(clip_title(t));
+                    let de = by_day.entry(date).or_default();
+                    de.0.input += delta.input;
+                    de.0.cached_input += delta.cached_input;
+                    de.0.output += delta.output;
+                    de.0.reasoning_output += delta.reasoning_output;
+                    de.1 += delta_cost;
                 }
-            },
-            _ => {},
+            }
         }
     }
 
@@ -2724,42 +2691,7 @@ fn parse_codex_sessions(raw: &str) -> Vec<crate::types::CodexSession> {
             ..Default::default()
         });
 
-        if let Some(ts) = v.get("timestamp").and_then(|t| t.as_str()) {
-            if acc.started.as_deref().is_none_or(|s| ts < s) {
-                acc.started = Some(ts.to_string());
-            }
-            if acc.last_active.as_deref().is_none_or(|s| ts > s) {
-                acc.last_active = Some(ts.to_string());
-            }
-        }
-
-        if let Some(model) = v
-            .get("turn_context")
-            .and_then(|tc| tc.get("model"))
-            .and_then(|m| m.as_str())
-        {
-            if !model.is_empty() {
-                acc.model = Some(model.to_string());
-            }
-        }
-
-        if let Some(e) = v.get("event_msg").and_then(|e| e.as_str()) {
-            match e {
-                "task_complete" => acc.turns += 1,
-                "task_started" if acc.title.is_none() => {
-                    if let Some(t) = v
-                        .get("payload")
-                        .and_then(|p| p.get("task"))
-                        .and_then(|t| t.as_str())
-                        .map(|s| s.trim())
-                        .filter(|s| !s.is_empty())
-                    {
-                        acc.title = Some(clip_title(t));
-                    }
-                },
-                _ => {},
-            }
-        }
+        codex_acc_common(acc, &v);
     }
 
     let mut sessions: Vec<crate::types::CodexSession> = accs
