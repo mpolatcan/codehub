@@ -1,5 +1,13 @@
 # CodeHub — implementation guide for Claude Code
 
+> **HISTORICAL (archive).** This is the original Aviary→CodeHub migration
+> handoff; the migration shipped and the rebrand is complete. **Live guidance
+> lives in the root `/CLAUDE.md`.** The `design/{CLAUDE,MIGRATION,COMPONENTS,
+> SCREENS}.md` files referenced below were removed after the migration — the
+> "source-of-truth files" and "first action" sections are obsolete. The
+> **design language rules** and **component vocabulary** sections remain a
+> useful reference; everything framed as a pending task is done.
+
 > Read this whole file before touching any source. The design is finished;
 > your job is to port it cleanly into the existing Tauri v2 + React codebase
 > formerly known as **Aviary**.
@@ -45,7 +53,7 @@ it as your visual reference; do not import from it.
 ## Tech stack decisions (already made — do not re-litigate)
 
 - **Tauri v2** for the desktop shell. Existing build. Keep.
-- **React 18** + **TypeScript** for the UI. Existing.
+- **React 19** + **TypeScript** for the UI. Existing.
 - **shadcn/ui** for primitives. Add this.
 - **Tailwind CSS** as the styling backbone. Replace existing CSS-in-JS with
   Tailwind classes paired with shadcn primitives.

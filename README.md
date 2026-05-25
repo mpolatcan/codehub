@@ -96,7 +96,12 @@ sequenceDiagram
 - **New session** — the `+` popover (or ⌘T) picks an agent and a permission mode.
 - **Permission modes** — *Standard* (agent asks first), *Auto* (auto-accepts edits, still sandboxed), *YOLO* (skips all approvals; the container is the boundary). Antigravity is Standard-only until its flags are verified.
 - **Splits** — split any pane (its head controls, or ⌘\) into a binary tree; drag the divider to resize.
-- **Keyboard** — ⌘T new tab · ⌘W close focused · ⌘\ split · ⌘1–9 switch tab.
+- **Workspaces** — the welcome screen pins and reopens saved workspaces (name + directory, persisted); opening one re-points the shared container's `/workspace` mount. New-workspace wizard via ⌘⇧N.
+- **Hub panels** — a Files browser (⌘E), a workspace Diff viewer (⌘D), and a Resume drawer (⌘R) of past Claude/Codex sessions, docked beside the panes.
+- **Command palette** (⌘K) — jump to a view, focus a running session, spawn an agent, or open a recent/connected repo.
+- **Views** — Hub, Dashboard, Workspaces (container inspector), Usage (token/cost rollup read from session transcripts), and Settings (agents · runtime · integrations · appearance). Dark and light themes.
+- **Companion** — an always-on-top monitor window mirroring live agent status (working / awaiting input / done / failed) with inline approve/deny. On macOS a native notch "dynamic island" variant exists (experimental).
+- **Keyboard** — ⌘N/⌘T new session · ⌘⇧N new workspace · ⌘W close focused · ⌘\ split · ⌘⇧\ split column · ⌘⇧B shell pane · ⌘E files · ⌘D diff · ⌘R resume · ⌘1–9 switch tab · ⌘K palette · ⌘/ all shortcuts.
 
 ## Runtime image
 
@@ -169,9 +174,9 @@ configured in `src-tauri/tauri.conf.json`.
 ## Roadmap
 
 - macOS Keychain for OAuth token storage (`security-framework` crate).
-- Bell-character detection -> native notification when an agent finishes.
+- Native OS notifications when an agent finishes (today surfaced in the always-on-top companion).
 - Copy-mode keybindings.
-- Multiple workspaces (one container per workspace dir).
+- Per-workspace containers (today saved workspaces share one runtime container, re-pointing the `/workspace` mount).
 - Auto-update via Tauri updater plugin.
-- Icon set (cage grid + bird silhouette).
-- Code-split the frontend bundle (currently a single ~707 KB chunk).
+- App icon set.
+- Code-split the frontend bundle.
