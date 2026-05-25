@@ -1,42 +1,47 @@
 /**
- * Dashboard — a real, read-only overview of the shared runtime: live sessions,
- * the runtime's resource use, the /workspace git state, an attention queue of
- * sessions awaiting input, an activity chart, and per-agent token usage.
+ * Dashboard — read-only overview of the shared runtime, laid out to match
+ * design/screens/dashboard.jsx exactly: a 5-metric row, a sessions table beside
+ * an attention queue + runtime resource card, then an activity chart beside a
+ * per-agent token-usage card.
  *
- * Adapted from design/screens/dashboard.jsx, which mocks a multi-container fleet
- * with rich per-row telemetry. This wires the NOW-REAL backend reads instead:
+ * The design mocks a multi-container fleet with rich per-row telemetry and a
+ * multi-account billing card. CodeHub's reality is ONE shared container, N tmux
+ * sessions, no billing API — so each design slot is bound to the closest REAL
+ * backend read and the truly-unobtainable sub-fields are dropped (never faked):
  *
- *  - sessions, container_stats, container_git_status/log  → factual (Tier-1).
- *  - claude_usage + codex_usage (on-disk transcripts / rollout files)  → real
- *    token + turn + session counts; cost is the backend's DERIVED estimate
- *    (model × price table), displayed verbatim, never recomputed here.
- *  - pending_prompts (agent-native hooks, §7)  → the attention queue; Approve/
- *    Deny write the accept/deny keystroke via respond_prompt. Real for Claude/
- *    Codex; Antigravity never emits.
- *  - session_activity_history  → the per-hour activity chart (turns/hour by
- *    agent), bucketed from real prompt-start events.
- *  - session_activity  → the live working/idle dot per row.
+ *  - Tokens·24h / Cost·24h / their deltas / the metric sparklines  → real, from
+ *    claude_usage.byDay + codex_usage.byDay (per-UTC-day token + est-cost rollups).
+ *  - "Context · avg"  → average live contextUsed across Claude sessions, shown as
+ *    a token count. The transcript records no window maximum (ipc.ts:319), so the
+ *    design's 42% gauge is impossible — the gauge is dropped, the count kept.
+ *  - Sessions table: Session/Status real; Task = the session's latest activity
+ *    message; Branch = the shared /workspace branch (one repo, not per-row); Turns
+ *    + Tokens real for Claude (transcript id), em-dash for Codex/Antigravity; the
+ *    per-pane CPU column is dropped (only one container-wide stat exists); $ is
+ *    em-dash (no per-session model split). All/Running filter is real; "Mine" is
+ *    dropped (single user).
+ *  - Right card: real pending_prompts attention queue + ONE runtime resource bar
+ *    (container_stats cpu/mem) in place of the design's per-workspace fan-out.
+ *  - Activity chart: turns/hour by agent from session_activity_history (Claude +
+ *    Codex; Antigravity never emits hook events, so no third series).
+ *  - Token usage card: per-agent real totals (Claude/Codex), the closest-real
+ *    stand-in for the design's per-account billing rows.
  *
  * Honesty contract: absent data → em-dash / honest-empty, never fabricated.
- * Per-row token/cost is only shown for Claude (it carries a transcript id we
- * track per session); Codex/Antigravity rows show em-dash for per-row tokens —
- * their real aggregate lives in the "Token usage" card. No invented numbers.
  */
 import { AGENT_META, AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { IconBtn } from "@/app/components/primitives/IconBtn";
+import { Spark } from "@/app/components/primitives/Spark";
 import { StatusBadge } from "@/app/components/primitives/StatusBadge";
 import type { StatusKey } from "@/app/components/primitives/StatusDot";
 import { Ico } from "@/app/components/primitives/icons";
-import { MODE_BY_ID, SPEC_BY_CLI } from "@/app/lib/catalog";
+import { MODE_BY_ID } from "@/app/lib/catalog";
 import {
   type ActivityEvent,
   type ClaudeUsage,
   type CodexUsage,
-  type CommitInfo,
-  type GitStatus,
   type PendingPrompt,
   type SessionActivity,
-  type SessionInfo,
   type SessionUsage,
   ipc,
 } from "@/app/lib/ipc";
@@ -45,6 +50,8 @@ import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
 import { useEffect, useState } from "react";
 
+type Filter = "all" | "running";
+
 export function Dashboard() {
   const status = useStore((s) => s.status);
   const sessionMeta = useStore((s) => s.sessionMeta);
@@ -52,37 +59,30 @@ export function Dashboard() {
   const focusSession = useStore((s) => s.focusSession);
   const setView = useStore((s) => s.setView);
   const openLaunch = useLauncher((s) => s.open);
+  // App-wide polls (single source): runtime stats + /workspace git status.
+  const stats = useStore((s) => s.containerStats);
+  const git = useStore((s) => s.gitStatus);
 
   const state = status?.state ?? "missing";
   const running = state === "running";
   const sessions = Object.entries(sessionMeta);
 
-  // Live runtime stats (~2s), workspace git (~5s), recent commits (~10s), tmux
-  // sessions (~5s) — the Tier-1 reads. Each is a one-shot poll with an alive
-  // guard; a failed read clears to null → honest note.
-  // Resource gauges read the single app-wide stats poll (see useContainerStatsPoll).
-  const stats = useStore((s) => s.containerStats);
-  const [git, setGit] = useState<GitStatus | null>(null);
-  const [commits, setCommits] = useState<CommitInfo[] | null>(null);
-  const [tmux, setTmux] = useState<SessionInfo[] | null>(null);
-  // Real token analytics (~15s — files grow slowly). Both factual; cost is the
-  // backend's estimate, shown verbatim. Null while down / pre-read.
+  // Token analytics (~15s — files grow slowly). Counts factual; cost is the
+  // backend's estimate, shown verbatim. Live signals (~4s): working/idle, the
+  // awaiting-input queue, and the turn-history feed (chart + per-row Task).
   const [claude, setClaude] = useState<ClaudeUsage | null>(null);
   const [codex, setCodex] = useState<CodexUsage | null>(null);
-  // Live signals (~4s): working/idle per session + the awaiting-input queue +
-  // the turn-history feed (for the chart). All real for Claude/Codex.
   const [activity, setActivity] = useState<SessionActivity[]>([]);
   const [prompts, setPrompts] = useState<PendingPrompt[]>([]);
   const [history, setHistory] = useState<ActivityEvent[]>([]);
-  // Per-Claude-session live token tally (keyed by the transcript id we track at
-  // create time). Codex/Antigravity have no such per-tmux id → omitted.
   const [claudeBySession, setClaudeBySession] = useState<Record<string, SessionUsage | null>>({});
+  // Wall-clock tick (1s) so "updated Ns ago" + prompt ages advance between polls.
+  const [, setTick] = useState(0);
+  const [updatedAt, setUpdatedAt] = useState(() => Date.now());
+  const [filter, setFilter] = useState<Filter>("all");
 
   useEffect(() => {
     if (!running) {
-      setGit(null);
-      setCommits(null);
-      setTmux(null);
       setClaude(null);
       setCodex(null);
       setActivity([]);
@@ -103,24 +103,6 @@ export function Dashboard() {
     };
     const handles = [
       poll(
-        () => ipc.containerGitStatus(),
-        setGit,
-        5000,
-        () => setGit(null),
-      ),
-      poll(
-        () => ipc.containerGitLog(12),
-        setCommits,
-        10000,
-        () => setCommits(null),
-      ),
-      poll(
-        () => ipc.listSessions(),
-        setTmux,
-        5000,
-        () => setTmux(null),
-      ),
-      poll(
         () => ipc.claudeUsage(),
         setClaude,
         15000,
@@ -134,7 +116,10 @@ export function Dashboard() {
       ),
       poll(
         () => ipc.sessionActivity(),
-        setActivity,
+        (v) => {
+          setActivity(v);
+          setUpdatedAt(Date.now());
+        },
         4000,
         () => setActivity([]),
       ),
@@ -151,22 +136,21 @@ export function Dashboard() {
         () => setHistory([]),
       ),
     ];
+    const ticker = setInterval(() => setTick((t) => t + 1), 1000);
     return () => {
       alive = false;
       for (const h of handles) clearInterval(h);
+      clearInterval(ticker);
     };
   }, [running]);
 
-  // Stable, comma-joined list of Claude transcript ids currently in view — the
-  // effect below keys off this string so it only re-subscribes when the set of
-  // Claude sessions actually changes (not on every render).
+  // Stable, comma-joined Claude transcript ids in view — the per-session token
+  // effect keys off this so it only re-subscribes when the set changes.
   const claudeIdKey = sessions
     .map(([, m]) => m.claudeId)
     .filter((id): id is string => Boolean(id))
     .join(",");
 
-  // Per-Claude-session token tally, polled lazily for the sessions in view. We
-  // read each Claude session's transcript (`claudeId`) on the same slow cadence.
   useEffect(() => {
     if (!running) return;
     const claudeIds = claudeIdKey ? claudeIdKey.split(",") : [];
@@ -191,29 +175,58 @@ export function Dashboard() {
     };
   }, [running, claudeIdKey]);
 
-  // session name → created epoch (seconds), for per-session uptime.
-  const createdBy = new Map((tmux ?? []).map((s) => [s.name, s.created]));
-  // session name → live working/idle state.
+  // session name → live working/idle state; sessions awaiting input right now.
   const stateBy = new Map(activity.map((a) => [a.session, a.state]));
-  // sessions awaiting input right now (keyed by tmux name, mirrors PaneHead).
   const awaitingSet = new Set(prompts.map((p) => p.session));
+  // session name → most recent activity message (the closest-real "Task"),
+  // newest-wins by iterating the history sorted by `at` descending.
+  const taskBy = new Map<string, string>();
+  for (const e of [...history].sort((a, b) => b.at - a.at)) {
+    if (e.message && !taskBy.has(e.session)) taskBy.set(e.session, e.message);
+  }
 
-  // Aggregate token/cost across both real agents (factual counts + the backend's
-  // estimated cost). Antigravity contributes nothing — no readable data.
-  const claudeTokens = claude ? claude.totals.input + claude.totals.output : 0;
-  const codexTokens = codex ? codex.totals.input + codex.totals.output : 0;
-  const totalTokens = claudeTokens + codexTokens;
+  // ── byDay-derived 24h metrics (real) ────────────────────────────────────────
+  const dayTok = new Map<string, number>();
+  const dayCost = new Map<string, number>();
+  for (const d of claude?.byDay ?? []) {
+    dayTok.set(d.date, (dayTok.get(d.date) ?? 0) + d.totals.input + d.totals.output);
+    dayCost.set(d.date, (dayCost.get(d.date) ?? 0) + d.estCostUsd);
+  }
+  for (const d of codex?.byDay ?? []) {
+    dayTok.set(d.date, (dayTok.get(d.date) ?? 0) + d.totals.input + d.totals.output);
+    dayCost.set(d.date, (dayCost.get(d.date) ?? 0) + d.estCostUsd);
+  }
+  const todayKey = utcDay(0);
+  const yKey = utcDay(-1);
   const haveUsage = claude !== null || codex !== null;
-  const totalCost = (claude?.estCostUsd ?? 0) + (codex?.estCostUsd ?? 0);
+  const tokToday = dayTok.get(todayKey) ?? 0;
+  const tokYesterday = dayTok.get(yKey) ?? 0;
+  const costToday = dayCost.get(todayKey) ?? 0;
+  // Last 8 calendar days as sparklines (oldest→newest), zero-filled.
+  const tokSpark = lastNDays(dayTok, 8);
+  const costSpark = lastNDays(dayCost, 8);
+  const tokDelta = pctDelta(tokToday, tokYesterday);
+
+  // All-time avg cost/turn (no per-day turn count exists — honest all-time avg).
+  const allTurns = (claude?.turns ?? 0) + (codex?.turns ?? 0);
+  const allCost = (claude?.estCostUsd ?? 0) + (codex?.estCostUsd ?? 0);
+  const perTurn = allTurns > 0 ? allCost / allTurns : 0;
+
+  // Live context: average contextUsed across the Claude sessions we have a tally
+  // for. No window max exists → a token count, never a percentage.
+  const ctxVals = Object.values(claudeBySession)
+    .filter((u): u is SessionUsage => u !== null && u.contextUsed > 0)
+    .map((u) => u.contextUsed);
+  const ctxAvg =
+    ctxVals.length > 0 ? Math.round(ctxVals.reduce((a, b) => a + b, 0) / ctxVals.length) : null;
+
+  const working = activity.filter((a) => a.state === "working").length;
 
   const open = (session: string) => {
     focusSession(session);
     setView("hub");
   };
 
-  // Resolve a pending prompt by writing the accept/deny keystroke to its pane.
-  // On success, optimistically drop it from the local queue (the next poll
-  // reconciles either way); on failure, leave it so the next poll re-shows it.
   const respond = (session: string, allow: boolean) => {
     ipc
       .respondPrompt(session, allow)
@@ -221,11 +234,15 @@ export function Dashboard() {
       .catch((e) => console.warn("respond_prompt failed", e));
   };
 
-  const sessionLabel = `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}`;
-  // All-time estimate (Claude+Codex estCostUsd). There is no 24h cost window, so
-  // it must NOT be labelled "today" — matches the Usage header's "est." phrasing.
-  const costLabel = haveUsage ? ` · ${fmtUsd(totalCost)} est.` : "";
-  const headerSub = running ? `${sessionLabel}${costLabel}` : `runtime ${state}`;
+  // header sub: agents · workspaces · today's est cost (all real).
+  const headerSub = running
+    ? `${sessions.length} agent${sessions.length === 1 ? "" : "s"} · ${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"}${haveUsage ? ` · ${fmtUsd(costToday)} today` : ""}`
+    : `runtime ${state}`;
+
+  // Apply the table filter.
+  const visibleSessions = sessions.filter(([session]) =>
+    filter === "all" ? true : stateBy.get(session) === "working" || awaitingSet.has(session),
+  );
 
   return (
     <main
@@ -257,17 +274,25 @@ export function Dashboard() {
       </div>
 
       <div className="scroll" style={{ flex: 1, overflow: "auto", padding: 24 }}>
-        {/* metric row — all real (sessions + live container_stats + git +
-            awaiting-input count + combined Claude/Codex token total). */}
+        {/* TOP METRICS — auto-fit so the row reflows when narrow */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
             gap: 12,
-            marginBottom: 18,
+            marginBottom: 22,
           }}
         >
-          <Metric label="Sessions" value={String(sessions.length)} sub={runSub(sessions.length)} />
+          <Metric
+            label="Running"
+            value={running ? String(working) : null}
+            sub={
+              running
+                ? `of ${sessions.length} session${sessions.length === 1 ? "" : "s"}`
+                : undefined
+            }
+            accent="live"
+          />
           <Metric
             label="Awaiting input"
             value={running ? String(prompts.length) : null}
@@ -275,26 +300,38 @@ export function Dashboard() {
             accent={prompts.length > 0 ? "wait" : undefined}
           />
           <Metric
-            label="Runtime CPU"
-            value={stats ? `${stats.cpuPct.toFixed(1)}%` : null}
-            fill={stats ? Math.min(100, stats.cpuPct) : null}
+            label="Tokens · 24h"
+            value={haveUsage ? fmtNum(tokToday) : null}
+            sub={
+              haveUsage ? (tokDelta ? `${tokDelta.label} vs yesterday` : "no prior day") : undefined
+            }
+            delta={tokDelta?.tone}
+            spark={haveUsage ? tokSpark : undefined}
           />
           <Metric
-            label="Runtime memory"
-            value={stats ? fmtBytes(stats.memUsed) : null}
-            sub={stats && stats.memLimit > 0 ? `/ ${fmtBytes(stats.memLimit)}` : undefined}
-            fill={stats && stats.memLimit > 0 ? (stats.memUsed / stats.memLimit) * 100 : null}
+            label="Cost · 24h"
+            value={haveUsage ? fmtUsd(costToday) : null}
+            sub={haveUsage ? `${fmtUsd(perTurn)} / turn avg` : undefined}
+            spark={haveUsage ? costSpark : undefined}
           />
           <Metric
-            label="Tokens"
-            value={haveUsage ? fmtNum(totalTokens) : null}
-            sub={haveUsage ? "all-time · in+out" : undefined}
+            label="Context · avg"
+            value={ctxAvg !== null ? fmtNum(ctxAvg) : null}
+            sub={
+              ctxAvg !== null ? "tokens / session · live" : running ? "no live tally" : undefined
+            }
           />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 12 }}>
-          {/* sessions table — real from the store, joined to live activity +
-              per-Claude-session token tally. */}
+        {/* SESSIONS TABLE + ATTENTION/RUNTIME — right column flexes via clamp */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) clamp(280px, 22%, 360px)",
+            gap: 12,
+          }}
+        >
+          {/* table */}
           <div className="ch-card" style={{ padding: 0, minWidth: 0, overflow: "hidden" }}>
             <div
               style={{
@@ -302,16 +339,25 @@ export function Dashboard() {
                 borderBottom: "1px solid var(--bd-soft)",
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
+                gap: 12,
               }}
             >
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>Sessions</span>
+              <div style={{ display: "flex", gap: 4 }}>
+                <FilterBtn label="All" active={filter === "all"} onClick={() => setFilter("all")} />
+                <FilterBtn
+                  label="Running"
+                  active={filter === "running"}
+                  onClick={() => setFilter("running")}
+                />
+              </div>
               <span style={{ flex: 1 }} />
-              <span className="mono tnum" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                {sessions.length}
+              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
+                {running ? `updated ${fmtSince(updatedAt)}` : "runtime offline"}
               </span>
             </div>
-            {sessions.length === 0 ? (
+
+            {visibleSessions.length === 0 ? (
               <div
                 className="mono"
                 style={{
@@ -321,7 +367,9 @@ export function Dashboard() {
                   color: "var(--fg-3)",
                 }}
               >
-                No sessions running. Press ⌘N to start one.
+                {sessions.length === 0
+                  ? "No sessions running. Press ⌘N to start one."
+                  : "No sessions match this filter."}
               </div>
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -329,36 +377,30 @@ export function Dashboard() {
                   <tr>
                     <Th>Session</Th>
                     <Th>Status</Th>
-                    <Th>Workspace</Th>
+                    <Th>Task</Th>
+                    <Th>Branch</Th>
                     <Th align="right">Turns</Th>
                     <Th align="right">Tokens</Th>
-                    <Th align="right">$ est.</Th>
+                    <Th align="right">$</Th>
                     <Th />
                   </tr>
                 </thead>
                 <tbody>
-                  {sessions.map(([session, meta]) => {
-                    const ws = workspaces.find((w) => w.id === meta.workspaceId);
+                  {visibleSessions.map(([session, meta]) => {
                     const badge = MODE_BY_ID[meta.mode].badge;
-                    const created = createdBy.get(session) ?? 0;
-                    const age = created > 0 ? fmtAge(created) : null;
                     const awaiting = awaitingSet.has(session);
-                    const working = stateBy.get(session) === "working";
-                    const st: StatusKey = awaiting ? "wait" : working ? "live" : "idle";
-                    // Per-row tokens/turns/cost: real for Claude (transcript id),
-                    // em-dash for Codex/Antigravity (no per-tmux id to join).
+                    const isWorking = stateBy.get(session) === "working";
+                    const st: StatusKey = awaiting ? "wait" : isWorking ? "live" : "idle";
                     const su = meta.claudeId ? claudeBySession[meta.claudeId] : undefined;
                     const rowTokens =
                       meta.cli === "claude" && su ? su.tokensIn + su.tokensOut : null;
                     const rowTurns = meta.cli === "claude" && su ? su.turns : null;
+                    const task = taskBy.get(session) ?? null;
                     return (
                       <tr
                         key={session}
-                        style={{
-                          borderBottom: "1px solid var(--bd-soft)",
-                          cursor: "pointer",
-                        }}
                         className="rail-file"
+                        style={{ borderBottom: "1px solid var(--bd-soft)", cursor: "pointer" }}
                         onClick={() => open(session)}
                       >
                         <Td>
@@ -390,10 +432,23 @@ export function Dashboard() {
                           </div>
                         </Td>
                         <Td>
+                          <span
+                            style={{
+                              color: task ? "var(--fg-1)" : "var(--fg-3)",
+                              display: "block",
+                              maxWidth: 240,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                            title={task ?? undefined}
+                          >
+                            {task ?? "—"}
+                          </span>
+                        </Td>
+                        <Td>
                           <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
-                            {SPEC_BY_CLI[meta.cli].label}
-                            {ws && ` · tab ${ws.plate}`}
-                            {age && ` · up ${age}`}
+                            {git?.isRepo ? (git.branch ?? "(detached)") : "—"}
                           </span>
                         </Td>
                         <Td align="right">
@@ -407,9 +462,8 @@ export function Dashboard() {
                           </span>
                         </Td>
                         <Td align="right">
-                          {/* Per-session cost is not derivable from the live
-                              tally (no per-model split) — honest em-dash; the
-                              aggregate estimate is in the Token usage card. */}
+                          {/* per-session cost has no per-model split in the live
+                              tally — honest em-dash; aggregate is in Token usage. */}
                           <span className="mono tnum" style={{ color: "var(--fg-3)" }}>
                             —
                           </span>
@@ -433,44 +487,136 @@ export function Dashboard() {
             )}
           </div>
 
-          {/* right column — attention queue + workspace + recent commits */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-            <AttentionQueue
-              prompts={prompts}
-              sessionMeta={sessionMeta}
-              running={running}
-              onRespond={respond}
-              onOpen={open}
-            />
-
-            <div className="ch-card" style={{ padding: 14, minWidth: 0 }}>
-              <div className="lbl" style={{ marginBottom: 10 }}>
-                Workspace
-              </div>
-              <WorkspaceSummary git={git} running={running} />
+          {/* attention queue + runtime resource bar (one card, design layout) */}
+          <div
+            className="ch-card"
+            style={{ display: "flex", flexDirection: "column", minWidth: 0 }}
+          >
+            <div
+              style={{
+                padding: "10px 14px",
+                borderBottom: "1px solid var(--bd-soft)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span
+                className={prompts.length > 0 ? "dot wait" : "dot off"}
+                style={{ width: 6, height: 6 }}
+              />
+              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+                Needs attention
+              </span>
+              <span style={{ flex: 1 }} />
+              <span className="mono tnum" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                {prompts.length}
+              </span>
             </div>
 
-            <div className="ch-card" style={{ padding: 0, minWidth: 0 }}>
+            {prompts.length === 0 ? (
               <div
+                className="mono"
                 style={{
-                  padding: "10px 14px",
-                  borderBottom: "1px solid var(--bd-soft)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
+                  padding: "18px 14px",
+                  textAlign: "center",
+                  fontSize: 11,
+                  color: "var(--fg-3)",
                 }}
               >
-                <span className="lbl">Recent commits</span>
-                <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                  git log /workspace
-                </span>
+                {running ? "Nothing waiting." : "Runtime not running."}
               </div>
-              <Commits commits={commits} running={running} isRepo={git?.isRepo ?? null} />
+            ) : (
+              <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                {prompts.map((p) => {
+                  const m = sessionMeta[p.session];
+                  return (
+                    <div
+                      key={p.session}
+                      style={{
+                        padding: 10,
+                        border: "1px solid color-mix(in oklab, var(--wait) 30%, var(--bd))",
+                        borderRadius: 7,
+                        background: "color-mix(in oklab, var(--wait) 6%, transparent)",
+                      }}
+                    >
+                      <div
+                        style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}
+                      >
+                        {m && <AgentGlyph agent={m.cli} size={12} color={`var(--a-${m.cli})`} />}
+                        <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-0)" }}>
+                          {m ? m.alias : p.session}
+                        </span>
+                        <span style={{ flex: 1 }} />
+                        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                          {fmtSince(p.since)}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "var(--fg-1)",
+                          marginBottom: 9,
+                          lineHeight: 1.4,
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {p.message ?? "Awaiting your input"}
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Button
+                          size="sm"
+                          style={{ flex: 1, justifyContent: "center" }}
+                          onClick={() => respond(p.session, true)}
+                        >
+                          Approve
+                          <span className="kbd" style={{ marginLeft: 6 }}>
+                            ⏎
+                          </span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          style={{ justifyContent: "center" }}
+                          onClick={() => respond(p.session, false)}
+                        >
+                          Deny
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          style={{ justifyContent: "center" }}
+                          onClick={() => open(p.session)}
+                        >
+                          Open
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ padding: 12, borderTop: "1px solid var(--bd-soft)", marginTop: "auto" }}>
+              <div className="lbl" style={{ marginBottom: 8 }}>
+                Runtime
+              </div>
+              {running && stats ? (
+                <ResourceBar
+                  name={status?.name ?? "codehub-runtime"}
+                  cpu={Math.min(100, stats.cpuPct)}
+                  mem={stats.memLimit > 0 ? (stats.memUsed / stats.memLimit) * 100 : 0}
+                />
+              ) : (
+                <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                  {running ? "Reading stats…" : "Runtime not running."}
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* bottom: activity chart + per-agent token usage */}
+        {/* BOTTOM: activity chart + per-agent token usage */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
           <div className="ch-card" style={{ padding: 16, minWidth: 0 }}>
             <div
@@ -516,10 +662,6 @@ export function Dashboard() {
   );
 }
 
-function runSub(n: number): string {
-  return n === 0 ? "none yet" : "on the shared runtime";
-}
-
 // Sub-line for the "Awaiting input" metric: name the single waiting session, or
 // summarize, or stay quiet.
 function awaitingSub(
@@ -534,132 +676,86 @@ function awaitingSub(
   return `${prompts.length} sessions`;
 }
 
-// A row's numeric cell is bright when it has a real value, faint when em-dashed.
 function cellColor(v: number | null): string {
   return v !== null ? "var(--fg-1)" : "var(--fg-3)";
 }
 
-// ── attention queue ─────────────────────────────────────────────────────────
+// ── sessions-table filter pill ──────────────────────────────────────────────
 
-function AttentionQueue({
-  prompts,
-  sessionMeta,
-  running,
-  onRespond,
-  onOpen,
-}: {
-  prompts: PendingPrompt[];
-  sessionMeta: Record<string, { cli: string; alias: string }>;
-  running: boolean;
-  onRespond: (session: string, allow: boolean) => void;
-  onOpen: (session: string) => void;
-}) {
+function FilterBtn({
+  label,
+  active,
+  onClick,
+}: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <div className="ch-card" style={{ padding: 0, minWidth: 0, overflow: "hidden" }}>
+    <button
+      type="button"
+      onClick={onClick}
+      className="mono"
+      style={{
+        fontSize: 10.5,
+        padding: "2px 8px",
+        borderRadius: 5,
+        border: "1px solid transparent",
+        background: active ? "var(--bg-3)" : "transparent",
+        color: active ? "var(--fg-0)" : "var(--fg-2)",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ── runtime resource bar (one container, design ContainerBar shape) ──────────
+
+function ResourceBar({ name, cpu, mem }: { name: string; cpu: number; mem: number }) {
+  return (
+    <div>
       <div
         style={{
-          padding: "10px 14px",
-          borderBottom: "1px solid var(--bd-soft)",
           display: "flex",
-          alignItems: "center",
-          gap: 8,
+          justifyContent: "space-between",
+          fontSize: 10.5,
+          fontFamily: "var(--mono)",
+          color: "var(--fg-1)",
+          marginBottom: 4,
         }}
       >
         <span
-          className={prompts.length > 0 ? "dot wait" : "dot off"}
-          style={{ width: 6, height: 6 }}
-        />
-        <span className="lbl">Needs attention</span>
-        <span style={{ flex: 1 }} />
-        <span className="mono tnum" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-          {prompts.length}
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: "60%",
+          }}
+        >
+          {name}
+        </span>
+        <span style={{ color: "var(--fg-2)" }}>
+          cpu {cpu.toFixed(0)}% · mem {mem.toFixed(0)}%
         </span>
       </div>
-      {prompts.length === 0 ? (
-        <div
-          className="mono"
-          style={{ padding: "18px 14px", textAlign: "center", fontSize: 11, color: "var(--fg-3)" }}
-        >
-          {running ? "Nothing waiting." : "Runtime not running."}
+      <div style={{ display: "flex", gap: 3, height: 4 }}>
+        <div style={{ flex: 1, background: "var(--bg-3)", borderRadius: 999, overflow: "hidden" }}>
+          <div
+            style={{
+              width: `${cpu}%`,
+              height: "100%",
+              background: cpu > 60 ? "var(--wait)" : "var(--live)",
+            }}
+          />
         </div>
-      ) : (
-        <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-          {prompts.map((p) => {
-            const m = sessionMeta[p.session];
-            return (
-              <div
-                key={p.session}
-                style={{
-                  padding: 10,
-                  border: "1px solid color-mix(in oklab, var(--wait) 30%, var(--bd))",
-                  borderRadius: 7,
-                  background: "color-mix(in oklab, var(--wait) 6%, transparent)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                  {m && <AgentGlyph agent={m.cli} size={12} color={`var(--a-${m.cli})`} />}
-                  <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-0)" }}>
-                    {m ? m.alias : p.session}
-                  </span>
-                  <span style={{ flex: 1 }} />
-                  <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                    {fmtSince(p.since)}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "var(--fg-1)",
-                    marginBottom: 9,
-                    lineHeight: 1.4,
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {p.message ?? "Awaiting your input"}
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <Button
-                    size="sm"
-                    style={{ flex: 1, justifyContent: "center" }}
-                    onClick={() => onRespond(p.session, true)}
-                  >
-                    Approve
-                    <span className="kbd" style={{ marginLeft: 6 }}>
-                      ⏎
-                    </span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    style={{ justifyContent: "center" }}
-                    onClick={() => onRespond(p.session, false)}
-                  >
-                    Deny
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    style={{ justifyContent: "center" }}
-                    onClick={() => onOpen(p.session)}
-                  >
-                    Open
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ flex: 1, background: "var(--bg-3)", borderRadius: 999, overflow: "hidden" }}>
+          <div style={{ width: `${mem}%`, height: "100%", background: "var(--idle)" }} />
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
 // ── activity chart ──────────────────────────────────────────────────────────
 
-// 24 hourly buckets of turns/hour, split Claude vs Codex, from the real
-// activity-history feed (prompt_submit = one turn boundary). Antigravity never
-// emits hook events, so it's honestly absent (no third series). Empty history
-// (no events captured yet) → honest empty note rather than a flat fake chart.
 function ActivityChart({
   history,
   sessionMeta,
@@ -671,12 +767,11 @@ function ActivityChart({
 }) {
   const now = Date.now();
   const windowMs = 24 * 3600 * 1000;
-  // 24 buckets, index 0 = 23h ago … 23 = current hour.
   const claude = new Array(24).fill(0);
   const codex = new Array(24).fill(0);
   let any = false;
   for (const e of history) {
-    if (e.kind !== "prompt_submit") continue; // count turn starts only
+    if (e.kind !== "prompt_submit") continue;
     const ageMs = now - e.at;
     if (ageMs < 0 || ageMs > windowMs) continue;
     const bucket = 23 - Math.floor(ageMs / 3600000);
@@ -721,7 +816,7 @@ function ActivityChart({
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: 24 fixed hourly buckets, never reordered.
               key={i}
-              title={`${String(i === 23 ? hourLabel(now) : hourLabel(now - (23 - i) * 3600000))} · claude ${c} · codex ${x}`}
+              title={`${hourLabel(now - (23 - i) * 3600000)} · claude ${c} · codex ${x}`}
               style={{
                 flex: 1,
                 display: "flex",
@@ -776,8 +871,6 @@ function hourLabel(epochMs: number): string {
 
 // ── per-agent token usage ───────────────────────────────────────────────────
 
-// One row per agent with real on-disk data (Claude, Codex). Antigravity is
-// listed but honestly marked "not installed" — never a fabricated bar.
 function AgentUsageRows({
   claude,
   codex,
@@ -816,7 +909,6 @@ function AgentUsageRows({
         cost={codex?.estCostUsd ?? 0}
         pct={codexTok / maxTok}
       />
-      {/* Antigravity: not installed in the runtime image → no readable data. */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: 0.6 }}>
         <AgentGlyph agent="antigravity" size={16} color="var(--a-antigravity)" />
         <span style={{ flex: 1, fontSize: 12.5, color: "var(--fg-2)" }}>
@@ -899,7 +991,7 @@ function UsageRow({
   );
 }
 
-// ── table cells ─────────────────────────────────────────────────────────────
+// ── table cells / legend ────────────────────────────────────────────────────
 
 function Th({ children, align }: { children?: React.ReactNode; align?: "left" | "right" }) {
   return (
@@ -945,211 +1037,101 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
-// Branch + ahead/behind + changed-file count, or an honest one-liner.
-function WorkspaceSummary({ git, running }: { git: GitStatus | null; running: boolean }) {
-  if (git === null) {
-    return <Note>{running ? "Reading workspace…" : "Runtime not running."}</Note>;
-  }
-  if (!git.isRepo) {
-    return <Note>/workspace is not a git repository.</Note>;
-  }
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ flexShrink: 0, color: "var(--fg-2)" }}>{Ico.branch}</span>
-        <span
-          className="mono"
-          style={{
-            fontSize: 12,
-            color: "var(--fg-0)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {git.branch ?? "(detached)"}
-        </span>
-        {git.ahead > 0 && (
-          <span className="mono tnum" style={{ fontSize: 11, color: "var(--live)" }}>
-            ↑{git.ahead}
-          </span>
-        )}
-        {git.behind > 0 && (
-          <span className="mono tnum" style={{ fontSize: 11, color: "var(--wait)" }}>
-            ↓{git.behind}
-          </span>
-        )}
-      </div>
-      <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
-        {git.total === 0
-          ? "Working tree clean."
-          : `${git.total} changed ${git.total === 1 ? "file" : "files"}`}
-      </div>
-    </div>
-  );
-}
+// ── metric card ─────────────────────────────────────────────────────────────
 
-// The recent-commit list, or an honest one-liner per non-list state.
-function Commits({
-  commits,
-  running,
-  isRepo,
-}: {
-  commits: CommitInfo[] | null;
-  running: boolean;
-  isRepo: boolean | null;
-}) {
-  if (commits === null) {
-    return <Note pad>{running ? "Reading commits…" : "Runtime not running."}</Note>;
-  }
-  if (commits.length === 0) {
-    return <Note pad>{isRepo === false ? "Not a git repository." : "No commits yet."}</Note>;
-  }
-  return (
-    <div className="scroll" style={{ maxHeight: 240, overflow: "auto" }}>
-      {commits.map((c) => (
-        <div
-          key={c.hash}
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            gap: 10,
-            padding: "7px 14px",
-            borderBottom: "1px solid var(--bd-soft)",
-          }}
-        >
-          <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", flexShrink: 0 }}>
-            {c.hash.slice(0, 7)}
-          </span>
-          <span
-            style={{
-              flex: 1,
-              minWidth: 0,
-              fontSize: 11.5,
-              color: "var(--fg-1)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-            title={`${c.subject} — ${c.author}`}
-          >
-            {c.subject}
-          </span>
-          <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)", flexShrink: 0 }}>
-            {c.relative}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Note({ children, pad }: { children: React.ReactNode; pad?: boolean }) {
-  return (
-    <div
-      className="mono"
-      style={{
-        padding: pad ? "28px 14px" : 0,
-        textAlign: pad ? "center" : "left",
-        fontSize: 11.5,
-        color: "var(--fg-3)",
-        lineHeight: 1.5,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// A dashboard metric. `value === null` → em-dash + hatched bar (no reading yet /
-// runtime down). A `fill` (0-100) draws a proportional bar; otherwise a flat one.
-// `accent` tints the value + sub when the metric warrants attention (e.g. wait).
+// A dashboard metric card (design Metric). `value === null` → em-dash + hatched
+// bar (no reading yet / runtime down). `spark` draws a real sparkline beside the
+// value; `accent` tints the value + sub; `delta` colors the sub up/down.
 function Metric({
   label,
   value,
   sub,
-  fill,
+  spark,
   accent,
+  delta,
 }: {
   label: string;
-  value?: string | null;
+  value: string | null;
   sub?: string;
-  fill?: number | null;
-  accent?: "wait" | "live";
+  spark?: number[];
+  accent?: "live" | "wait";
+  delta?: "up" | "down";
 }) {
-  const accentColor = accent === "wait" ? "var(--wait)" : accent === "live" ? "var(--live)" : null;
+  const accentColor = accent === "live" ? "var(--live)" : accent === "wait" ? "var(--wait)" : null;
+  const deltaColor = delta === "up" ? "var(--live)" : delta === "down" ? "var(--err)" : null;
+  const subColor = accentColor ?? deltaColor ?? "var(--fg-3)";
+  const sparkColor = accentColor ?? "var(--fg-1)";
   return (
     <div
       className="ch-card"
       style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6 }}
     >
       <div className="lbl">{label}</div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span
           className="mono tnum"
           style={{
-            fontSize: 24,
+            fontSize: 28,
             fontWeight: 500,
+            letterSpacing: "-0.02em",
             color: value ? (accentColor ?? "var(--fg-0)") : "var(--fg-3)",
           }}
         >
           {value ?? "—"}
         </span>
-        {value && sub && (
-          <span className="mono tnum" style={{ fontSize: 11, color: accentColor ?? "var(--fg-3)" }}>
-            {sub}
-          </span>
+        {value && spark && spark.length > 0 && (
+          <Spark data={spark} w={70} h={20} color={sparkColor} fill />
         )}
       </div>
-      {typeof fill === "number" && value ? (
-        <div
-          style={{ height: 4, borderRadius: 999, background: "var(--bg-3)", overflow: "hidden" }}
-        >
-          <div
-            style={{
-              height: "100%",
-              width: `${Math.max(2, Math.min(100, fill))}%`,
-              background: "var(--live)",
-              opacity: 0.6,
-            }}
-          />
+      {value && sub ? (
+        <div className="mono" style={{ fontSize: 10.5, color: subColor }}>
+          {sub}
         </div>
       ) : (
         <div
           style={{
             height: 4,
             borderRadius: 999,
-            background: value
-              ? "var(--bg-3)"
-              : "repeating-linear-gradient(45deg, var(--bg-3) 0 6px, transparent 6px 12px)",
-            opacity: value ? 1 : 0.5,
+            marginTop: 2,
+            background: "repeating-linear-gradient(45deg, var(--bg-3) 0 6px, transparent 6px 12px)",
+            opacity: 0.5,
           }}
         />
       )}
-      {!sub && <div style={{ height: 14 }} />}
     </div>
   );
 }
 
 // ── formatters ──────────────────────────────────────────────────────────────
 
-// Compact age from a Unix epoch (seconds): "<1m", "12m", "3h", "2d".
-function fmtAge(epochSec: number): string {
-  const s = Math.max(0, Math.floor(Date.now() / 1000 - epochSec));
-  if (s < 60) return "<1m";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
+// UTC `YYYY-MM-DD` for `offset` days from today (0 = today, -1 = yesterday).
+// byDay dates are UTC, so the comparison stays consistent across timezones.
+function utcDay(offset: number): string {
+  return new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
 }
 
-// Compact "time since" from an epoch-ms instant (the prompt was raised).
+// The last `n` calendar days of a per-day map, oldest→newest, zero-filled.
+function lastNDays(map: Map<string, number>, n: number): number[] {
+  const out: number[] = [];
+  for (let i = n - 1; i >= 0; i--) out.push(map.get(utcDay(-i)) ?? 0);
+  return out;
+}
+
+// Percent delta of `cur` vs `prev`, or null when there's no prior baseline.
+function pctDelta(cur: number, prev: number): { label: string; tone: "up" | "down" } | null {
+  if (prev <= 0) return null;
+  const p = Math.round(((cur - prev) / prev) * 100);
+  return { label: `${p >= 0 ? "+" : ""}${p}%`, tone: p >= 0 ? "up" : "down" };
+}
+
+// Compact "time since" from an epoch-ms instant.
 function fmtSince(epochMs: number): string {
   const s = Math.max(0, Math.floor((Date.now() - epochMs) / 1000));
   if (s < 10) return "just now";
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
 // Compact token count: 1_234_567 → "1.2M", 12_300 → "12.3K", 540 → "540".
@@ -1169,13 +1151,4 @@ function fmtNum(n: number): string {
 function fmtUsd(n: number): string {
   if (n > 0 && n < 0.01) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
-}
-
-// Human-readable bytes (binary units), matching the Containers view formatter.
-function fmtBytes(n: number): string {
-  if (n <= 0) return "0 B";
-  const units = ["B", "kB", "MB", "GB", "TB"];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  const v = n / 1024 ** i;
-  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
 }
