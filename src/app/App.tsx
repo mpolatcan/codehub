@@ -7,6 +7,7 @@ import { ActivityRail } from "./components/hub/ActivityRail";
 import { CommandPalette } from "./components/hub/CommandPalette";
 import { DiffViewer } from "./components/hub/DiffViewer";
 import { FilesBrowser } from "./components/hub/FilesBrowser";
+import { GroupsBar } from "./components/hub/GroupsBar";
 import { HubSidebar } from "./components/hub/HubSidebar";
 import { HubStatusBar } from "./components/hub/HubStatusBar";
 import { HubTabs } from "./components/hub/HubTabs";
@@ -16,6 +17,7 @@ import { WorkspaceBar } from "./components/hub/WorkspaceBar";
 import { useActivityPoll } from "./hooks/useActivityPoll";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useContainerStatsPoll } from "./hooks/useContainerStatsPoll";
+import { useGitStatusPoll } from "./hooks/useGitStatusPoll";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { listen } from "./lib/bridge";
 import { ipc } from "./lib/ipc";
@@ -43,6 +45,8 @@ export function App() {
   useKeyboard();
   // One app-wide runtime-stats poll, shared by every resource gauge (see hook).
   useContainerStatsPoll();
+  // One app-wide /workspace git poll, shared by the activity rail + Hub meta strip.
+  useGitStatusPoll();
   useEffect(() => {
     void initLifecycle();
   }, []);
@@ -132,6 +136,8 @@ function HubView() {
   // Resume drawer docks at the right, replacing the activity-rail slot (design
   // resume.jsx). The drawer self-gates on the same flag, so it's null when closed.
   const resume = useOverlay((s) => s.resume);
+  // The drawer can dock left (before the hub) or right (replacing the rail).
+  const resumeSide = useOverlay((s) => s.resumeSide);
   // Real working/idle signal for PaneHead + the rail's Activity section.
   useActivityPoll();
   // Live awaiting-input + turn-history stream (← agent-native hooks, §7): keeps
@@ -141,6 +147,7 @@ function HubView() {
 
   return (
     <>
+      {resume && resumeSide === "left" && <ResumeDrawer />}
       {files && <FilesBrowser onClose={() => setFiles(false)} />}
       <main
         style={{
@@ -153,12 +160,14 @@ function HubView() {
       >
         <RuntimeBanner />
         <HubTabs />
-        {active?.root ? (
+        {active ? (
           <>
-            <WorkspaceBar />
+            <GroupsBar ws={active} />
             <div className="hub-grid">
               <Grid ws={active} />
             </div>
+            {/* Design order below the grid: meta strip → pane actions → status. */}
+            <WorkspaceBar />
             {/* Bottom chrome: Files / Shell / Diff + Resume + the spawn CTA. Only
                 with a live pane grid — the empty hero owns the space otherwise. */}
             <ActionBar />
@@ -177,7 +186,7 @@ function HubView() {
       </main>
 
       {diff !== null && <DiffViewer path={diff} onClose={() => setDiff(null)} />}
-      {resume ? <ResumeDrawer /> : <ActivityRail />}
+      {resume && resumeSide === "right" ? <ResumeDrawer /> : <ActivityRail />}
     </>
   );
 }

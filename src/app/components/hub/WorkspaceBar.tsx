@@ -1,130 +1,73 @@
-import { useEffect, useState } from "react";
-import { Spark } from "../../components/primitives/Spark";
 import { Ico } from "../../components/primitives/icons";
-import { useStore } from "../../lib/store";
+import { activeWorkspace, useStore } from "../../lib/store";
+import { workspaceLeaves } from "../../lib/tree";
 
-// Container-level info bar, ported from design/screens/main-hub-a.jsx.
+// Workspace meta strip, ported from design/screens/main-hub-a.jsx. Sits BELOW
+// the group grid, between the grid and the pane-actions bar (design order:
+// grid → meta strip → actions → status).
 //
-// REAL: container identity + runtime state + Docker version (Tier-1), and live
-// cpu / mem from `container_stats` (polled ~2s while the runtime is up, same
-// cadence as the Containers view). cpu also feeds a small sparkline of the last
-// readings.
-//
-// HONEST EM-DASH: ci / tests / lint have NO data source in the backend, and cost
-// is a per-workspace estimate we do not aggregate here (it lives on the Usage
-// screen with its disclosure) — all shown as em-dashes, never fabricated.
-// Keep a short rolling window of cpu readings for the sparkline.
-const SPARK_LEN = 24;
-
-// Memory as the design renders it — binary GiB with one decimal ("1.2/4 GiB").
-// memLimit can be 0 when the daemon doesn't report a limit → omit the divisor.
-function fmtGiB(bytes: number): string {
-  return (bytes / 1024 ** 3).toFixed(1);
-}
+// REAL, git-only: the /workspace working-tree summary from the shared
+// container_git_status poll (branch + ahead/behind + uncommitted count). The
+// design's multi-repo "2 repos" count and CI ✓ / tests / lint badges have NO
+// backend source (CodeHub mounts ONE /workspace, and there's no CI/test runner
+// wired) — they're dropped rather than faked. The right side shows the real
+// agent count for this workspace; per-spend cost lives on the Usage screen.
+const AGENT_CLIS = new Set(["claude", "codex", "antigravity"]);
 
 export function WorkspaceBar() {
-  const status = useStore((s) => s.status);
-  const dockerInfo = useStore((s) => s.dockerInfo);
-  const live = status?.state === "running";
+  const git = useStore((s) => s.gitStatus);
+  const ws = useStore(activeWorkspace);
+  const sessionMeta = useStore((s) => s.sessionMeta);
 
-  // Live cpu/mem come from the single app-wide poll (useContainerStatsPoll) via
-  // the store; the cpu sparkline accumulates a short rolling window locally.
-  const stats = useStore((s) => s.containerStats);
-  const [cpuHist, setCpuHist] = useState<number[]>([]);
-
-  useEffect(() => {
-    if (!live || !stats) {
-      setCpuHist([]);
-      return;
-    }
-    setCpuHist((h) => [...h, stats.cpuPct].slice(-SPARK_LEN));
-  }, [live, stats]);
-
-  const memText =
-    stats && stats.memLimit > 0
-      ? `${fmtGiB(stats.memUsed)}/${fmtGiB(stats.memLimit)} GiB`
-      : stats
-        ? `${fmtGiB(stats.memUsed)} GiB`
-        : "—";
+  // Count agent panes (exclude shell/utility panes) across all groups of the tab.
+  const sessions = ws ? workspaceLeaves(ws) : [];
+  const agentCount = sessions.filter((s) => AGENT_CLIS.has(sessionMeta[s]?.cli ?? "")).length;
+  const groupCount = ws?.groups.length ?? 0;
 
   return (
     <div
       style={{
-        height: 32,
+        height: 26,
+        flexShrink: 0,
         display: "flex",
         alignItems: "center",
-        gap: 12,
+        gap: 14,
         padding: "0 14px",
-        borderBottom: "1px solid var(--bd-soft)",
+        borderTop: "1px solid var(--bd-soft)",
         background: "var(--bg-1)",
-        flexShrink: 0,
         fontFamily: "var(--mono)",
         fontSize: 11,
         color: "var(--fg-2)",
       }}
     >
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--fg-1)" }}>
-        {Ico.container}
-        <span>{status?.name ?? "codehub-runtime"}</span>
-      </span>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title="Runtime state">
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: live ? "var(--live)" : "var(--fg-3)",
-          }}
-        />
-        <span style={{ color: "var(--fg-1)" }}>{status?.state ?? "—"}</span>
-      </span>
-      {dockerInfo?.version && (
-        <>
-          <span className="vr" style={{ height: 14 }} />
-          <span title="Docker daemon version">docker {dockerInfo.version}</span>
-        </>
-      )}
-
-      <span className="vr" style={{ height: 14 }} />
-
-      {/* ci / tests / lint — no backend source. Honest em-dash, never faked. */}
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title="CI — no source">
-        <span style={{ color: "var(--fg-1)" }}>ci</span>
-        <span style={{ color: "var(--fg-3)" }}>—</span>
-      </span>
+      {/* /workspace git summary — real, from the shared git poll. */}
       <span
-        style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-        title="Tests — no source"
+        style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "var(--fg-1)" }}
+        title={git?.isRepo ? `/workspace · ${git.branch ?? "detached"}` : "/workspace"}
       >
-        <span style={{ color: "var(--fg-1)" }}>tests</span>
-        <span style={{ color: "var(--fg-3)" }}>—</span>
-      </span>
-      <span
-        style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-        title="Lint — no source"
-      >
-        <span style={{ color: "var(--fg-1)" }}>lint</span>
-        <span style={{ color: "var(--fg-3)" }}>—</span>
+        {Ico.branch}
+        {git?.isRepo ? (
+          <>
+            <span>{git.branch ?? "detached"}</span>
+            {git.total > 0 ? (
+              <span style={{ color: "var(--wait)" }}>+{git.total} uncommitted</span>
+            ) : (
+              <span style={{ color: "var(--fg-3)" }}>clean</span>
+            )}
+            {git.ahead > 0 && <span style={{ color: "var(--fg-3)" }}>↑{git.ahead}</span>}
+            {git.behind > 0 && <span style={{ color: "var(--fg-3)" }}>↓{git.behind}</span>}
+          </>
+        ) : (
+          <span style={{ color: "var(--fg-3)" }}>not a git repository</span>
+        )}
       </span>
 
       <span style={{ flex: 1 }} />
 
-      {/* live cpu (+ sparkline) / mem from container_stats */}
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title="CPU">
-        {cpuHist.length > 1 && (
-          <Spark data={cpuHist} w={36} h={10} color={live ? "var(--live)" : "var(--fg-3)"} />
-        )}
-        <span className="tnum" style={{ color: "var(--fg-1)" }}>
-          cpu {stats ? `${stats.cpuPct.toFixed(0)}%` : "—"}
-        </span>
+      <span title="Agent panes in this workspace">
+        {agentCount} agent{agentCount === 1 ? "" : "s"}
       </span>
-      <span className="tnum" style={{ color: "var(--fg-1)" }} title="Memory">
-        mem {memText}
-      </span>
-      {/* per-workspace cost is an estimate aggregated on the Usage screen, not here */}
-      <span style={{ color: "var(--fg-3)" }} title="Cost — see Usage screen">
-        $ —
-      </span>
+      {groupCount > 1 && <span style={{ color: "var(--fg-3)" }}>{groupCount} groups</span>}
     </div>
   );
 }

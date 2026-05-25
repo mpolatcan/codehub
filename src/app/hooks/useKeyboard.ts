@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import { splitKey, useLauncher } from "../lib/launcher";
+import { groupKey, splitKey, useLauncher } from "../lib/launcher";
 import { useOverlay } from "../lib/overlay";
 import { confirmCloseRunningSession, useStore } from "../lib/store";
-import type { SplitDir } from "../lib/tree";
+import { type SplitDir, activeGroup } from "../lib/tree";
 
 // Split the focused pane along its longer visible axis — wider panes split into
 // a row (side-by-side), taller ones into a column. Compares the leaf's dataset
@@ -22,7 +22,9 @@ export function autoSplitDir(session: string): SplitDir {
 //   ⌘/Ctrl \  — split the focused pane (longer axis); ⌘⇧\ forces a column split
 //   ⌘/Ctrl E  — toggle the Files docked viewer
 //   ⌘/Ctrl D  — toggle the all-changes Diff viewer
+//   ⌘B        — collapse/expand the sidebar (design AppSidebar rail)
 //   ⌘⇧B       — add a Shell pane (split the focused pane, else a new tab)
+//   ⌘G        — spawn a new agent into a fresh group (design SpawnPlacementMenu)
 //   ⌘/Ctrl R  — toggle the Resume drawer (docked over the hub)
 //   ⌘/Ctrl K  — command palette
 //   ⌘/Ctrl /  — keyboard-shortcuts cheat sheet
@@ -42,6 +44,8 @@ export function useKeyboard() {
       const launcher = useLauncher.getState();
       const overlay = useOverlay.getState();
       const ws = store.workspaces.find((w) => w.id === store.activeWorkspaceId);
+      // The focused session of the active group — every grid shortcut acts on it.
+      const focused = ws ? (activeGroup(ws)?.focused ?? null) : null;
 
       // While the palette / cheat sheet is open, only the two toggles below stay
       // live (so ⌘K and ⌘/ can dismiss). Everything else — ⌘W, ⌘\, ⌘N, ⌘1-9 —
@@ -86,10 +90,10 @@ export function useKeyboard() {
           useOverlay.getState().toggleShortcuts();
           break;
         case "w":
-          if (!ws?.focused) return;
+          if (!focused) return;
           e.preventDefault();
-          if (!confirmCloseRunningSession(ws.focused)) return;
-          void store.closeSession(ws.focused);
+          if (!confirmCloseRunningSession(focused)) return;
+          void store.closeSession(focused);
           break;
         case "e": // toggle the Files docked viewer
           e.preventDefault();
@@ -110,18 +114,28 @@ export function useKeyboard() {
             overlay.setResume(true);
           }
           break;
-        case "b": // ⌘⇧B — add a Shell pane
-          if (!e.shiftKey) return;
+        case "b":
           e.preventDefault();
-          if (ws?.focused)
-            void store.splitSession(ws.focused, autoSplitDir(ws.focused), "shell", "standard");
+          // ⌘B collapses/expands the sidebar (design AppSidebar); ⌘⇧B adds a Shell pane.
+          if (!e.shiftKey) {
+            store.toggleSidebar();
+            return;
+          }
+          if (focused) void store.splitSession(focused, autoSplitDir(focused), "shell", "standard");
           else void store.newPlate("shell", "standard");
           break;
+        case "g": {
+          // ⌘G — spawn a new agent into a fresh group of the active workspace.
+          if (!ws) return;
+          e.preventDefault();
+          const gid = store.addGroup(ws.id);
+          launcher.open(groupKey(gid), { dir: "row", groupId: gid, workspaceId: ws.id });
+          break;
+        }
         case "|":
         case "\\": {
-          if (!ws?.focused) return;
+          if (!focused) return;
           e.preventDefault();
-          const focused = ws.focused;
           // ⌘⇧\ (arrives as "|") forces a downward column split; plain ⌘\ picks
           // the longer visible axis automatically.
           const dir: SplitDir = e.shiftKey ? "col" : autoSplitDir(focused);

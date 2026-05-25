@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AgentGlyph } from "../../components/primitives/AgentGlyph";
 import { StatusBadge } from "../../components/primitives/StatusBadge";
 import { StatusDot } from "../../components/primitives/StatusDot";
@@ -19,42 +19,20 @@ import { useStore } from "../../lib/store";
 // Right activity rail, ported from design/screens/main-hub-a.jsx.
 //
 // "Changes" is real: the /workspace working-tree status from
-// `container_git_status` (branch + ahead/behind + changed files), polled while
-// the runtime is up. "Activity" is real too: each session's live working/idle
-// state from `session_activity` (derived from pane output flow). It shows
-// *current* state per session, not a turn-by-turn history — a historical feed
-// with token/cost per turn still needs per-turn capture (BACKEND_PLAN.md).
+// `container_git_status` (branch + ahead/behind + changed files), read from the
+// shared store poll (useGitStatusPoll). "Activity" is real too: each session's
+// live working/idle state from `session_activity` (derived from pane output
+// flow). It shows *current* state per session, not a turn-by-turn history — a
+// historical feed with token/cost per turn still needs per-turn capture.
 export function ActivityRail() {
-  const status = useStore((s) => s.status);
-  const running = status?.state === "running";
-
-  // Poll the workspace git status while running + mounted. One-shot reads ~5s
-  // apart; a failed read (container stopped mid-poll) clears to null → the
-  // section falls back to its placeholder rather than freezing a stale list.
-  const [git, setGit] = useState<GitStatus | null>(null);
+  const running = useStore((s) => s.status?.state === "running");
+  // Workspace git status from the single app-wide poll (useGitStatusPoll); null
+  // while the runtime is down → the Changes section falls back to its placeholder.
+  const git = useStore((s) => s.gitStatus);
   // Opening a changed file routes through the overlay store so the docked diff
   // panel (rendered by HubView) shows it. The panel itself lives outside the
   // rail now; here we only set which path is open (a path, or "" for all).
   const setDiffPath = useOverlay((s) => s.setDiff);
-  useEffect(() => {
-    if (!running) {
-      setGit(null);
-      return;
-    }
-    let alive = true;
-    const tick = () => {
-      ipc
-        .containerGitStatus()
-        .then((g) => alive && setGit(g))
-        .catch(() => alive && setGit(null));
-    };
-    tick();
-    const h = setInterval(tick, 5000);
-    return () => {
-      alive = false;
-      clearInterval(h);
-    };
-  }, [running]);
 
   return (
     <aside
@@ -430,10 +408,68 @@ function PromptToasts() {
 
   if (prompts.length === 0) return null;
 
+  // Bulk action when more than one agent is waiting (design hub-states
+  // HubStateApprovals): fire respond_prompt for every pending session at once.
+  const respondAll = (allow: boolean) => {
+    for (const p of prompts) respond(p.session, allow);
+  };
+
   return (
     <div
       style={{ borderBottom: "1px solid var(--bd-soft)", display: "flex", flexDirection: "column" }}
     >
+      {prompts.length > 1 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 12px 0",
+          }}
+        >
+          <span className="lbl" style={{ fontSize: 10 }}>
+            {prompts.length} awaiting
+          </span>
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={() => respondAll(true)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "3px 8px",
+              borderRadius: 5,
+              fontSize: 11,
+              fontWeight: 500,
+              cursor: "pointer",
+              border: "1px solid color-mix(in oklab, var(--live) 45%, transparent)",
+              background: "color-mix(in oklab, var(--live) 18%, transparent)",
+              color: "var(--live)",
+            }}
+          >
+            Approve all
+          </button>
+          <button
+            type="button"
+            onClick={() => respondAll(false)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "3px 8px",
+              borderRadius: 5,
+              fontSize: 11,
+              cursor: "pointer",
+              border: "1px solid var(--bd-soft)",
+              background: "transparent",
+              color: "var(--fg-2)",
+            }}
+          >
+            Deny all
+          </button>
+        </div>
+      )}
       {prompts.map((p, i) => (
         <PromptToast
           key={p.session}

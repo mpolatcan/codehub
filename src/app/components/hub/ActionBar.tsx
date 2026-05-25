@@ -4,6 +4,7 @@ import { Ico } from "../../components/primitives/icons";
 import { autoSplitDir } from "../../hooks/useKeyboard";
 import { useOverlay } from "../../lib/overlay";
 import { activeWorkspace, useStore } from "../../lib/store";
+import { activeGroup } from "../../lib/tree";
 import { Button } from "../../ui/button";
 
 // Bottom action bar of the Hub, ported from design/screens/hub-states.jsx
@@ -23,7 +24,7 @@ export function ActionBar() {
   const resumeOpen = useOverlay((s) => s.resume);
   const setResume = useOverlay((s) => s.setResume);
   const active = useStore(activeWorkspace);
-  const focused = active?.focused ?? null;
+  const focused = (active && activeGroup(active)?.focused) ?? null;
   const splitSession = useStore((s) => s.splitSession);
   const newPlate = useStore((s) => s.newPlate);
 

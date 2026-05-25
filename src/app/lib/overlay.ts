@@ -21,6 +21,10 @@ interface OverlayState {
   // Claude/Codex transcripts, grouped by agent. Lives here (not a top-level view)
   // so resuming pulls a session INTO the current workspace without leaving it.
   resume: boolean;
+  // Which side the Resume drawer docks on (design resume.jsx header toggle). The
+  // drawer replaces the activity-rail slot on the right by default; the user can
+  // flip it to the left of the hub. Session-local (a UI preference, not data).
+  resumeSide: "left" | "right";
   // About dialog open/closed — app + environment identity (real data), opened
   // from the sidebar wordmark. A modal "About this app", separate from the
   // Settings › About pane which embeds the same facts in the config surface.
@@ -29,13 +33,31 @@ interface OverlayState {
   // template). A modal over the Welcome list; creates a saved workspace + opens
   // its first agent. Lives here so a keyboard handler can open it directly.
   newWorkspace: boolean;
+  // Focus mode (design hub-states HubStateFocus): the active group's focused pane
+  // is maximized; its siblings collapse to a "Minimized · N" side strip. Esc (or
+  // the strip's "Show all") exits. Only meaningful when the group has 2+ panes;
+  // session-local UI state. The store clears it on every group/workspace switch
+  // (resetGridOverlays in switchWorkspace/setActiveGroup) so it can't bleed into
+  // another group's grid.
+  focusMode: boolean;
+  // Session being dragged across the pane grid (design hub-states HubStateDragging),
+  // or null when no drag is in flight. Set on a pane header dragstart so every
+  // OTHER leaf renders its drop-zone overlay; cleared on dragend/drop, and
+  // defensively on any group/workspace switch (resetGridOverlays) so a drag cut
+  // short by a switch can't leave every pane stuck showing its overlay. Lives here
+  // (not React state) so the source leaf and all target leaves coordinate without
+  // prop-drilling through the split tree.
+  dragSession: string | null;
   setPalette: (open: boolean) => void;
   setShortcuts: (open: boolean) => void;
   setDiff: (path: string | null) => void;
   setFiles: (open: boolean) => void;
   setResume: (open: boolean) => void;
+  setResumeSide: (side: "left" | "right") => void;
   setAbout: (open: boolean) => void;
   setNewWorkspace: (open: boolean) => void;
+  setFocusMode: (on: boolean) => void;
+  setDragSession: (session: string | null) => void;
   togglePalette: () => void;
   toggleShortcuts: () => void;
 }
@@ -46,15 +68,21 @@ export const useOverlay = create<OverlayState>((set) => ({
   diff: null,
   files: false,
   resume: false,
+  resumeSide: "right",
   about: false,
   newWorkspace: false,
+  focusMode: false,
+  dragSession: null,
   setPalette: (palette) => set({ palette }),
   setShortcuts: (shortcuts) => set({ shortcuts }),
   setDiff: (diff) => set({ diff }),
   setFiles: (files) => set({ files }),
   setResume: (resume) => set({ resume }),
+  setResumeSide: (resumeSide) => set({ resumeSide }),
   setAbout: (about) => set({ about }),
   setNewWorkspace: (newWorkspace) => set({ newWorkspace }),
+  setFocusMode: (focusMode) => set({ focusMode }),
+  setDragSession: (dragSession) => set({ dragSession }),
   // Opening one overlay closes the other so they never stack.
   togglePalette: () => set((s) => ({ palette: !s.palette, shortcuts: false })),
   toggleShortcuts: () => set((s) => ({ shortcuts: !s.shortcuts, palette: false })),

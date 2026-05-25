@@ -163,6 +163,17 @@ function GitHubCard({
   // null = not loaded yet; render a neutral skeleton-ish state, never fake data.
   const connected = status?.connected ?? false;
   const varName = status?.varName ?? "GITHUB_TOKEN";
+  // Manual repo refresh (design integrations.jsx "Sync"). Re-runs the real
+  // github_repos read — no fabricated data, just a fresh fetch on demand. The
+  // design's sibling "Add repo" button is omitted: granting a token access to a
+  // new repo happens on github.com, not from here, so a button would be inert.
+  const loadGithubRepos = useStore((s) => s.loadGithubRepos);
+  const [syncing, setSyncing] = useState(false);
+  const sync = () => {
+    if (syncing) return;
+    setSyncing(true);
+    void Promise.resolve(loadGithubRepos()).finally(() => setSyncing(false));
+  };
   return (
     <div className="ch-card" style={{ padding: 0, overflow: "hidden" }}>
       {/* header — connection status (presence-only) */}
@@ -270,6 +281,27 @@ function GitHubCard({
                 Available repositories · {repos.length}
               </span>
               <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                onClick={sync}
+                disabled={syncing}
+                className="mono"
+                title="Re-fetch repositories visible to this token"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "3px 9px",
+                  background: "transparent",
+                  border: "1px solid var(--bd-soft)",
+                  borderRadius: 5,
+                  color: syncing ? "var(--fg-3)" : "var(--fg-2)",
+                  fontSize: 11,
+                  cursor: syncing ? "default" : "pointer",
+                }}
+              >
+                {syncing ? "Syncing…" : "Sync"}
+              </button>
             </div>
             {repos.length === 0 ? (
               <div

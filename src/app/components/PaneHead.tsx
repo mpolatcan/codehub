@@ -17,7 +17,22 @@ import type { SplitDir } from "../lib/tree";
 // the live store. The metric values are placeholders pending a per-session
 // telemetry feed (tokens / cost / turns / context) — see BACKEND_PLAN.md; shown
 // as em-dashes rather than fabricated numbers.
-export function PaneHead({ session }: { session: string }) {
+export function PaneHead({
+  session,
+  index,
+  draggable,
+  onDragStart,
+  onDragEnd,
+}: {
+  session: string;
+  index?: number;
+  // Drag-to-rearrange (design hub-states HubStateDragging): the header is the
+  // drag handle so the terminal body keeps normal text selection. Wired by the
+  // owning Leaf; absent on the focus-mode header (no rearrange while maximized).
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+}) {
   const meta = useStore((s) => s.sessionMeta[session]);
   const agentVersions = useStore((s) => s.agentVersions);
   const activity = useStore((s) => s.sessionActivity[session]);
@@ -72,16 +87,42 @@ export function PaneHead({ session }: { session: string }) {
         userSelect: "none",
       }}
     >
-      {/* identity row */}
+      {/* identity row — also the drag handle for pane rearrange. Dragging starts
+          on this row only; buttons/rename inside still click normally (dragstart
+          fires only on an actual drag gesture). */}
       <div
+        draggable={draggable}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
         style={{
           display: "flex",
           alignItems: "center",
           gap: 10,
           padding: "var(--panehead-py, 7px) 12px 5px",
+          cursor: draggable ? "grab" : undefined,
         }}
       >
         <StatusDot status={status} pulse={working} />
+        {/* pane index badge (design main-hub-a PaneIndex) — the keyboard target
+            number for ⌘1..9 pane focus; omitted when the pane stands alone. */}
+        {typeof index === "number" && (
+          <span
+            className="mono"
+            style={{
+              fontSize: 9.5,
+              color: "var(--fg-3)",
+              background: "var(--bg-3)",
+              borderRadius: 3,
+              minWidth: 14,
+              height: 14,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {index + 1}
+          </span>
+        )}
         <AgentGlyph agent={meta.cli} size={13} color={accent} />
 
         {editing ? (

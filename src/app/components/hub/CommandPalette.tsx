@@ -1,3 +1,5 @@
+import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { CLIS, SPEC_BY_CLI } from "../../lib/catalog";
 import { type Cli, ipc } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
@@ -56,8 +58,26 @@ export function CommandPalette() {
   const recents = useStore((s) => s.config?.recentWorkspaces) ?? [];
   const githubRepos = useStore((s) => s.githubRepos);
   const runtimeLive = useStore((s) => s.status?.state === "running");
+  // Controlled search query, used only to highlight the matched substring in row
+  // labels (design command-palette.jsx `<Hi>`). cmdk still owns filtering/ordering.
+  const [query, setQuery] = useState("");
+
+  // Reset the query whenever the palette closes — the row handlers close it via
+  // setPalette(false) directly (bypassing onOpenChange), so without this a
+  // filtered command would leave stale filter text on the next open.
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
 
   const sessions = Object.entries(sessionMeta);
+
+  // Total registered actions (honest count — the palette's command surface, not
+  // a per-keystroke filtered tally; cmdk's filtered count isn't exposed without
+  // reaching into its internals, so we label the stable total rather than fake a
+  // live "N results"). Mirrors exactly the rows rendered below.
+  const repoCount = Math.min(recents.length, 6) + Math.min(githubRepos.length, 6);
+  const commandCount =
+    VIEWS.length + 1 + sessions.length + (runtimeLive ? 4 + CLIS.length : 0) + repoCount;
 
   const goView = (id: HubView) => {
     setView(id);
@@ -104,8 +124,19 @@ export function CommandPalette() {
   };
 
   return (
-    <CommandDialog open={open} onOpenChange={setPalette} title="Command palette">
-      <CommandInput placeholder="Go to a view, focus a session, or spawn an agent…" />
+    <CommandDialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) setQuery("");
+        setPalette(v);
+      }}
+      title="Command palette"
+    >
+      <CommandInput
+        value={query}
+        onValueChange={setQuery}
+        placeholder="Go to a view, focus a session, or spawn an agent…"
+      />
       <CommandList>
         <CommandEmpty>No matches.</CommandEmpty>
 
@@ -118,7 +149,9 @@ export function CommandPalette() {
               disabled={v.id === view}
             >
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico[v.icon]}</span>
-              <span style={{ flex: 1 }}>{v.label}</span>
+              <span style={{ flex: 1 }}>
+                <Hi text={v.label} q={query} />
+              </span>
               {v.id === view && (
                 <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                   current
@@ -137,7 +170,9 @@ export function CommandPalette() {
             }}
           >
             <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.bell}</span>
-            <span style={{ flex: 1 }}>Open companion window</span>
+            <span style={{ flex: 1 }}>
+              <Hi text="Open companion window" q={query} />
+            </span>
             <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
               always on top
             </span>
@@ -169,7 +204,9 @@ export function CommandPalette() {
                     />
                     <AgentGlyph agent={meta.cli} size={12} color={`var(--a-${meta.cli})`} />
                   </span>
-                  <span style={{ flex: 1 }}>{meta.alias}</span>
+                  <span style={{ flex: 1 }}>
+                    <Hi text={meta.alias} q={query} />
+                  </span>
                   <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                     {SPEC_BY_CLI[meta.cli].label} · {meta.mode}
                     {ws && ` · tab ${ws.plate}`}
@@ -186,25 +223,33 @@ export function CommandPalette() {
           <CommandGroup heading="Commands · 4">
             <CommandItem value="review all changes diff workspace" onSelect={openDiff}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.diff}</span>
-              <span style={{ flex: 1 }}>Review all changes</span>
+              <span style={{ flex: 1 }}>
+                <Hi text="Review all changes" q={query} />
+              </span>
               <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                 workspace diff
               </span>
             </CommandItem>
             <CommandItem value="open files browser workspace" onSelect={openFiles}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.files}</span>
-              <span style={{ flex: 1 }}>Open files browser</span>
+              <span style={{ flex: 1 }}>
+                <Hi text="Open files browser" q={query} />
+              </span>
             </CommandItem>
             <CommandItem value="resume past session drawer claude codex" onSelect={openResume}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.clock}</span>
-              <span style={{ flex: 1 }}>Open Resume drawer</span>
+              <span style={{ flex: 1 }}>
+                <Hi text="Open Resume drawer" q={query} />
+              </span>
               <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                 ⌘R
               </span>
             </CommandItem>
             <CommandItem value="restart runtime container" onSelect={restart}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.container}</span>
-              <span style={{ flex: 1 }}>Restart runtime container</span>
+              <span style={{ flex: 1 }}>
+                <Hi text="Restart runtime container" q={query} />
+              </span>
               <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                 ends sessions
               </span>
@@ -217,7 +262,9 @@ export function CommandPalette() {
             {CLIS.map((c) => (
               <CommandItem key={c.id} value={`spawn ${c.label}`} onSelect={() => spawn(c.id)}>
                 <AgentGlyph agent={c.id} size={13} color={`var(--a-${c.id})`} />
-                <span style={{ flex: 1 }}>New {c.label} session</span>
+                <span style={{ flex: 1 }}>
+                  <Hi text={`New ${c.label} session`} q={query} />
+                </span>
                 <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                   ⌘N
                 </span>
@@ -240,7 +287,9 @@ export function CommandPalette() {
                 onSelect={() => openRecent(path)}
               >
                 <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.files}</span>
-                <span style={{ flex: 1 }}>{shortPath(path)}</span>
+                <span style={{ flex: 1 }}>
+                  <Hi text={shortPath(path)} q={query} />
+                </span>
                 <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                   recent
                 </span>
@@ -259,7 +308,9 @@ export function CommandPalette() {
                 }}
               >
                 <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.branch}</span>
-                <span style={{ flex: 1 }}>{repo.nameWithOwner}</span>
+                <span style={{ flex: 1 }}>
+                  <Hi text={repo.nameWithOwner} q={query} />
+                </span>
                 <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                   {repo.private ? "private" : "public"}
                 </span>
@@ -268,6 +319,82 @@ export function CommandPalette() {
           </CommandGroup>
         )}
       </CommandList>
+
+      {/* Footer nav-hint bar (design/screens/command-palette.jsx). Only the hints
+          that are REAL cmdk behaviors: ↑↓ move, ⏎ run, esc close. The design's
+          "⌘⏎ open in new pane" / "⌥⏎ spawn here" rows are dropped — no modifier
+          handlers are wired on the items, so listing them would be a lie. Right
+          side shows the stable total action count (not a faked "N results · Nms").*/}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          padding: "6px 14px",
+          borderTop: "1px solid var(--bd-soft)",
+          background: "var(--bg-1)",
+          fontSize: 11,
+          color: "var(--fg-2)",
+        }}
+      >
+        <span>
+          <Kbd>↑</Kbd>
+          <Kbd style={{ marginLeft: 2 }}>↓</Kbd> navigate
+        </span>
+        <span>
+          <Kbd>⏎</Kbd> open
+        </span>
+        <span>
+          <Kbd>esc</Kbd> close
+        </span>
+        <span style={{ flex: 1 }} />
+        <span className="mono" style={{ color: "var(--fg-3)" }}>
+          {commandCount} commands
+        </span>
+      </div>
     </CommandDialog>
+  );
+}
+
+// Highlights the first case-insensitive occurrence of the query inside a label
+// (design command-palette.jsx `<Hi>`). cmdk does the matching/ordering; this is
+// purely the visual emphasis on the matched substring.
+function Hi({ text, q }: { text: string; q: string }) {
+  const needle = q.trim();
+  if (!needle) return <>{text}</>;
+  const i = text.toLowerCase().indexOf(needle.toLowerCase());
+  if (i === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, i)}
+      <span style={{ color: "var(--fg-0)", fontWeight: 600 }}>
+        {text.slice(i, i + needle.length)}
+      </span>
+      {text.slice(i + needle.length)}
+    </>
+  );
+}
+
+function Kbd({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <span
+      className="mono"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minWidth: 16,
+        height: 16,
+        padding: "0 4px",
+        borderRadius: 4,
+        background: "var(--bg-3)",
+        border: "1px solid var(--bd-soft)",
+        color: "var(--fg-2)",
+        fontSize: 10,
+        ...style,
+      }}
+    >
+      {children}
+    </span>
   );
 }

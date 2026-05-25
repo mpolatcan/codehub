@@ -15,6 +15,36 @@ export const Ico = {
       <path d="M2.5 8h11" />
     </svg>
   ),
+  sidebarL: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinejoin="round"
+    >
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <path d="M6.5 3v10M10 6l-2 2 2 2" />
+    </svg>
+  ),
+  sidebarR: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinejoin="round"
+    >
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <path d="M6.5 3v10M8 6l2 2-2 2" />
+    </svg>
+  ),
   splitV: (
     <svg
       aria-hidden="true"

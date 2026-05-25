@@ -26,7 +26,7 @@ import {
   SharedRuntimePanel,
 } from "@/app/components/spawn-form";
 import { CLIS, MODE_BY_ID, modesFor } from "@/app/lib/catalog";
-import type { Cli, Mode } from "@/app/lib/ipc";
+import { type Cli, type ImageInfo, type Mode, ipc } from "@/app/lib/ipc";
 import { useOverlay } from "@/app/lib/overlay";
 import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
@@ -191,9 +191,14 @@ export function NewWorkspace() {
           )}
 
           {step === 2 && (
-            <FormRow label="Container">
-              <SharedRuntimePanel />
-            </FormRow>
+            <>
+              <FormRow label="Container">
+                <SharedRuntimePanel />
+              </FormRow>
+              <FormRow label="Base image">
+                <BaseImagePanel />
+              </FormRow>
+            </>
           )}
 
           {step === 3 && (
@@ -312,6 +317,98 @@ export function NewWorkspace() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// The runtime's pinned base image (design/screens/new-workspace.jsx "Base image").
+// Real, from `docker image inspect` (ipc.containerImage) — the same source the
+// Containers view uses. The design's hard-coded toolchain list is dropped (it
+// would be a fabrication); the honest, obtainable facts (tag, platform) are
+// shown instead, each em-dashed when absent. Every CodeHub workspace shares this
+// one pinned image, so the "pinned" badge only appears when the image is tagged.
+function BaseImagePanel() {
+  const [image, setImage] = useState<ImageInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    ipc
+      .containerImage()
+      .then((i) => alive && setImage(i))
+      .catch(() => alive && setImage(null));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const dash = "—";
+  const platform = image?.os && image?.arch ? `${image.os}/${image.arch}` : dash;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 14px",
+        background: "var(--bg-1)",
+        border: "1px solid var(--bd-soft)",
+        borderRadius: 8,
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 6,
+          background: "var(--bg-3)",
+          border: "1px solid var(--bd-soft)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--fg-1)",
+          flexShrink: 0,
+        }}
+      >
+        {Ico.container}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          className="mono"
+          style={{
+            fontSize: 13,
+            color: "var(--fg-0)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {image?.tag ?? dash}
+        </div>
+        <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)", marginTop: 2 }}>
+          bundles every agent's runtime · {platform}
+        </div>
+      </div>
+      {image?.tag && (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            fontFamily: "var(--mono)",
+            fontSize: 10,
+            color: "var(--live)",
+            padding: "2px 8px",
+            borderRadius: 999,
+            background: "color-mix(in oklab, var(--live) 12%, transparent)",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--live)" }}
+          />
+          pinned
+        </span>
+      )}
     </div>
   );
 }

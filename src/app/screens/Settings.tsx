@@ -248,7 +248,8 @@ function AgentsPane({ onStopAll }: { onStopAll?: () => void }) {
     (onStopAll ?? (() => void closeAllSessions()))();
   };
 
-  if (detail) return <AgentDetail agent={detail} onBack={() => setDetail(null)} />;
+  if (detail)
+    return <AgentDetail agent={detail} onBack={() => setDetail(null)} onSwitch={setDetail} />;
 
   return (
     <div style={{ maxWidth: 720 }}>
@@ -309,6 +310,11 @@ function AgentsPane({ onStopAll }: { onStopAll?: () => void }) {
         label="Approve writes"
         desc="Always ask before edits, branch ops, or shell execution."
         control={<Toggle on />}
+      />
+      <SettingRow
+        label="Cost budget per turn"
+        desc="Auto-pause when a turn exceeds this. 0 disables."
+        control={<InputStub value="$1.00" suffix="USD" />}
       />
       <SettingRow
         label="Context budget"
@@ -823,7 +829,6 @@ const PLATFORM_MATRIX: MatrixRow[] = [
   },
   { name: "Command palette · ⌘K", d: "full", w: "full" },
   { name: "Session detail · diff inspector", d: "full", w: "full" },
-  { name: "Broadcast · one prompt → N agents", d: "full", w: "full" },
   { name: "Resume library · past sessions", d: "full", w: "full" },
   { name: "Dashboard · Usage · Settings", d: "full", w: "full" },
 
@@ -864,9 +869,9 @@ const PLATFORM_MATRIX: MatrixRow[] = [
   },
   {
     name: "OS-native toast (macOS / Win / GNOME)",
-    d: "planned",
+    d: "full",
     w: "degraded",
-    note: "Not yet built · web would use the browser Notification API",
+    note: "Fires on await-input / turn-finish · web would use the browser Notification API",
   },
   {
     name: "Push notifications when app is closed",
@@ -886,9 +891,9 @@ const PLATFORM_MATRIX: MatrixRow[] = [
   { name: "Per-tab keyboard shortcuts (when focused)", d: "full", w: "full" },
   {
     name: "Global shortcuts (when not focused)",
-    d: "planned",
+    d: "full",
     w: "none",
-    note: "e.g. expand the island from any app",
+    note: "⌘⇧J toggles the companion / island from any app",
   },
   {
     name: "Drag-and-drop files into container",
@@ -1375,11 +1380,12 @@ function ShortcutsPane() {
 }
 
 // Notifications — desktop notification PREFERENCES. The three flags persist for
-// real (config::Settings → settings.json), so the toggles are live. Honest
-// caveat: OS delivery isn't built yet (no tauri-plugin-notification — Platform
-// pane marks OS-native toast "planned"), so these record your choice but won't
-// fire a system notification until the notification subsystem lands. We save the
-// preference rather than disabling the control so the setting survives that work.
+// real (config::Settings → settings.json) AND drive real OS delivery: the event
+// tailer reads the ConfigStore at event time and fires a tauri-plugin-notification
+// toast on a permission prompt (await-input) or turn end (turn-finish), with an
+// optional sound. Delivery is live in the packaged desktop app; the browser dev
+// bridge (`make dev-web`) has no Tauri window so it persists the choice but emits
+// no toast — that's the one place a saved toggle won't fire.
 function NotificationsPane() {
   return (
     <div style={{ maxWidth: 720 }}>
@@ -1389,9 +1395,9 @@ function NotificationsPane() {
 
       <SectionHead label="Desktop notifications" />
       <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
-        These preferences save now. OS-native delivery (a macOS / Windows / GNOME toast) isn't wired
-        yet — it arrives with the notification subsystem; until then the choices are remembered but
-        no system notification fires.
+        These fire a real OS notification (macOS / Windows / GNOME) when the desktop app is running.
+        In the browser dev preview there's no system window, so the choice is saved but no toast
+        appears.
       </p>
       <SettingRow
         label="Notify when an agent awaits input"

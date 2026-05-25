@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { splitKey, useLauncher } from "../../lib/launcher";
+import { groupKey, splitKey, useLauncher } from "../../lib/launcher";
 import { activeWorkspace, useStore } from "../../lib/store";
-import type { SplitDir } from "../../lib/tree";
+import { type SplitDir, activeGroup } from "../../lib/tree";
 import { Ico } from "./icons";
 
 // THE primary spawn CTA for the Hub ActionBar — one button replacing the old
@@ -13,12 +13,13 @@ import { Ico } from "./icons";
 // left half): CodeHub's established model is ⌘N = new tab / ⌘\ = split, and every
 // spawn flows through the rich launcher (SpawnModal). So the default click stays
 // "new tab" — matching ⌘N and the sidebar New-agent button — and split is an
-// explicit menu choice. No keyboard hint lies. ("Open in new group" is deferred
-// to the groups layer, Wave 3.)
+// explicit menu choice. No keyboard hint lies. The placement menu also offers
+// "In new group" (⌘G) — creates a fresh pane group and lands the agent in it.
 export function SpawnSplitBtn() {
   const openLaunch = useLauncher((s) => s.open);
+  const addGroup = useStore((s) => s.addGroup);
   const active = useStore(activeWorkspace);
-  const focused = active?.focused ?? null;
+  const focused = (active && activeGroup(active)?.focused) ?? null;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -39,6 +40,14 @@ export function SpawnSplitBtn() {
     if (!focused) return;
     setOpen(false);
     openLaunch(splitKey(focused), { dir, session: focused });
+  };
+  // Spawn into a fresh group: create the empty group (becomes active), then open
+  // the launcher targeting it so the new agent lands as that group's first pane.
+  const newGroup = () => {
+    if (!active) return;
+    setOpen(false);
+    const gid = addGroup(active.id);
+    openLaunch(groupKey(gid), { dir: "row", groupId: gid, workspaceId: active.id });
   };
 
   return (
@@ -62,7 +71,15 @@ export function SpawnSplitBtn() {
       >
         {Ico.chevD}
       </button>
-      {open && <SpawnPlacementMenu focused={focused} onSplit={split} onNewTab={newTab} />}
+      {open && (
+        <SpawnPlacementMenu
+          focused={focused}
+          hasWorkspace={!!active}
+          onSplit={split}
+          onNewGroup={newGroup}
+          onNewTab={newTab}
+        />
+      )}
     </div>
   );
 }
@@ -71,11 +88,15 @@ export function SpawnSplitBtn() {
 // are disabled when nothing is focused (an empty workspace can't be split).
 function SpawnPlacementMenu({
   focused,
+  hasWorkspace,
   onSplit,
+  onNewGroup,
   onNewTab,
 }: {
   focused: string | null;
+  hasWorkspace: boolean;
   onSplit: (dir: SplitDir) => void;
+  onNewGroup: () => void;
   onNewTab: () => void;
 }) {
   return (
@@ -122,6 +143,13 @@ function SpawnPlacementMenu({
         onClick={() => onSplit("col")}
       />
       <div style={{ height: 1, background: "var(--bd-soft)", margin: "4px 0" }} />
+      <SpawnMenuRow
+        icon={Ico.grid}
+        label="In new group"
+        kbd="⌘G"
+        disabled={!hasWorkspace}
+        onClick={onNewGroup}
+      />
       <SpawnMenuRow icon={Ico.plus} label="Open in new tab" kbd="⌘⇧T" onClick={onNewTab} />
     </div>
   );

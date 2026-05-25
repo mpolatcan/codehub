@@ -211,6 +211,17 @@ pub fn show(app: &AppHandle) {
     });
 }
 
+/// Toggle the island on/off — show it when hidden, hide it when visible. Backs
+/// the global shortcut (CmdOrCtrl+Shift+J). Safe to call from any thread (both
+/// `show`/`hide` hop to the main thread internally).
+pub fn toggle(app: &AppHandle) {
+    if is_visible() {
+        hide(app);
+    } else {
+        show(app);
+    }
+}
+
 /// Hide the island without destroying it (cheap to re-show). Idempotent.
 pub fn hide(app: &AppHandle) {
     let _ = app.run_on_main_thread(|| {

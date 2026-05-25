@@ -109,6 +109,19 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       ) as Promise<T>;
     case "container_git_diff_all":
       return jget("/container-git-diff-all") as Promise<T>;
+    case "container_git_diff_staged":
+      return jget("/container-git-diff-staged") as Promise<T>;
+    case "container_git_diff_unstaged":
+      return jget("/container-git-diff-unstaged") as Promise<T>;
+    case "container_git_stage_all":
+      return jsend("POST", "/container-git-stage-all") as Promise<T>;
+    case "container_git_commit":
+      return jsend("POST", "/container-git-commit", { message: args.message }) as Promise<T>;
+    case "container_git_open_pr":
+      return jsend("POST", "/container-git-open-pr", {
+        title: args.title,
+        body: args.body,
+      }) as Promise<T>;
     case "container_top":
       return jget("/container-top") as Promise<T>;
     case "container_git_log":

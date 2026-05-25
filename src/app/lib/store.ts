@@ -13,6 +13,7 @@ import type {
   ContainerStats,
   ContainerStatus,
   DockerInfo,
+  GitStatus,
   GithubRepo,
   GithubStatus,
   KeyStatus,
@@ -24,20 +25,28 @@ import type {
   WorkspaceInfo,
 } from "./ipc";
 import { ipc, onLifecycle, onLifecycleError } from "./ipc";
+import { useOverlay } from "./overlay";
 import * as registry from "./panes";
 import {
   type LayoutNode,
   type SessionMeta,
   type SplitDir,
   type Workspace,
+  activeGroup,
+  findGroupOf,
   firstLeaf,
   leafNode,
   leavesList,
   leavesOf,
+  makeGroup,
+  moveLeaf,
   nid,
   removeLeaf,
   replaceLeaf,
   setRatio,
+  swapLeaves,
+  updateGroup,
+  workspaceLeaves,
 } from "./tree";
 
 // Top-level view, switched from the sidebar nav. "hub" is the terminal grid;
@@ -59,6 +68,9 @@ interface CodeHubState {
   // "Integrations" entry and Welcome's "From GitHub" card open Settings with the
   // integrations pane already selected.
   settingsSection: string;
+  // Sidebar collapsed to the 52px icon rail (design AppSidebar) — toggled by the
+  // header chevron or ⌘B. Transient (not persisted); defaults expanded.
+  sidebarCollapsed: boolean;
   // Session whose focused-detail view is open (terminal + workspace inspector),
   // or null for the normal view. Set from a pane's expand button; any sidebar
   // view switch or closing that session clears it.
@@ -73,6 +85,11 @@ interface CodeHubState {
   // single docker `stats` call (~1-2s, stream:false) feeds all consumers instead
   // of each screen polling independently and contending on the daemon.
   containerStats: ContainerStats | null;
+  // Live /workspace git status (branch + ahead/behind + uncommitted count),
+  // polled app-wide while the runtime is up (useGitStatusPoll). Shared by the
+  // activity rail's Changes list and the Hub meta strip so they don't each poll
+  // container_git_status independently. Null while down / before first read.
+  gitStatus: GitStatus | null;
 
   // Tier-1 reads (BACKEND_PLAN.md), fetched once the runtime is reachable.
   // Presence/version metadata only — never secret values.
@@ -122,10 +139,12 @@ interface CodeHubState {
   restartRuntime: () => Promise<void>;
   setView: (v: HubView) => void;
   setSettingsSection: (key: string) => void;
+  toggleSidebar: () => void;
   openDetail: (name: string) => void;
   closeDetail: () => void;
   setSessionActivity: (list: SessionActivity[]) => void;
   setContainerStats: (s: ContainerStats | null) => void;
+  setGitStatus: (g: GitStatus | null) => void;
   newPlate: (
     cli: Cli,
     mode: Mode,
@@ -148,6 +167,32 @@ interface CodeHubState {
   switchWorkspace: (id: string) => void;
   renameSession: (name: string, alias: string) => void;
   commitRatio: (wsId: string, nodeId: number, ratio: number) => void;
+  // Drag-to-rearrange within the active group's grid (design hub-states
+  // HubStateDragging). swapPanes exchanges two panes' slots; movePane removes the
+  // dragged pane and re-splits the target's slot in `dir` (before=leading side).
+  // Neither kills a tmux session — pure tree reshape, xterm surfaces survive.
+  swapPanes: (wsId: string, a: string, b: string) => void;
+  movePane: (wsId: string, session: string, target: string, dir: SplitDir, before: boolean) => void;
+
+  // ── Pane groups within a workspace (design GroupsBar / GroupGrid) ──────────
+  // Groups are frontend-only organisation over the flat tmux session set; they
+  // own their own split tree + focus. addGroup appends an empty group and makes
+  // it active (its grid shows the empty-state CTA until addPaneToGroup runs);
+  // it returns the new group's id so callers can immediately spawn into it.
+  addGroup: (wsId: string) => string;
+  closeGroup: (wsId: string, groupId: string) => Promise<void>;
+  renameGroup: (wsId: string, groupId: string, name: string) => void;
+  setGroupColor: (wsId: string, groupId: string, color: string) => void;
+  setActiveGroup: (wsId: string, groupId: string) => void;
+  // Spawn the first pane into an empty group (the group-grid empty-state CTA).
+  addPaneToGroup: (
+    wsId: string,
+    groupId: string,
+    cli: Cli,
+    mode: Mode,
+    initialPrompt?: string,
+    account?: string,
+  ) => Promise<void>;
   loadConfig: () => Promise<void>;
   // Merge a patch into the persisted settings. Optimistic: applies locally, then
   // writes through to the backend; reverts on failure.
@@ -195,6 +240,15 @@ function updateWs(list: Workspace[], id: string, fn: (w: Workspace) => Workspace
   return list.map((w) => (w.id === id ? fn(w) : w));
 }
 
+// Clear transient pane-grid overlays (focus mode, in-flight drag) that are
+// scoped to the active group. Called on every group/workspace switch so a
+// maximized pane or a stuck drop-overlay can't bleed into the view we move to.
+function resetGridOverlays() {
+  const o = useOverlay.getState();
+  if (o.focusMode) o.setFocusMode(false);
+  if (o.dragSession) o.setDragSession(null);
+}
+
 // Display alias for a session, e.g. "Claude 1". Shared by the session metadata and
 // the tmux window name passed at create time, so both read identically.
 function aliasFor(cli: Cli, num: number): string {
@@ -229,6 +283,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     cli: Cli,
     mode: Mode,
     workspaceId: string,
+    groupId: string,
     claudeId?: string,
   ) => {
     const num = get().sessionCounter;
@@ -238,6 +293,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       alias: aliasFor(cli, num),
       mode,
       workspaceId,
+      groupId,
       claudeId,
     };
     set((s) => ({ sessionMeta: { ...s.sessionMeta, [name]: meta } }));
@@ -257,9 +313,11 @@ export const useStore = create<CodeHubState>((set, get) => {
     error: null,
     view: "hub",
     settingsSection: "general",
+    sidebarCollapsed: false,
     detailSession: null,
     sessionActivity: {},
     containerStats: null,
+    gitStatus: null,
     dockerInfo: null,
     keyStatus: null,
     agentVersions: null,
@@ -320,6 +378,7 @@ export const useStore = create<CodeHubState>((set, get) => {
 
     // Deep-link a Settings sub-pane (the caller usually also setView("settings")).
     setSettingsSection: (settingsSection) => set({ settingsSection }),
+    toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
     openDetail: (name) => {
       if (get().sessionMeta[name]) set({ detailSession: name });
@@ -333,6 +392,8 @@ export const useStore = create<CodeHubState>((set, get) => {
     },
 
     setContainerStats: (containerStats) => set({ containerStats }),
+
+    setGitStatus: (gitStatus) => set({ gitStatus }),
 
     newPlate: async (cli, mode, resume, initialPrompt, account) => {
       if (!isRunning()) return;
@@ -354,13 +415,16 @@ export const useStore = create<CodeHubState>((set, get) => {
       prefillPrompt(name, initialPrompt);
 
       const plate = get().plateCounter + 1;
+      const group = makeGroup("Group 1", leafNode(name), name);
       const ws: Workspace = {
         id: `ws-${plate}-${Date.now().toString(36)}`,
         plate,
-        root: leafNode(name),
-        focused: name,
+        groups: [group],
+        activeGroupId: group.id,
       };
-      registerMeta(name, cli, mode, ws.id, claudeId);
+      registerMeta(name, cli, mode, ws.id, group.id, claudeId);
+      // New tab becomes active — clear focus mode / drag from the old workspace.
+      resetGridOverlays();
       set((s) => ({
         plateCounter: plate,
         workspaces: [...s.workspaces, ws],
@@ -371,7 +435,8 @@ export const useStore = create<CodeHubState>((set, get) => {
     splitSession: async (target, dir, cli, mode, initialPrompt, account) => {
       if (!isRunning()) return;
       const ws = get().workspaces.find((w) => w.id === get().sessionMeta[target]?.workspaceId);
-      if (!ws || !ws.root) return;
+      const grp = ws && findGroupOf(ws, target);
+      if (!ws || !grp || !grp.root) return;
       const name = uniqueName(cli);
       const claudeId = claudeIdFor(cli);
       await ipc.createSession(
@@ -385,23 +450,25 @@ export const useStore = create<CodeHubState>((set, get) => {
       );
       await registry.spawnPane(name);
       prefillPrompt(name, initialPrompt);
-      registerMeta(name, cli, mode, ws.id, claudeId);
+      registerMeta(name, cli, mode, ws.id, grp.id, claudeId);
 
       set((s) => ({
-        workspaces: updateWs(s.workspaces, ws.id, (w) => ({
-          ...w,
-          root: w.root
-            ? replaceLeaf(w.root, target, (lf) => ({
-                kind: "split",
-                id: nid(),
-                dir,
-                ratio: 0.5,
-                a: lf,
-                b: leafNode(name),
-              }))
-            : leafNode(name),
-          focused: name,
-        })),
+        workspaces: updateWs(s.workspaces, ws.id, (w) =>
+          updateGroup(w, grp.id, (g) => ({
+            ...g,
+            root: g.root
+              ? replaceLeaf(g.root, target, (lf) => ({
+                  kind: "split",
+                  id: nid(),
+                  dir,
+                  ratio: 0.5,
+                  a: lf,
+                  b: leafNode(name),
+                }))
+              : leafNode(name),
+            focused: name,
+          })),
+        ),
       }));
     },
 
@@ -426,28 +493,53 @@ export const useStore = create<CodeHubState>((set, get) => {
 
       if (!meta) return;
       const ws = get().workspaces.find((w) => w.id === meta.workspaceId);
-      if (!ws) return;
-      const nextRoot = ws.root ? removeLeaf(ws.root, name) : null;
-      if (!nextRoot) {
+      const grp = ws && findGroupOf(ws, name);
+      if (!ws || !grp) return;
+      const nextRoot = grp.root ? removeLeaf(grp.root, name) : null;
+
+      // Group still has panes → just drop the leaf and refocus within the group.
+      if (nextRoot) {
+        set((s) => ({
+          workspaces: updateWs(s.workspaces, ws.id, (w) =>
+            updateGroup(w, grp.id, (g) => ({
+              ...g,
+              root: nextRoot,
+              focused: g.focused === name ? firstLeaf(nextRoot) : g.focused,
+            })),
+          ),
+        }));
+        return;
+      }
+
+      // Group is now empty. Last group in the workspace → close the tab (preserves
+      // the ⌘W close-tab contract). Otherwise drop just this group and fall back to
+      // a sibling if it was active.
+      if (ws.groups.length <= 1) {
         removeWorkspace(get, set, ws.id);
         return;
       }
+      // Emptied group falls to a sibling — clear focus mode / drag if it was the
+      // active one so they don't carry over.
+      if (ws.activeGroupId === grp.id) resetGridOverlays();
       set((s) => ({
-        workspaces: updateWs(s.workspaces, ws.id, (w) => ({
-          ...w,
-          root: nextRoot,
-          focused: w.focused === name ? firstLeaf(nextRoot) : w.focused,
-        })),
+        workspaces: updateWs(s.workspaces, ws.id, (w) => {
+          const groups = w.groups.filter((g) => g.id !== grp.id);
+          return {
+            ...w,
+            groups,
+            activeGroupId: w.activeGroupId === grp.id ? groups[0].id : w.activeGroupId,
+          };
+        }),
       }));
     },
 
     closeWorkspace: async (id) => {
       const ws = get().workspaces.find((w) => w.id === id);
-      if (!ws || !ws.root) {
+      if (!ws) {
         removeWorkspace(get, set, id);
         return;
       }
-      for (const session of leavesList(ws.root)) {
+      for (const session of workspaceLeaves(ws)) {
         try {
           await ipc.killSession(session);
         } catch (e) {
@@ -479,9 +571,22 @@ export const useStore = create<CodeHubState>((set, get) => {
     focusSession: (name) => {
       const meta = get().sessionMeta[name];
       if (!meta) return;
+      // If this jumps to a DIFFERENT group/workspace (e.g. the palette "go to
+      // session", a sidebar session click), drop focus mode / any in-flight drag
+      // so they don't bleed into the grid we land on. A same-group focus (⌘1-9,
+      // a MiniPane click while maximized) must NOT exit focus mode — that would
+      // break click-to-swap in the focus strip — so the reset is conditional.
+      const cur = get();
+      const curWs = cur.workspaces.find((w) => w.id === cur.activeWorkspaceId);
+      const crossing =
+        cur.activeWorkspaceId !== meta.workspaceId || curWs?.activeGroupId !== meta.groupId;
+      if (crossing) resetGridOverlays();
       set((s) => ({
         activeWorkspaceId: meta.workspaceId,
-        workspaces: updateWs(s.workspaces, meta.workspaceId, (w) => ({ ...w, focused: name })),
+        workspaces: updateWs(s.workspaces, meta.workspaceId, (w) => ({
+          ...updateGroup(w, meta.groupId, (g) => ({ ...g, focused: name })),
+          activeGroupId: meta.groupId,
+        })),
       }));
       registry.focus(name);
       rememberLastSession(name);
@@ -491,9 +596,14 @@ export const useStore = create<CodeHubState>((set, get) => {
       if (get().activeWorkspaceId === id) return;
       // Switching tabs leaves any open session-detail view (same contract as
       // setView) — otherwise the sidebar tab click is a silent no-op behind it.
+      // Also drop transient pane-grid UI state (focus mode / in-flight drag) so
+      // it can't bleed into the tab we're switching to — those are scoped to the
+      // group you set them in, not the workspace globally.
+      resetGridOverlays();
       set({ activeWorkspaceId: id, detailSession: null });
       const ws = get().workspaces.find((w) => w.id === id);
-      if (ws?.focused) rememberLastSession(ws.focused);
+      const focused = ws && activeGroup(ws)?.focused;
+      if (focused) rememberLastSession(focused);
     },
 
     renameSession: (name, alias) => {
@@ -518,10 +628,175 @@ export const useStore = create<CodeHubState>((set, get) => {
 
     commitRatio: (wsId, nodeId, ratio) => {
       set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) =>
+          updateGroup(w, w.activeGroupId, (g) => ({
+            ...g,
+            root: g.root ? setRatio(g.root, nodeId, ratio) : g.root,
+          })),
+        ),
+      }));
+    },
+
+    swapPanes: (wsId, a, b) => {
+      if (a === b) return;
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) =>
+          updateGroup(w, w.activeGroupId, (g) => ({
+            ...g,
+            root: g.root ? swapLeaves(g.root, a, b) : g.root,
+          })),
+        ),
+      }));
+    },
+
+    movePane: (wsId, session, target, dir, before) => {
+      if (session === target) return;
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) =>
+          updateGroup(w, w.activeGroupId, (g) => ({
+            ...g,
+            root: g.root ? moveLeaf(g.root, session, target, dir, before) : g.root,
+            // Keep the moved pane focused so the user's dragged target stays active.
+            focused: session,
+          })),
+        ),
+      }));
+    },
+
+    addGroup: (wsId) => {
+      // New empty group becomes active — clear focus mode / drag so they don't
+      // re-engage once a 2nd pane lands in it.
+      resetGridOverlays();
+      const group = makeGroup();
+      set((s) => ({
         workspaces: updateWs(s.workspaces, wsId, (w) => ({
           ...w,
-          root: w.root ? setRatio(w.root, nodeId, ratio) : w.root,
+          groups: [...w.groups, group],
+          activeGroupId: group.id,
         })),
+      }));
+      return group.id;
+    },
+
+    // Kill every session in the group (tmux first, then detach — matches
+    // closeSession's order), drop the group, and fall back to a sibling. Closing
+    // the workspace's last group closes the tab.
+    closeGroup: async (wsId, groupId) => {
+      const ws = get().workspaces.find((w) => w.id === wsId);
+      const grp = ws?.groups.find((g) => g.id === groupId);
+      if (!ws || !grp) return;
+      for (const session of leavesList(grp.root)) {
+        try {
+          await ipc.killSession(session);
+        } catch (e) {
+          console.warn(`kill_session(${session}) failed:`, e);
+        }
+        await registry.destroyPane(session);
+        set((s) => {
+          const sessionMeta = { ...s.sessionMeta };
+          delete sessionMeta[session];
+          return {
+            sessionMeta,
+            detailSession: s.detailSession === session ? null : s.detailSession,
+          };
+        });
+      }
+      if (ws.groups.length <= 1) {
+        removeWorkspace(get, set, wsId);
+        return;
+      }
+      // Closing the active group falls to a sibling — clear focus mode / drag so
+      // they don't carry over into it.
+      if (get().workspaces.find((w) => w.id === wsId)?.activeGroupId === groupId) {
+        resetGridOverlays();
+      }
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) => {
+          const groups = w.groups.filter((g) => g.id !== groupId);
+          return {
+            ...w,
+            groups,
+            activeGroupId: w.activeGroupId === groupId ? groups[0].id : w.activeGroupId,
+          };
+        }),
+      }));
+    },
+
+    renameGroup: (wsId, groupId, name) => {
+      const next = name.trim();
+      if (!next) return;
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) =>
+          updateGroup(w, groupId, (g) => ({ ...g, name: next })),
+        ),
+      }));
+    },
+
+    setGroupColor: (wsId, groupId, color) => {
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) =>
+          updateGroup(w, groupId, (g) => ({ ...g, color })),
+        ),
+      }));
+    },
+
+    setActiveGroup: (wsId, groupId) => {
+      // Focus mode + any in-flight drag are scoped to the group they were set
+      // in; clear them so switching groups doesn't carry a maximized pane (or a
+      // stuck drop overlay) into the group we're switching to.
+      resetGridOverlays();
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) => ({ ...w, activeGroupId: groupId })),
+      }));
+      // Restore terminal focus to whatever pane the group last had active. An
+      // empty group has none → blur the previous group's (now off-view) pane so
+      // keystrokes don't leak into a hidden terminal.
+      const ws = get().workspaces.find((w) => w.id === wsId);
+      const focused = ws?.groups.find((g) => g.id === groupId)?.focused;
+      if (focused) registry.focus(focused);
+      else (document.activeElement as HTMLElement | null)?.blur();
+    },
+
+    addPaneToGroup: async (wsId, groupId, cli, mode, initialPrompt, account) => {
+      if (!isRunning()) return;
+      const ws = get().workspaces.find((w) => w.id === wsId);
+      const grp = ws?.groups.find((g) => g.id === groupId);
+      if (!ws || !grp) return;
+      const name = uniqueName(cli);
+      const claudeId = claudeIdFor(cli);
+      await ipc.createSession(
+        name,
+        cli,
+        mode,
+        aliasFor(cli, get().sessionCounter),
+        undefined,
+        claudeId,
+        account,
+      );
+      await registry.spawnPane(name);
+      prefillPrompt(name, initialPrompt);
+      registerMeta(name, cli, mode, ws.id, grp.id, claudeId);
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) =>
+          updateGroup(w, groupId, (g) => ({
+            ...g,
+            // Empty group (the common case — this is the empty-group CTA) → seed
+            // the single first leaf, no split. The non-empty branch is a
+            // defensive row-split fallback; if a directional add into a populated
+            // group is ever needed, route through splitSession (carries dir).
+            root: g.root
+              ? replaceLeaf(g.root, firstLeaf(g.root), (lf) => ({
+                  kind: "split",
+                  id: nid(),
+                  dir: "row",
+                  ratio: 0.5,
+                  a: lf,
+                  b: leafNode(name),
+                }))
+              : leafNode(name),
+            focused: name,
+          })),
+        ),
       }));
     },
 
@@ -762,13 +1037,23 @@ function removeWorkspace(get: Get, set: Set, id: string) {
   const nextActive = wasActive
     ? (next[idx]?.id ?? next[idx - 1]?.id ?? null)
     : get().activeWorkspaceId;
+  // Closing the active tab falls to a sibling — clear focus mode / drag so they
+  // don't carry over into it.
+  if (wasActive) resetGridOverlays();
   set({ workspaces: next, activeWorkspaceId: nextActive });
 }
 
 async function bootstrap(
   get: Get,
   set: Set,
-  registerMeta: (name: string, cli: Cli, mode: Mode, workspaceId: string) => void,
+  registerMeta: (
+    name: string,
+    cli: Cli,
+    mode: Mode,
+    workspaceId: string,
+    groupId: string,
+    claudeId?: string,
+  ) => void,
 ) {
   // Tier-1 reads (BACKEND_PLAN.md): daemon info, per-CLI version + key presence.
   // Best-effort and independent of session bootstrap — a failure must not block
@@ -806,11 +1091,12 @@ async function bootstrap(
         (["claude", "codex", "antigravity"] as Cli[]).find((c) => s.name.startsWith(c)) ?? "claude";
       await registry.spawnPane(s.name);
       const plate = get().plateCounter + 1;
+      const group = makeGroup("Group 1", leafNode(s.name), s.name);
       const ws: Workspace = {
         id: `ws-${plate}-${Date.now().toString(36)}`,
         plate,
-        root: leafNode(s.name),
-        focused: s.name,
+        groups: [group],
+        activeGroupId: group.id,
       };
       set((st) => ({
         plateCounter: plate,
@@ -819,7 +1105,7 @@ async function bootstrap(
         activeWorkspaceId: st.activeWorkspaceId ?? ws.id,
       }));
       // Mode of a pre-existing tmux session is unknown; show it as Standard.
-      registerMeta(s.name, cli, "standard", ws.id);
+      registerMeta(s.name, cli, "standard", ws.id, group.id);
     }
     // "Reopen last workspace" (default on): re-select the tab whose session was
     // focused at quit, if it's among the adopted ones. Otherwise the first
@@ -868,6 +1154,21 @@ export function confirmCloseRunningSession(name: string): boolean {
   if (!needsConfirm || !working) return true;
   const alias = s.sessionMeta[name]?.alias ?? name;
   return window.confirm(`${alias} is still working. Close it anyway? Scrollback is kept.`);
+}
+
+// Group-close guard: a SINGLE confirmation covering every working pane in the
+// group (closing a group can kill many sessions at once — prompting per-session
+// would stack N dialogs). Returns true to proceed. Same preference + live
+// working/idle signal as confirmCloseRunningSession.
+export function confirmCloseGroup(sessions: string[], groupName: string): boolean {
+  const s = useStore.getState();
+  const needsConfirm = s.config?.confirmCloseRunningAgent ?? true;
+  const working = sessions.filter((n) => s.sessionActivity[n]?.state === "working").length;
+  if (!needsConfirm || working === 0) return true;
+  const plural = working === 1 ? "agent is" : "agents are";
+  return window.confirm(
+    `${groupName}: ${working} ${plural} still working. Close the group? Scrollback is kept.`,
+  );
 }
 
 // Convenience selectors.
