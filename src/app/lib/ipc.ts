@@ -621,6 +621,19 @@ export const ipc = {
   // Combined diff of every tracked /workspace change (`git diff HEAD`); the
   // "review all" view. Empty string when the tree is clean.
   containerGitDiffAll: () => invoke<string>("container_git_diff_all"),
+  // Staged-only diff (`git diff --cached`) — session-detail "Staged" filter.
+  containerGitDiffStaged: () => invoke<string>("container_git_diff_staged"),
+  // Unstaged diff of tracked files (`git diff`) — "Unstaged" filter.
+  containerGitDiffUnstaged: () => invoke<string>("container_git_diff_unstaged"),
+  // Stage every /workspace change (`git add -A`). Throws git's message on failure.
+  containerGitStageAll: () => invoke<void>("container_git_stage_all"),
+  // Commit staged changes (`git commit -m`); resolves to git's summary line, or
+  // rejects with git's verbatim message (nothing staged / no identity / not a repo).
+  containerGitCommit: (message: string) => invoke<string>("container_git_commit", { message }),
+  // Push the current branch + open a GitHub PR; resolves to the PR URL, or
+  // rejects with an honest reason (no token/remote/branch, or GitHub's message).
+  containerGitOpenPr: (title: string, body: string) =>
+    invoke<string>("container_git_open_pr", { title, body }),
   // Processes running inside the runtime container (`docker top`).
   containerTop: () => invoke<ProcessInfo[]>("container_top"),
   // Recent commits on /workspace (`git log`); defaults to 12 server-side.

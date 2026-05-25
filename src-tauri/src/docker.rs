@@ -20,6 +20,12 @@ pub enum DockerError {
     InvalidPath(String),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    /// An in-container command (git / the GitHub API) ran but reported a failure.
+    /// Carries the tool's own message verbatim so the UI shows the real reason
+    /// (e.g. "nothing to commit", "A pull request already exists") rather than a
+    /// generic error. Used by the git-write ops (stage/commit/open-PR).
+    #[error("{0}")]
+    Command(String),
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -578,6 +584,22 @@ impl DockerClient {
     }
 
     async fn exec_capture(&self, cmd: Vec<&str>) -> Result<String, DockerError> {
+        self.exec_capture_env(cmd, &[]).await
+    }
+
+    /// Like [`exec_capture`] but forwards additional `KEY=value` env entries into
+    /// the exec. Used to hand a secret (e.g. `GITHUB_TOKEN`) to an in-container
+    /// command without it ever appearing in the command's argv or a log: the
+    /// value rides in the structured Docker exec `env` field (same channel as
+    /// `TMUX_TMPDIR`), and the in-shell script references it by NAME only. The
+    /// host process never has the secret on a command line.
+    async fn exec_capture_env(
+        &self,
+        cmd: Vec<&str>,
+        extra_env: &[String],
+    ) -> Result<String, DockerError> {
+        let mut env: Vec<String> = vec!["TMUX_TMPDIR=/tmp/codehub".into()];
+        env.extend(extra_env.iter().cloned());
         let exec = self
             .docker
             .create_exec::<String>(
@@ -586,7 +608,7 @@ impl DockerClient {
                     attach_stdout: Some(true),
                     attach_stderr: Some(true),
                     cmd: Some(cmd.into_iter().map(String::from).collect()),
-                    env: Some(vec!["TMUX_TMPDIR=/tmp/codehub".into()]),
+                    env: Some(env),
                     ..Default::default()
                 },
             )
@@ -1153,6 +1175,249 @@ impl DockerClient {
             Ok(out)
         } else {
             Ok(String::new())
+        }
+    }
+
+    /// Unified diff of the staged changes in `/workspace` (`git diff --cached`):
+    /// what a `git commit` right now would record. Backs the session-detail
+    /// inspector's "Staged" filter. Empty string when nothing is staged (or a
+    /// commit-less repo). Errors only when the container is down.
+    pub async fn git_diff_staged(&self) -> Result<String, DockerError> {
+        self.require_running().await?;
+        let out = self
+            .exec_capture(vec![
+                "git",
+                "-C",
+                "/workspace",
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "--no-color",
+                "--cached",
+            ])
+            .await?;
+        Ok(if out.contains("diff --git") {
+            out
+        } else {
+            String::new()
+        })
+    }
+
+    /// Unified diff of the unstaged changes to tracked files in `/workspace`
+    /// (`git diff`, no `--cached`): working tree vs the index. Backs the
+    /// "Unstaged" filter. Untracked files are not included (they have no index
+    /// entry); the rail's per-file `git_diff` covers those. Empty string when the
+    /// tracked tree matches the index. Errors only when the container is down.
+    pub async fn git_diff_unstaged(&self) -> Result<String, DockerError> {
+        self.require_running().await?;
+        let out = self
+            .exec_capture(vec![
+                "git",
+                "-C",
+                "/workspace",
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "--no-color",
+            ])
+            .await?;
+        Ok(if out.contains("diff --git") {
+            out
+        } else {
+            String::new()
+        })
+    }
+
+    /// Stage every change in `/workspace` (`git add -A`) — new, modified, and
+    /// deleted paths. Backs the session-detail "Stage all" action. Returns Ok on
+    /// success; surfaces git's own message (verbatim) as the error otherwise (e.g.
+    /// "not a git repository"). `add` is silent on success, so any non-empty
+    /// output is treated as a failure. Errors only when the container is down.
+    pub async fn git_stage_all(&self) -> Result<(), DockerError> {
+        self.require_running().await?;
+        let out = self
+            .exec_capture(vec!["git", "-C", "/workspace", "add", "-A"])
+            .await?;
+        let out = out.trim();
+        if out.is_empty() {
+            Ok(())
+        } else {
+            Err(DockerError::Command(out.to_string()))
+        }
+    }
+
+    /// Commit the staged changes in `/workspace` with `message` (`git commit -m`).
+    /// The message is passed as a discrete argv element — never through a shell —
+    /// so it can't be misread as an option or injected. On success returns git's
+    /// summary line (e.g. "[main a1b2c3d] subject"); on failure (nothing staged,
+    /// no committer identity configured, not a repo) returns git's own words so
+    /// the UI can show the real reason rather than a generic error. Identity is
+    /// NOT fabricated — an unconfigured `user.name`/`user.email` surfaces git's
+    /// "Please tell me who you are" verbatim. Errors only when the container is
+    /// down.
+    pub async fn git_commit(&self, message: &str) -> Result<String, DockerError> {
+        self.require_running().await?;
+        let out = self
+            .exec_capture(vec!["git", "-C", "/workspace", "commit", "-m", message])
+            .await?;
+        // exec_capture merges stdout+stderr without an exit code, so classify by
+        // git's success line rather than scanning for failure substrings: a
+        // successful commit prints "[<branch> <short-hash>] <subject>" (and
+        // "[<branch> (root-commit) <hash>] …" for the first commit). Anchoring on
+        // that bracketed prefix — which carries a >=7-char hex hash — avoids a
+        // false failure when the commit *subject* itself contains "error:" /
+        // "fatal:" (e.g. committing a message like "fix: error: handling").
+        let committed = out.lines().any(|line| commit_success_line(line.trim()));
+        if committed {
+            Ok(out.trim().to_string())
+        } else {
+            Err(DockerError::Command(out.trim().to_string()))
+        }
+    }
+
+    /// Open a GitHub pull request for the current `/workspace` branch.
+    ///
+    /// There is no `gh` CLI in the runtime image, so this drives the GitHub REST
+    /// API directly (mirroring [`github_status`](Self::github_status)): the
+    /// `GITHUB_TOKEN` is referenced by NAME inside an in-container `sh -c` — it
+    /// never appears in the Rust argv or a log. Two steps:
+    ///   1. Preflight (in-container): resolve the current branch, the `origin`
+    ///      owner/repo slug, and the repo's default base branch. Any missing
+    ///      precondition (no token, detached HEAD, no `origin`, not a repo) comes
+    ///      back as an honest `ERR*` marker and is mapped to a descriptive error —
+    ///      nothing is fabricated.
+    ///   2. Push the branch (`git push -u origin HEAD`, authed via an in-shell
+    ///      credential helper that reads `$GITHUB_TOKEN` — token never in argv),
+    ///      then `POST /repos/<slug>/pulls`. `title`/`body` are serialized to JSON
+    ///      in Rust (proper escaping) and handed to the script as a positional arg
+    ///      (`$1`), so they're never shell-parsed.
+    ///
+    /// Returns the new PR's `html_url` on success. Errors when the container is
+    /// down; every other failure (no token, push rejected, API error) is a
+    /// descriptive `Command` error carrying GitHub's / git's own message.
+    pub async fn git_open_pr(&self, title: &str, body: &str) -> Result<String, DockerError> {
+        self.require_running().await?;
+        const VAR: &str = "GITHUB_TOKEN";
+        // The token is read from the HOST env and forwarded into each exec via the
+        // structured `env` field (never argv/logs) — `exec_capture` does not
+        // otherwise propagate it into the container, so the in-shell
+        // `${GITHUB_TOKEN}` reference would be empty without this.
+        let Ok(token) = std::env::var(VAR) else {
+            return Err(DockerError::Command(
+                "no GITHUB_TOKEN — connect GitHub in Settings to open a PR".into(),
+            ));
+        };
+        let token_env = vec![format!("{VAR}={token}")];
+
+        // Step 1 — preflight. Token referenced by name in-container only.
+        let pre = self
+            .exec_capture_env(
+                vec![
+                    "sh",
+                    "-c",
+                    r#"cd /workspace 2>/dev/null || { echo ERRNOWS; exit 0; }
+b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || { echo ERRNOREPO; exit 0; }
+[ "$b" = HEAD ] && { echo ERRDETACHED; exit 0; }
+u=$(git remote get-url origin 2>/dev/null) || { echo ERRNOORIGIN; exit 0; }
+slug=$(printf %s "$u" | sed -E 's#^.*github.com[:/]##; s#\.git$##')
+[ -z "$slug" ] && { echo ERRNOORIGIN; exit 0; }
+base=$(curl -s -f -H "Authorization: token ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$slug" 2>/dev/null | sed -n 's/.*"default_branch": *"\([^"]*\)".*/\1/p' | head -1)
+[ -z "$base" ] && base=main
+printf 'OK\n%s\n%s\n%s\n' "$b" "$slug" "$base""#,
+                ],
+                &token_env,
+            )
+            .await?;
+        let mut lines = pre.lines();
+        match lines.next().map(str::trim) {
+            Some("OK") => {},
+            Some("ERRNOWS") => return Err(DockerError::Command("no /workspace in runtime".into())),
+            Some("ERRNOREPO") => {
+                return Err(DockerError::Command(
+                    "/workspace is not a git repository".into(),
+                ))
+            },
+            Some("ERRDETACHED") => {
+                return Err(DockerError::Command(
+                    "detached HEAD — check out a branch before opening a PR".into(),
+                ))
+            },
+            Some("ERRNOORIGIN") => {
+                return Err(DockerError::Command(
+                    "no GitHub `origin` remote on /workspace".into(),
+                ))
+            },
+            other => {
+                return Err(DockerError::Command(format!(
+                    "PR preflight failed: {}",
+                    other.unwrap_or("").trim()
+                )))
+            },
+        }
+        let branch = lines.next().unwrap_or("").trim();
+        let slug = lines.next().unwrap_or("").trim();
+        let base = lines.next().unwrap_or("main").trim();
+        if branch.is_empty() || slug.is_empty() {
+            return Err(DockerError::Command("could not resolve branch/repo".into()));
+        }
+        if branch == base {
+            return Err(DockerError::Command(format!(
+                "current branch is the base branch ({base}) — nothing to PR"
+            )));
+        }
+
+        // JSON built in Rust → proper escaping of user-supplied title/body.
+        let payload = serde_json::json!({
+            "title": title,
+            "head": branch,
+            "base": base,
+            "body": body,
+        })
+        .to_string();
+
+        // Step 2 — push + create. slug/json are positional args ($2/$1), never
+        // shell-parsed; the token is only ever an in-shell env reference (incl.
+        // the credential helper, so it never reaches git's argv either).
+        let out = self
+            .exec_capture_env(
+                vec![
+                    "sh",
+                    "-c",
+                    r#"cd /workspace || { echo ERRNOWS; exit 0; }
+git -c credential.helper='!f(){ echo username=x-access-token; echo "password=${GITHUB_TOKEN}"; };f' push -u origin HEAD >/dev/null 2>&1 || { echo ERRPUSH; exit 0; }
+printf %s "$1" > /tmp/codehub-pr.json
+curl -s -X POST -H "Authorization: token ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" -d @/tmp/codehub-pr.json "https://api.github.com/repos/$2/pulls"
+rm -f /tmp/codehub-pr.json"#,
+                    "sh",
+                    &payload,
+                    slug,
+                ],
+                &token_env,
+            )
+            .await?;
+        let out = out.trim();
+        if out.starts_with("ERRPUSH") {
+            return Err(DockerError::Command(format!(
+                "could not push `{branch}` to origin (auth or remote rejected)"
+            )));
+        }
+        match serde_json::from_str::<serde_json::Value>(out) {
+            Ok(v) => {
+                if let Some(url) = v.get("html_url").and_then(|u| u.as_str()) {
+                    Ok(url.to_string())
+                } else {
+                    // GitHub error body: surface its `message` (e.g. "A pull
+                    // request already exists", "Validation Failed").
+                    let msg = v
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("GitHub rejected the pull request");
+                    Err(DockerError::Command(msg.to_string()))
+                }
+            },
+            Err(_) => Err(DockerError::Command(
+                "unexpected response from GitHub when creating the PR".into(),
+            )),
         }
     }
 
@@ -2884,6 +3149,23 @@ fn parse_github_repos(raw: &str) -> Vec<crate::types::GithubRepo> {
         .collect()
 }
 
+/// Does this line look like `git commit`'s success summary
+/// (`[<branch> <short-hash>] <subject>`, or `[<branch> (root-commit) <hash>] …`)?
+/// True when a bracketed prefix at the line start contains a token that is a
+/// hex hash of 7 or more chars. Used by [`git_commit`](DockerClient::git_commit)
+/// to detect success without misreading a subject containing words like "error:".
+fn commit_success_line(line: &str) -> bool {
+    if !line.starts_with('[') {
+        return false;
+    }
+    let Some(end) = line.find(']') else {
+        return false;
+    };
+    line[1..end]
+        .split_whitespace()
+        .any(|w| w.len() >= 7 && w.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
 /// Parse the US-delimited `git log` output (one commit per line,
 /// `hash\x1fauthor\x1frelative\x1fsubject`). Lines without all four fields —
 /// notably a `fatal:` error on a non-repo, or the empty output of a commit-less
@@ -3084,11 +3366,37 @@ pub struct AttachHandles {
 #[cfg(test)]
 mod tests {
     use super::{
-        clip_title, count_session_edits, is_env_name, is_session_id, is_synthetic_prompt,
-        is_version_like, latest_context_used, parse_agent_config, parse_claude_integrations,
-        parse_claude_sessions, parse_claude_usage, parse_find, parse_frontmatter, parse_git_log,
-        parse_git_status, parse_tools_field, parse_top, workspace_path, Cli,
+        clip_title, commit_success_line, count_session_edits, is_env_name, is_session_id,
+        is_synthetic_prompt, is_version_like, latest_context_used, parse_agent_config,
+        parse_claude_integrations, parse_claude_sessions, parse_claude_usage, parse_find,
+        parse_frontmatter, parse_git_log, parse_git_status, parse_tools_field, parse_top,
+        workspace_path, Cli,
     };
+
+    #[test]
+    fn commit_success_line_anchors_on_hash_not_subject() {
+        // Real success lines.
+        assert!(commit_success_line("[main a1b2c3d] add feature"));
+        assert!(commit_success_line(
+            "[master (root-commit) 0fedcba] initial"
+        ));
+        // A subject containing error words must NOT be mistaken for failure: the
+        // success line is still detected by its bracketed hash.
+        assert!(commit_success_line("[main 1234567] fix: error: handling"));
+        // Genuine failures have no bracketed hash prefix.
+        assert!(!commit_success_line(
+            "nothing to commit, working tree clean"
+        ));
+        assert!(!commit_success_line(
+            "fatal: not a git repository (or any of the parent directories): .git"
+        ));
+        assert!(!commit_success_line(
+            "Author identity unknown\n*** Please tell me who you are."
+        ));
+        assert!(!commit_success_line(""));
+        // A bracketed prefix without a hash-like token is not a success line.
+        assert!(!commit_success_line("[note] not a commit"));
+    }
 
     #[test]
     fn version_like_accepts_real_versions_rejects_exec_errors() {

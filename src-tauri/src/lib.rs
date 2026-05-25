@@ -376,6 +376,68 @@ async fn container_git_diff_all(state: tauri::State<'_, AppState>) -> Result<Str
     state.docker.git_diff_all().await.map_err(|e| e.to_string())
 }
 
+/// Staged-only diff of `/workspace` (`git diff --cached`) — the session-detail
+/// inspector's "Staged" filter. Empty string when nothing is staged.
+#[tauri::command]
+async fn container_git_diff_staged(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    state
+        .docker
+        .git_diff_staged()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Unstaged diff of tracked `/workspace` files (`git diff`) — the "Unstaged"
+/// filter. Empty string when the tracked tree matches the index.
+#[tauri::command]
+async fn container_git_diff_unstaged(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    state
+        .docker
+        .git_diff_unstaged()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Stage every `/workspace` change (`git add -A`) — session-detail "Stage all".
+#[tauri::command]
+async fn container_git_stage_all(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state
+        .docker
+        .git_stage_all()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Commit the staged `/workspace` changes (`git commit -m <message>`) — returns
+/// git's summary line on success, or its verbatim message as the error.
+#[tauri::command]
+async fn container_git_commit(
+    message: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    state
+        .docker
+        .git_commit(&message)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Push the current `/workspace` branch and open a GitHub PR for it — returns the
+/// new PR's URL. Honest descriptive error when a precondition is missing (no
+/// token / remote / branch) or GitHub rejects it.
+#[tauri::command]
+async fn container_git_open_pr(
+    title: String,
+    body: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    state
+        .docker
+        .git_open_pr(&title, &body)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Processes running inside the runtime container (Containers view "Processes"
 /// card), from `docker top`. Errs only when the container is down.
 #[tauri::command]
@@ -1108,6 +1170,11 @@ pub fn run() {
             container_git_status,
             container_git_diff,
             container_git_diff_all,
+            container_git_diff_staged,
+            container_git_diff_unstaged,
+            container_git_stage_all,
+            container_git_commit,
+            container_git_open_pr,
             container_top,
             claude_usage,
             claude_sessions,

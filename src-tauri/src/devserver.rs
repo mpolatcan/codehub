@@ -192,6 +192,14 @@ pub async fn serve() {
         .route("/container-git-status", get(container_git_status))
         .route("/container-git-diff", get(container_git_diff))
         .route("/container-git-diff-all", get(container_git_diff_all))
+        .route("/container-git-diff-staged", get(container_git_diff_staged))
+        .route(
+            "/container-git-diff-unstaged",
+            get(container_git_diff_unstaged),
+        )
+        .route("/container-git-stage-all", post(container_git_stage_all))
+        .route("/container-git-commit", post(container_git_commit))
+        .route("/container-git-open-pr", post(container_git_open_pr))
         .route("/container-top", get(container_top))
         .route("/claude-usage", get(claude_usage))
         .route("/claude-sessions", get(claude_sessions))
@@ -435,6 +443,61 @@ async fn container_git_diff(
 
 async fn container_git_diff_all(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
     st.docker.git_diff_all().await.map(Json).map_err(err)
+}
+
+async fn container_git_diff_staged(
+    State(st): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker.git_diff_staged().await.map(Json).map_err(err)
+}
+
+async fn container_git_diff_unstaged(
+    State(st): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker.git_diff_unstaged().await.map(Json).map_err(err)
+}
+
+async fn container_git_stage_all(
+    State(st): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker
+        .git_stage_all()
+        .await
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(err)
+}
+
+#[derive(Deserialize)]
+struct CommitBody {
+    message: String,
+}
+
+async fn container_git_commit(
+    State(st): State<AppState>,
+    Json(body): Json<CommitBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker
+        .git_commit(&body.message)
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+#[derive(Deserialize)]
+struct OpenPrBody {
+    title: String,
+    body: String,
+}
+
+async fn container_git_open_pr(
+    State(st): State<AppState>,
+    Json(body): Json<OpenPrBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.docker
+        .git_open_pr(&body.title, &body.body)
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 async fn container_top(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
