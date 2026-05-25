@@ -50,19 +50,30 @@ export function SessionDetail({ session }: { session: string }) {
   const claudeId = activity?.claudeId ?? (meta?.cli === "claude" ? meta.claudeId : undefined);
   const usage = useSessionUsage(claudeId);
 
-  // Branch is workspace-wide (single runtime). Fetch once when running; it
-  // changes rarely and is only a header label, so no polling.
+  // Branch (+ commits ahead of upstream) is workspace-wide (single runtime).
+  // Fetch once when running; it changes rarely and is only a header label, so no
+  // polling. Both come from the same real container_git_status read.
   const [branch, setBranch] = useState<string | null>(null);
+  const [ahead, setAhead] = useState(0);
   useEffect(() => {
     if (!running) {
       setBranch(null);
+      setAhead(0);
       return;
     }
     let alive = true;
     ipc
       .containerGitStatus()
-      .then((s) => alive && setBranch(s.branch))
-      .catch(() => alive && setBranch(null));
+      .then((s) => {
+        if (!alive) return;
+        setBranch(s.branch);
+        setAhead(s.ahead);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setBranch(null);
+        setAhead(0);
+      });
     return () => {
       alive = false;
     };
@@ -169,6 +180,11 @@ export function SessionDetail({ session }: { session: string }) {
           >
             <span style={{ display: "inline-flex", color: "var(--fg-3)" }}>{Ico.branch}</span>
             {branch}
+            {ahead > 0 && (
+              <span style={{ color: "var(--wait)" }} title={`${ahead} ahead of upstream`}>
+                ·{ahead}
+              </span>
+            )}
           </span>
         )}
 
@@ -353,7 +369,11 @@ function DiffTab({ running }: { running: boolean }) {
     };
   }, [running]);
 
-  const counts = diff ? diffCounts(parseDiff(diff)) : null;
+  // Parse once → both the +/− counts and the changed-file count come from the
+  // same real diff (file count = `diff --git` header rows).
+  const rows = diff ? parseDiff(diff) : null;
+  const counts = rows ? diffCounts(rows) : null;
+  const fileCount = rows ? rows.filter((r) => r.kind === "file").length : 0;
 
   return (
     <>
@@ -370,6 +390,12 @@ function DiffTab({ running }: { running: boolean }) {
         >
           <span style={{ color: "var(--live)" }}>+{counts.added}</span>{" "}
           <span style={{ color: "var(--err)" }}>−{counts.removed}</span>
+          {fileCount > 0 && (
+            <span style={{ color: "var(--fg-3)" }}>
+              {" · "}
+              {fileCount} {fileCount === 1 ? "file" : "files"}
+            </span>
+          )}
         </div>
       )}
       <DiffBody

@@ -103,7 +103,7 @@ export function CommandPalette() {
       <CommandList>
         <CommandEmpty>No matches.</CommandEmpty>
 
-        <CommandGroup heading="Go to">
+        <CommandGroup heading={`Go to · ${VIEWS.length}`}>
           {VIEWS.map((v) => (
             <CommandItem
               key={v.id}
@@ -174,8 +174,10 @@ export function CommandPalette() {
           </CommandGroup>
         )}
 
-        <CommandGroup heading="Commands">
-          {runtimeLive && (
+        {/* Whole group is gated on a live runtime — all three commands need it —
+            so the heading count stays honest (no "Commands · 3" with dead rows). */}
+        {runtimeLive && (
+          <CommandGroup heading="Commands · 3">
             <CommandItem value="review all changes diff workspace" onSelect={openDiff}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.diff}</span>
               <span style={{ flex: 1 }}>Review all changes</span>
@@ -183,14 +185,10 @@ export function CommandPalette() {
                 workspace diff
               </span>
             </CommandItem>
-          )}
-          {runtimeLive && (
             <CommandItem value="open files browser workspace" onSelect={openFiles}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.files}</span>
               <span style={{ flex: 1 }}>Open files browser</span>
             </CommandItem>
-          )}
-          {runtimeLive && (
             <CommandItem value="restart runtime container" onSelect={restart}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.container}</span>
               <span style={{ flex: 1 }}>Restart runtime container</span>
@@ -198,11 +196,11 @@ export function CommandPalette() {
                 ends sessions
               </span>
             </CommandItem>
-          )}
-        </CommandGroup>
+          </CommandGroup>
+        )}
 
         {runtimeLive && (
-          <CommandGroup heading="Spawn new agent">
+          <CommandGroup heading={`Spawn new agent · ${CLIS.length}`}>
             {CLIS.map((c) => (
               <CommandItem key={c.id} value={`spawn ${c.label}`} onSelect={() => spawn(c.id)}>
                 <AgentGlyph agent={c.id} size={13} color={`var(--a-${c.id})`} />
@@ -219,7 +217,9 @@ export function CommandPalette() {
             to a connected GitHub account (honest-empty until the BE connector
             lands). Selecting a recent re-points the /workspace mount. */}
         {(recents.length > 0 || githubRepos.length > 0) && (
-          <CommandGroup heading="Repos">
+          <CommandGroup
+            heading={`Repos · ${Math.min(recents.length, 6) + Math.min(githubRepos.length, 6)}`}
+          >
             {recents.slice(0, 6).map((path) => (
               <CommandItem
                 key={path}

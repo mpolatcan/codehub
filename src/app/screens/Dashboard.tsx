@@ -222,7 +222,9 @@ export function Dashboard() {
   };
 
   const sessionLabel = `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}`;
-  const costLabel = haveUsage ? ` · ${fmtUsd(totalCost)} est. today` : "";
+  // All-time estimate (Claude+Codex estCostUsd). There is no 24h cost window, so
+  // it must NOT be labelled "today" — matches the Usage header's "est." phrasing.
+  const costLabel = haveUsage ? ` · ${fmtUsd(totalCost)} est.` : "";
   const headerSub = running ? `${sessionLabel}${costLabel}` : `runtime ${state}`;
 
   return (
@@ -260,7 +262,7 @@ export function Dashboard() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(5, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
             gap: 12,
             marginBottom: 18,
           }}

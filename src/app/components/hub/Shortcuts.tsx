@@ -3,11 +3,12 @@
  *
  * Honesty rule (binding): this lists ONLY bindings that actually fire today —
  * the global handlers in hooks/useKeyboard.ts plus the unconditional pass-through
- * to the terminal. The design mock's full grid included shortcuts for features
- * that don't exist yet (diff inspector, companion toggle, account switch, theme
- * toggle, stop-agent, …); listing those as working would be a lie, so they're
- * omitted until those features ship. Keeping this in sync with useKeyboard.ts is
- * the maintenance contract — a binding appears here only when it's wired there.
+ * to the terminal. The design mock's full grid also included shortcuts for things
+ * that have no handler or backend (stage-hunk/commit/open-PR, companion toggle,
+ * account switch, theme toggle, stop-agent, prev/next tab, transcript search, …);
+ * listing those as working would be a lie, so they stay omitted until they ship.
+ * Keeping this in sync with useKeyboard.ts is the maintenance contract — a binding
+ * appears here only when it's wired there.
  *
  * Adds a filter input (live substring match over key + description) and a print
  * button (window.print) over the design.
@@ -27,9 +28,25 @@ export const SHORTCUT_GROUPS: { title: string; items: Sc[] }[] = [
     title: "Workspace",
     items: [
       { keys: ["⌘", "N"], desc: "New agent session" },
-      { keys: ["⌘", "T"], desc: "New workspace tab" },
+      { keys: ["⌘", "T"], desc: "New agent session (alias)" },
+      { keys: ["⌘", "⇧", "N"], desc: "New workspace" },
       { keys: ["⌘", "W"], desc: "Close focused session" },
+    ],
+  },
+  {
+    title: "Panes",
+    items: [
       { keys: ["⌘", "\\"], desc: "Split focused pane" },
+      { keys: ["⌘", "⇧", "\\"], desc: "Split pane (column)" },
+      { keys: ["⌘", "⇧", "B"], desc: "Add Shell pane" },
+    ],
+  },
+  {
+    title: "Panels",
+    items: [
+      { keys: ["⌘", "E"], desc: "Toggle Files panel" },
+      { keys: ["⌘", "D"], desc: "Toggle Diff panel" },
+      { keys: ["⌘", "R"], desc: "Open Resume" },
     ],
   },
   {
