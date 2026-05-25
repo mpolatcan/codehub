@@ -92,7 +92,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Build runtime image (single-arch, no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: runtime
           push: false
