@@ -1,3 +1,4 @@
+import type { CSSProperties, ReactNode } from "react";
 import { CLIS, SPEC_BY_CLI } from "../../lib/catalog";
 import { type Cli, ipc } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
@@ -58,6 +59,14 @@ export function CommandPalette() {
   const runtimeLive = useStore((s) => s.status?.state === "running");
 
   const sessions = Object.entries(sessionMeta);
+
+  // Total registered actions (honest count — the palette's command surface, not
+  // a per-keystroke filtered tally; cmdk's filtered count isn't exposed without
+  // reaching into its internals, so we label the stable total rather than fake a
+  // live "N results"). Mirrors exactly the rows rendered below.
+  const repoCount = Math.min(recents.length, 6) + Math.min(githubRepos.length, 6);
+  const commandCount =
+    VIEWS.length + 1 + sessions.length + (runtimeLive ? 4 + CLIS.length : 0) + repoCount;
 
   const goView = (id: HubView) => {
     setView(id);
@@ -268,6 +277,63 @@ export function CommandPalette() {
           </CommandGroup>
         )}
       </CommandList>
+
+      {/* Footer nav-hint bar (design/screens/command-palette.jsx). Only the hints
+          that are REAL cmdk behaviors: ↑↓ move, ⏎ run, esc close. The design's
+          "⌘⏎ open in new pane" / "⌥⏎ spawn here" rows are dropped — no modifier
+          handlers are wired on the items, so listing them would be a lie. Right
+          side shows the stable total action count (not a faked "N results · Nms").*/}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          padding: "6px 14px",
+          borderTop: "1px solid var(--bd-soft)",
+          background: "var(--bg-1)",
+          fontSize: 11,
+          color: "var(--fg-2)",
+        }}
+      >
+        <span>
+          <Kbd>↑</Kbd>
+          <Kbd style={{ marginLeft: 2 }}>↓</Kbd> navigate
+        </span>
+        <span>
+          <Kbd>⏎</Kbd> open
+        </span>
+        <span>
+          <Kbd>esc</Kbd> close
+        </span>
+        <span style={{ flex: 1 }} />
+        <span className="mono" style={{ color: "var(--fg-3)" }}>
+          {commandCount} commands
+        </span>
+      </div>
     </CommandDialog>
+  );
+}
+
+function Kbd({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <span
+      className="mono"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minWidth: 16,
+        height: 16,
+        padding: "0 4px",
+        borderRadius: 4,
+        background: "var(--bg-3)",
+        border: "1px solid var(--bd-soft)",
+        color: "var(--fg-2)",
+        fontSize: 10,
+        ...style,
+      }}
+    >
+      {children}
+    </span>
   );
 }
