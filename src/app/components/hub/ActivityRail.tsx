@@ -408,10 +408,68 @@ function PromptToasts() {
 
   if (prompts.length === 0) return null;
 
+  // Bulk action when more than one agent is waiting (design hub-states
+  // HubStateApprovals): fire respond_prompt for every pending session at once.
+  const respondAll = (allow: boolean) => {
+    for (const p of prompts) respond(p.session, allow);
+  };
+
   return (
     <div
       style={{ borderBottom: "1px solid var(--bd-soft)", display: "flex", flexDirection: "column" }}
     >
+      {prompts.length > 1 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 12px 0",
+          }}
+        >
+          <span className="lbl" style={{ fontSize: 10 }}>
+            {prompts.length} awaiting
+          </span>
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={() => respondAll(true)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "3px 8px",
+              borderRadius: 5,
+              fontSize: 11,
+              fontWeight: 500,
+              cursor: "pointer",
+              border: "1px solid color-mix(in oklab, var(--live) 45%, transparent)",
+              background: "color-mix(in oklab, var(--live) 18%, transparent)",
+              color: "var(--live)",
+            }}
+          >
+            Approve all
+          </button>
+          <button
+            type="button"
+            onClick={() => respondAll(false)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "3px 8px",
+              borderRadius: 5,
+              fontSize: 11,
+              cursor: "pointer",
+              border: "1px solid var(--bd-soft)",
+              background: "transparent",
+              color: "var(--fg-2)",
+            }}
+          >
+            Deny all
+          </button>
+        </div>
+      )}
       {prompts.map((p, i) => (
         <PromptToast
           key={p.session}

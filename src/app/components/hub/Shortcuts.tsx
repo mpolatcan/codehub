@@ -30,6 +30,7 @@ export const SHORTCUT_GROUPS: { title: string; items: Sc[] }[] = [
       { keys: ["⌘", "N"], desc: "New agent session" },
       { keys: ["⌘", "T"], desc: "New agent session (alias)" },
       { keys: ["⌘", "⇧", "N"], desc: "New workspace" },
+      { keys: ["⌘", "G"], desc: "New agent in a new group" },
       { keys: ["⌘", "W"], desc: "Close focused session" },
     ],
   },
@@ -44,6 +45,7 @@ export const SHORTCUT_GROUPS: { title: string; items: Sc[] }[] = [
   {
     title: "Panels",
     items: [
+      { keys: ["⌘", "B"], desc: "Toggle sidebar" },
       { keys: ["⌘", "E"], desc: "Toggle Files panel" },
       { keys: ["⌘", "D"], desc: "Toggle Diff panel" },
       { keys: ["⌘", "R"], desc: "Toggle Resume drawer" },

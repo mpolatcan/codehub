@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgentGlyph } from "../../components/primitives/AgentGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
 import { useLauncher } from "../../lib/launcher";
+import { useOverlay } from "../../lib/overlay";
 import { useStore } from "../../lib/store";
 import { activeGroup, workspaceLeaves } from "../../lib/tree";
 
@@ -20,13 +21,21 @@ export function HubTabs() {
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const closeWorkspace = useStore((s) => s.closeWorkspace);
   const openLaunch = useLauncher((s) => s.open);
+  const setPalette = useOverlay((s) => s.setPalette);
   // Awaiting-input signal for the bell dot: any session with a pending prompt
   // (← pending_prompts / live agent-event, §7). Real for Claude/Codex; empty
   // (no dot) for Antigravity and until the BE track lands.
-  const pendingCount = useStore((s) => s.pendingPrompts.length);
+  const pendingPrompts = useStore((s) => s.pendingPrompts);
+  const pendingCount = pendingPrompts.length;
+  const pendingSessions = pendingPrompts.map((p) => p.session);
 
   const stripRef = useRef<HTMLDivElement>(null);
   const prevCount = useRef(workspaces.length);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  // True when the tab strip is scrolled past its viewport (more tabs than fit).
+  // Drives the trailing "⌄" overflow affordance (design HubStateTabOverflow).
+  const [overflowing, setOverflowing] = useState(false);
+
   useEffect(() => {
     const strip = stripRef.current;
     if (strip && workspaces.length > prevCount.current) {
@@ -34,6 +43,17 @@ export function HubTabs() {
     }
     prevCount.current = workspaces.length;
   }, [workspaces.length]);
+
+  // Measure overflow whenever tabs change or the window resizes.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const measure = () => setOverflowing(strip.scrollWidth > strip.clientWidth + 4);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(strip);
+    return () => ro.disconnect();
+  }, []);
 
   return (
     <div
@@ -152,9 +172,146 @@ export function HubTabs() {
 
       <div style={{ flex: 1 }} />
 
-      {/* trailing actions — the awaiting-input bell. Files / Diff / split / spawn
-          live in the bottom ActionBar (design: main-hub-a), not here. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "0 8px" }}>
+      {/* trailing actions — overflow menu (when tabs exceed the strip) + the
+          awaiting-input bell. Files / Diff / split / spawn live in the bottom
+          ActionBar (design: main-hub-a), not here. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          padding: "0 8px",
+          position: "relative",
+        }}
+      >
+        {overflowing && (
+          <IconBtn
+            title="All workspaces"
+            active={overflowOpen}
+            onClick={() => setOverflowOpen((v) => !v)}
+          >
+            {Ico.chevD}
+          </IconBtn>
+        )}
+        {overflowOpen && (
+          <>
+            {/* click-away scrim */}
+            <button
+              type="button"
+              aria-label="Close workspace menu"
+              onClick={() => setOverflowOpen(false)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 40,
+                background: "transparent",
+                border: "none",
+                cursor: "default",
+              }}
+            />
+            <div
+              style={{
+                position: "absolute",
+                top: "calc(100% + 4px)",
+                right: 4,
+                width: 280,
+                zIndex: 50,
+                background: "var(--bg-2)",
+                border: "1px solid var(--bd)",
+                borderRadius: 8,
+                boxShadow: "var(--shadow-2)",
+                padding: 6,
+              }}
+            >
+              <div
+                style={{
+                  padding: "4px 8px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  borderBottom: "1px solid var(--bd-soft)",
+                  marginBottom: 4,
+                }}
+              >
+                <span className="lbl" style={{ fontSize: 10 }}>
+                  Workspaces · {workspaces.length}
+                </span>
+                <span style={{ flex: 1 }} />
+                <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                  ⌘P
+                </span>
+              </div>
+              {workspaces.map((ws) => {
+                const sessions = workspaceLeaves(ws);
+                const waits = sessions.filter((s) => pendingSessions.includes(s)).length;
+                const focused = activeGroup(ws)?.focused;
+                const primary = focused && sessions.includes(focused) ? focused : sessions[0];
+                const meta = primary ? sessionMeta[primary] : undefined;
+                const name = meta && sessions.length === 1 ? meta.alias : `Tab ${ws.plate}`;
+                return (
+                  <div
+                    key={ws.id}
+                    className="ctx-row"
+                    onClick={() => {
+                      switchWorkspace(ws.id);
+                      setOverflowOpen(false);
+                    }}
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <StatusDot status={ws.id === activeId ? "live" : "idle"} />
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        lineHeight: 1.15,
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      <span
+                        className="mono"
+                        style={{
+                          fontSize: 13,
+                          color: "var(--fg-0)",
+                          fontWeight: 500,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {name}
+                      </span>
+                      <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                        {sessions.length} {sessions.length === 1 ? "session" : "sessions"}
+                      </span>
+                    </div>
+                    {waits > 0 && (
+                      <span className="mono" style={{ fontSize: 10, color: "var(--wait)" }}>
+                        {waits} wait
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+              <div style={{ borderTop: "1px solid var(--bd-soft)", marginTop: 4, paddingTop: 4 }}>
+                <div
+                  className="ctx-row"
+                  onClick={() => {
+                    setOverflowOpen(false);
+                    setPalette(true);
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13 }}
+                >
+                  {Ico.search}
+                  Search workspaces…
+                  <span className="kbd" style={{ marginLeft: "auto" }}>
+                    ⌘P
+                  </span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
         <IconBtn
           title={
             pendingCount > 0

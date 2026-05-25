@@ -124,7 +124,7 @@ export default function DevPreview() {
             {screen === "settings" && <Settings onStopAll={() => {}} />}
             {screen === "spawn" && (
               <div style={{ position: "relative", width: "100%", height: "100%" }}>
-                <SpawnDialog onLaunch={() => {}} onCancel={() => {}} />
+                <SpawnDialog standalone onLaunch={() => {}} onCancel={() => {}} />
               </div>
             )}
           </AppShell>

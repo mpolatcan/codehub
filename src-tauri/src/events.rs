@@ -234,22 +234,89 @@ impl EventsTracker {
 
 /// Launch a long-lived bollard exec that tails the events dir and feeds
 /// [`EventsTracker`]. Emits `codehub://agent-event` to the Tauri frontend for
-/// each parsed line. Silently exits when the container stops (the caller's
-/// lifecycle loop restarts it on the next `ensure_runtime`).
+/// each parsed line AND fires OS notifications for real await-input / turn-finish
+/// events when the user has enabled them in Settings. Silently exits when the
+/// container stops (the caller's lifecycle loop restarts it on the next
+/// `ensure_runtime`).
 ///
-/// The function returns immediately — the tail runs in a background `tokio::spawn`.
+/// The `config` store is read at event time (not captured by value) so a
+/// notification toggle the user just changed takes effect immediately. Only REAL
+/// hook events fire a notification — no synthetic timers.
+///
+/// The function returns immediately — the tail runs in a background spawn on
+/// Tauri's managed runtime (the `setup` hook has no entered tokio runtime, so a
+/// bare `tokio::spawn` would abort the app — see the CLAUDE.md spawner gotcha).
+/// The dev bridge, which runs under `#[tokio::main]`, calls `event_tailer_loop`
+/// directly with `tokio::spawn` and does NOT fire OS notifications.
 pub fn start_event_tailer(
     docker: Arc<DockerClient>,
     tracker: Arc<EventsTracker>,
+    config: Arc<crate::config::ConfigStore>,
     app: tauri::AppHandle,
 ) {
-    // Spawn on Tauri's managed runtime — the `setup` hook runs on the main thread
-    // with NO entered tokio runtime, so a bare `tokio::spawn` here aborts the app
-    // ("there is no reactor running"). The dev bridge, which runs under
-    // `#[tokio::main]`, spawns `event_tailer_loop` with `tokio::spawn` instead.
+    // Cutoff for OS notifications: only events stamped at/after the tailer starts
+    // fire a toast. `tail -F` replays the last lines of each existing event file
+    // before following (and does so again on every reconnect), so without this
+    // gate app launch or a container restart would re-notify for stale, already
+    // resolved permission prompts / turn finishes. In-app state still rebuilds
+    // from the full replay — only the OS toast is suppressed for old lines.
+    let started_at = now_ms();
     tauri::async_runtime::spawn(event_tailer_loop(docker, tracker, move |event| {
         let _ = app.emit("codehub://agent-event", event);
+        if event.at >= started_at {
+            maybe_notify(&app, &config, event);
+        }
     }));
+}
+
+/// Current wall-clock in epoch milliseconds, matching the `at` field the hook
+/// scripts stamp on each event line.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Fire an OS notification for a single agent event when the matching Settings
+/// flag is enabled. Honest: only `notification` (permission_prompt → await-input)
+/// and `stop` (turn-finish) kinds notify, and only when the user opted in. The
+/// session alias would require a registry lookup the sink does not hold, so the
+/// body uses the tmux session name — a real identifier, never fabricated.
+fn maybe_notify(app: &tauri::AppHandle, config: &crate::config::ConfigStore, event: &AgentEvent) {
+    use tauri_plugin_notification::NotificationExt;
+
+    let settings = config.get();
+
+    // Map the normalized event to (enabled?, title). Await-input is a
+    // permission_prompt Notification; turn-finish is a Stop.
+    let title: Option<&str> = match event.kind.as_str() {
+        KIND_NOTIFICATION
+            if settings.notify_await_input
+                && event.notification_type.as_deref() == Some("permission_prompt") =>
+        {
+            Some("Agent needs input")
+        },
+        KIND_STOP if settings.notify_turn_finish => Some("Agent finished"),
+        _ => None,
+    };
+
+    let Some(title) = title else {
+        return;
+    };
+
+    let mut builder = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(&event.session);
+    if settings.play_sound {
+        // "default" asks the OS to play its standard notification sound.
+        builder = builder.sound("default");
+    }
+    if let Err(e) = builder.show() {
+        tracing::debug!("notification show failed: {e}");
+    }
 }
 
 /// The retrying event-tailer loop with a caller-supplied per-event sink. Handles

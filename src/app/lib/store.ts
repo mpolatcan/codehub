@@ -25,6 +25,7 @@ import type {
   WorkspaceInfo,
 } from "./ipc";
 import { ipc, onLifecycle, onLifecycleError } from "./ipc";
+import { useOverlay } from "./overlay";
 import * as registry from "./panes";
 import {
   type LayoutNode,
@@ -38,10 +39,12 @@ import {
   leavesList,
   leavesOf,
   makeGroup,
+  moveLeaf,
   nid,
   removeLeaf,
   replaceLeaf,
   setRatio,
+  swapLeaves,
   updateGroup,
   workspaceLeaves,
 } from "./tree";
@@ -164,6 +167,12 @@ interface CodeHubState {
   switchWorkspace: (id: string) => void;
   renameSession: (name: string, alias: string) => void;
   commitRatio: (wsId: string, nodeId: number, ratio: number) => void;
+  // Drag-to-rearrange within the active group's grid (design hub-states
+  // HubStateDragging). swapPanes exchanges two panes' slots; movePane removes the
+  // dragged pane and re-splits the target's slot in `dir` (before=leading side).
+  // Neither kills a tmux session — pure tree reshape, xterm surfaces survive.
+  swapPanes: (wsId: string, a: string, b: string) => void;
+  movePane: (wsId: string, session: string, target: string, dir: SplitDir, before: boolean) => void;
 
   // ── Pane groups within a workspace (design GroupsBar / GroupGrid) ──────────
   // Groups are frontend-only organisation over the flat tmux session set; they
@@ -229,6 +238,15 @@ interface CodeHubState {
 
 function updateWs(list: Workspace[], id: string, fn: (w: Workspace) => Workspace): Workspace[] {
   return list.map((w) => (w.id === id ? fn(w) : w));
+}
+
+// Clear transient pane-grid overlays (focus mode, in-flight drag) that are
+// scoped to the active group. Called on every group/workspace switch so a
+// maximized pane or a stuck drop-overlay can't bleed into the view we move to.
+function resetGridOverlays() {
+  const o = useOverlay.getState();
+  if (o.focusMode) o.setFocusMode(false);
+  if (o.dragSession) o.setDragSession(null);
 }
 
 // Display alias for a session, e.g. "Claude 1". Shared by the session metadata and
@@ -563,6 +581,10 @@ export const useStore = create<CodeHubState>((set, get) => {
       if (get().activeWorkspaceId === id) return;
       // Switching tabs leaves any open session-detail view (same contract as
       // setView) — otherwise the sidebar tab click is a silent no-op behind it.
+      // Also drop transient pane-grid UI state (focus mode / in-flight drag) so
+      // it can't bleed into the tab we're switching to — those are scoped to the
+      // group you set them in, not the workspace globally.
+      resetGridOverlays();
       set({ activeWorkspaceId: id, detailSession: null });
       const ws = get().workspaces.find((w) => w.id === id);
       const focused = ws && activeGroup(ws)?.focused;
@@ -595,6 +617,32 @@ export const useStore = create<CodeHubState>((set, get) => {
           updateGroup(w, w.activeGroupId, (g) => ({
             ...g,
             root: g.root ? setRatio(g.root, nodeId, ratio) : g.root,
+          })),
+        ),
+      }));
+    },
+
+    swapPanes: (wsId, a, b) => {
+      if (a === b) return;
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) =>
+          updateGroup(w, w.activeGroupId, (g) => ({
+            ...g,
+            root: g.root ? swapLeaves(g.root, a, b) : g.root,
+          })),
+        ),
+      }));
+    },
+
+    movePane: (wsId, session, target, dir, before) => {
+      if (session === target) return;
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) =>
+          updateGroup(w, w.activeGroupId, (g) => ({
+            ...g,
+            root: g.root ? moveLeaf(g.root, session, target, dir, before) : g.root,
+            // Keep the moved pane focused so the user's dragged target stays active.
+            focused: session,
           })),
         ),
       }));
@@ -670,6 +718,10 @@ export const useStore = create<CodeHubState>((set, get) => {
     },
 
     setActiveGroup: (wsId, groupId) => {
+      // Focus mode + any in-flight drag are scoped to the group they were set
+      // in; clear them so switching groups doesn't carry a maximized pane (or a
+      // stuck drop overlay) into the group we're switching to.
+      resetGridOverlays();
       set((s) => ({
         workspaces: updateWs(s.workspaces, wsId, (w) => ({ ...w, activeGroupId: groupId })),
       }));

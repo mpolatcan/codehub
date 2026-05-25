@@ -701,24 +701,11 @@ async fn session_activity(
 #[cfg(not(target_os = "macos"))]
 const COMPANION_LABEL: &str = "companion";
 
-/// Open (or re-focus) the companion — a floating overlay that mirrors the live
-/// working/idle state of every running agent so it stays visible over other
-/// apps. Everything it shows is the honest activity signal — no fabricated
-/// turn/token/approval state.
-///
-/// On macOS this is the native Dynamic Island ([`island`]); elsewhere it is a
-/// small frameless `WebviewWindow` loading the real `index.html#/companion`
-/// route.
-#[cfg(target_os = "macos")]
-#[tauri::command]
-async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
-    island::show(&app);
-    Ok(())
-}
-
+/// Build (or re-focus) the non-macOS webview companion window. Shared by the
+/// `open_companion` command and the global-shortcut handler so both create the
+/// window identically when it does not exist yet.
 #[cfg(not(target_os = "macos"))]
-#[tauri::command]
-async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
+fn show_companion_window(app: &tauri::AppHandle) -> Result<(), String> {
     // Already open → just bring it forward.
     if let Some(win) = app.get_webview_window(COMPANION_LABEL) {
         let _ = win.show();
@@ -726,7 +713,7 @@ async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
     let win = tauri::WebviewWindowBuilder::new(
-        &app,
+        app,
         COMPANION_LABEL,
         tauri::WebviewUrl::App("index.html#/companion".into()),
     )
@@ -750,6 +737,42 @@ async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
         let _ = win.set_position(tauri::PhysicalPosition::new(x, inset));
     }
     Ok(())
+}
+
+/// Toggle the non-macOS webview companion: hide it when it exists and is
+/// currently visible, otherwise show/create + focus it. Used by the global
+/// shortcut so repeated presses flip the window on and off (mirroring
+/// `island::toggle` on macOS), rather than only ever raising it.
+#[cfg(not(target_os = "macos"))]
+fn toggle_companion_window(app: &tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(COMPANION_LABEL) {
+        if win.is_visible().unwrap_or(false) {
+            win.hide().map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
+    show_companion_window(app)
+}
+
+/// Open (or re-focus) the companion — a floating overlay that mirrors the live
+/// working/idle state of every running agent so it stays visible over other
+/// apps. Everything it shows is the honest activity signal — no fabricated
+/// turn/token/approval state.
+///
+/// On macOS this is the native Dynamic Island ([`island`]); elsewhere it is a
+/// small frameless `WebviewWindow` loading the real `index.html#/companion`
+/// route.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
+    island::show(&app);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
+    show_companion_window(&app)
 }
 
 /// Close/hide the companion. No-op when it is not open.
@@ -991,9 +1014,46 @@ pub fn run() {
         .or_else(|_| std::env::var("AVIARY_IMAGE"))
         .unwrap_or_else(|_| DEFAULT_IMAGE.into());
 
+    // P5 global shortcut: Cmd+Shift+J (macOS) / Ctrl+Shift+J (Win/Linux) toggles
+    // the always-on-top surface — the native island on macOS, the webview
+    // companion elsewhere. `Modifiers` is an all-required bitflag set (not an
+    // either/or CmdOrCtrl alias), so the platform modifier is chosen at compile
+    // time; listing both Super and Control would force users to hold both keys.
+    // Registered through the plugin builder with an on-press handler so the
+    // keystroke works while CodeHub is in the background (a global hotkey).
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+    #[cfg(target_os = "macos")]
+    let toggle_shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyJ);
+    #[cfg(not(target_os = "macos"))]
+    let toggle_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyJ);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        // Persist each window's position/size across restarts (the companion in
+        // particular, so it reopens where the user left it).
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_shortcut(toggle_shortcut)
+                .expect("register global toggle shortcut")
+                .with_handler(move |app, shortcut, event| {
+                    // Only act on key-DOWN of our shortcut; ignore the release.
+                    if event.state() != ShortcutState::Pressed || shortcut != &toggle_shortcut {
+                        return;
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        island::toggle(app);
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        let _ = toggle_companion_window(app);
+                    }
+                })
+                .build(),
+        )
         .setup(move |app| {
             let app_data = app.path().app_data_dir().expect("app_data_dir unavailable");
             // One-time carry-over of pre-rebrand (Aviary) auth + workspace data.
@@ -1016,6 +1076,10 @@ pub fn run() {
             let docker = Arc::new(lifecycle.docker_client());
             let registry = Arc::new(PtyRegistry::new());
             let events = Arc::new(EventsTracker::new());
+
+            // Read at notification time by the event tailer so a just-changed
+            // toggle applies immediately (config is moved into AppState below).
+            let notify_config = config.clone();
 
             #[cfg(target_os = "macos")]
             let island_registry = registry.clone();
@@ -1138,7 +1202,7 @@ pub fn run() {
 
             // Start the agent-event hook tail (§7). Streams the events dir inside
             // the container and feeds the EventsTracker. Retries on disconnect.
-            events::start_event_tailer(docker, events, app.handle().clone());
+            events::start_event_tailer(docker, events, notify_config, app.handle().clone());
 
             Ok(())
         })

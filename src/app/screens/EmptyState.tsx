@@ -54,6 +54,13 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
   const canStart = daemonUp && (state === "stopped" || state === "missing");
   const starting = state === "starting";
 
+  // Setup checklist progress — count of completed steps out of 4 (daemon + 3 keys).
+  const setupDone =
+    (daemonUp ? 1 : 0) +
+    (keyStatus?.claude?.present ? 1 : 0) +
+    (keyStatus?.codex?.present ? 1 : 0) +
+    (keyStatus?.antigravity?.present ? 1 : 0);
+
   return (
     <main
       style={{
@@ -66,13 +73,13 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
         color: "var(--fg-1)",
       }}
     >
-      <div style={{ position: "absolute", inset: 0, opacity: 0.4, pointerEvents: "none" }}>
+      {/* subtle ambient backdrop — radial soft glow only (design empty-state.jsx) */}
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
         <div
           style={{
             position: "absolute",
             inset: 0,
-            background:
-              "repeating-linear-gradient(0deg, transparent 0 19px, var(--bd-soft) 19px 20px), radial-gradient(ellipse at 50% 30%, var(--bg-2), var(--bg-1) 70%)",
+            background: "radial-gradient(ellipse at 50% 30%, var(--bg-2), var(--bg-1) 70%)",
           }}
         />
       </div>
@@ -197,7 +204,26 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
 
           <div className="ch-card" style={{ padding: 18 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-              <span className="lbl">Setup</span>
+              <span className="lbl">Setup · {setupDone} of 4</span>
+              <div
+                style={{
+                  flex: 1,
+                  maxWidth: 220,
+                  height: 4,
+                  borderRadius: 999,
+                  background: "var(--bg-3)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${(setupDone / 4) * 100}%`,
+                    height: "100%",
+                    background: "var(--live)",
+                    transition: "width .2s ease",
+                  }}
+                />
+              </div>
             </div>
             <ChecklistItem
               done={daemonUp}

@@ -69,6 +69,13 @@ export interface SpawnDialogProps {
    * with "New tab" as the default. Omitted → the launch always opens a new tab.
    */
   groups?: GroupChoice[];
+  /**
+   * Standalone (dev-preview) mount — there is no live hub behind the modal, so
+   * the dialog paints its own opaque base + a skeleton hub to blur. In the live
+   * SpawnModal this is false: the real hub sits behind the scrim and shows
+   * through the blur (design spawn-dialog.jsx: blur over the actual MainHubA).
+   */
+  standalone?: boolean;
 }
 
 export function SpawnDialog({
@@ -77,6 +84,7 @@ export function SpawnDialog({
   defaultCli = "claude",
   splitting,
   groups,
+  standalone,
 }: SpawnDialogProps) {
   const [agent, setAgentRaw] = useState<Cli>(defaultCli);
   const [mode, setMode] = useState<Mode>("standard");
@@ -109,20 +117,22 @@ export function SpawnDialog({
       style={{
         position: "absolute",
         inset: 0,
-        background: "var(--bg-1)",
+        // Live modal: transparent so the real hub shows through the blurred
+        // scrim. Standalone preview: opaque base + skeleton hub to blur.
+        background: standalone ? "var(--bg-1)" : "transparent",
         minHeight: 0,
         overflow: "hidden",
         color: "var(--fg-1)",
       }}
     >
-      <FauxHubBg />
+      {standalone && <FauxHubBg />}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: "rgba(6,7,9,0.72)",
-          backdropFilter: "blur(3px)",
-          WebkitBackdropFilter: "blur(3px)",
+          background: "rgba(6,7,9,0.55)",
+          backdropFilter: "blur(14px) saturate(120%)",
+          WebkitBackdropFilter: "blur(14px) saturate(120%)",
         }}
       />
 

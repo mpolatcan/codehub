@@ -1,3 +1,4 @@
+import { Tag } from "@/app/components/primitives/Tag";
 /**
  * States — reusable loading / error / empty primitives, plus a dev-only gallery.
  * Ported from design/screens/states.jsx.
@@ -71,6 +72,128 @@ export function SkeletonPane({
       <div className="mono" style={{ marginTop: "auto", fontSize: 10.5, color: "var(--fg-3)" }}>
         {caption}
         {turns != null && <span className="tnum"> · {turns} turns</span>}
+      </div>
+    </div>
+  );
+}
+
+/** One row of the container-boot progress list. */
+export type BootStepState = "done" | "active" | "pending";
+export interface BootStepSpec {
+  state: BootStepState;
+  text: string;
+  detail?: string;
+}
+
+function BootStep({ state, text, detail }: BootStepSpec) {
+  const done = state === "done";
+  const active = state === "active";
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontSize: 12,
+        fontFamily: "var(--mono)",
+      }}
+    >
+      <span
+        style={{
+          width: 14,
+          height: 14,
+          borderRadius: "50%",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: done ? "var(--live)" : active ? "transparent" : "var(--bg-3)",
+          border: active ? "1.5px solid var(--live)" : "none",
+          color: "var(--bg-0)",
+          flexShrink: 0,
+        }}
+      >
+        {done && (
+          <svg
+            width="8"
+            height="8"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 8l3.5 3.5L13 5" />
+          </svg>
+        )}
+        {active && (
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--live)" }} />
+        )}
+      </span>
+      <span style={{ color: done ? "var(--fg-2)" : active ? "var(--fg-0)" : "var(--fg-3)" }}>
+        {text}
+      </span>
+      {detail && <span style={{ color: "var(--fg-3)", fontSize: 10.5 }}>· {detail}</span>}
+    </div>
+  );
+}
+
+/**
+ * Container-booting pane — real lifecycle progress, not a generic spinner. The
+ * caller supplies the observed boot `steps` (pull → create → mount → tmux →
+ * restore), the container `name`, an optional `elapsed` string, and a 0–1
+ * progress fraction. Nothing is invented; absent fields are simply omitted.
+ */
+export function ContainerBootingPane({
+  name,
+  elapsed,
+  steps,
+  pct,
+}: {
+  name?: string;
+  elapsed?: string;
+  steps: BootStepSpec[];
+  pct?: number;
+}) {
+  const width = pct == null ? "0%" : `${Math.min(100, Math.max(0, pct * 100))}%`;
+  return (
+    <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: "var(--live)",
+            boxShadow: "0 0 12px var(--live)",
+          }}
+        />
+        <span className="mono" style={{ fontSize: 12, color: "var(--fg-0)" }}>
+          {name ? `${name} · booting` : "booting"}
+        </span>
+        <span style={{ flex: 1 }} />
+        {elapsed && (
+          <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
+            {elapsed}
+          </span>
+        )}
+      </div>
+      {steps.map((s) => (
+        <BootStep key={s.text} {...s} />
+      ))}
+      <div
+        style={{
+          marginTop: 4,
+          height: 2,
+          background: "var(--bg-3)",
+          borderRadius: 999,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{ width, height: "100%", background: "var(--live)", transition: "width .3s" }}
+        />
       </div>
     </div>
   );
@@ -360,6 +483,61 @@ export function OfflineBanner({
 }
 
 /**
+ * Account-suspended hard-stop banner (design states.jsx `SuspendedBanner`). Shown
+ * inside Usage when a provider revokes/suspends a key. `account` + `body` carry
+ * the real provider message the caller observed; actions are caller-wired.
+ */
+export function SuspendedBanner({
+  account = "account",
+  body,
+  onContact,
+  onRemove,
+}: {
+  account?: string;
+  body?: ReactNode;
+  onContact?: () => void;
+  onRemove?: () => void;
+}) {
+  return (
+    <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{account}</span>
+        <span style={{ flex: 1 }} />
+        <Tag color="var(--err)">suspended</Tag>
+      </div>
+      {body && (
+        <div
+          style={{
+            padding: "10px 12px",
+            background: "color-mix(in oklab, var(--err) 8%, var(--bg-0))",
+            border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
+            borderRadius: 6,
+            fontSize: 11.5,
+            color: "var(--fg-1)",
+            lineHeight: 1.55,
+          }}
+        >
+          {body}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
+        <Button
+          variant="outline"
+          size="sm"
+          style={{ flex: 1, justifyContent: "center" }}
+          onClick={onContact}
+        >
+          Contact support
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onRemove}>
+          Remove account
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Centered empty panel — a quiet state with a clear next step (never a blank
  * page). `cta`/`onCta` are optional; without them it's a pure informational rest
  * state. This is the canonical "nothing here yet" template across the app.
@@ -535,7 +713,7 @@ export default function StatesGallery() {
       </div>
 
       <div style={{ flex: 1, overflow: "auto", padding: "20px 28px" }}>
-        <SectionTitle label="Loading" caption="skeletons before metadata returns" />
+        <SectionTitle label="Loading" caption="skeletons + container boot progress" />
         <div
           style={{
             display: "grid",
@@ -544,6 +722,23 @@ export default function StatesGallery() {
             marginBottom: 22,
           }}
         >
+          <StateCard
+            caption="Container booting"
+            desc="Pulling image · attaching tmux · mounting workspace. Real lifecycle progress, not a generic spinner."
+          >
+            <ContainerBootingPane
+              name="codehub-runtime"
+              elapsed="2.4s elapsed"
+              pct={0.58}
+              steps={[
+                { state: "done", text: "Pull image", detail: "node:20-slim" },
+                { state: "done", text: "Create container", detail: "codehub-runtime" },
+                { state: "done", text: "Mount /workspace", detail: "rw" },
+                { state: "active", text: "Start tmux server", detail: "/tmp/codehub" },
+                { state: "pending", text: "Attach session" },
+              ]}
+            />
+          </StateCard>
           <StateCard
             caption="Skeleton terminal"
             desc="First paint before agent metadata returns. Shimmer block, then content."
@@ -662,12 +857,13 @@ export default function StatesGallery() {
               hint="Try a shorter query, or ⌘N to spawn a new agent."
             />
           </StateCard>
-          <StateCard caption="No processes" desc="Container inspector with an idle runtime.">
-            <EmptyPanel
-              small
-              icon={Ico.cpu}
-              title="No processes"
-              hint="The runtime is up but no agent is running yet."
+          <StateCard
+            caption="Account suspended"
+            desc="Hard-stop banner inside Usage when a provider revokes a key."
+          >
+            <SuspendedBanner
+              account="provider account"
+              body="The provider suspended this API key. Sessions on it are paused — their state is preserved. Contact support to appeal."
             />
           </StateCard>
         </div>

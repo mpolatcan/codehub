@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { splitKey, useLauncher } from "../lib/launcher";
+import { groupKey, splitKey, useLauncher } from "../lib/launcher";
 import { useOverlay } from "../lib/overlay";
 import { confirmCloseRunningSession, useStore } from "../lib/store";
 import { type SplitDir, activeGroup } from "../lib/tree";
@@ -24,6 +24,7 @@ export function autoSplitDir(session: string): SplitDir {
 //   ⌘/Ctrl D  — toggle the all-changes Diff viewer
 //   ⌘B        — collapse/expand the sidebar (design AppSidebar rail)
 //   ⌘⇧B       — add a Shell pane (split the focused pane, else a new tab)
+//   ⌘G        — spawn a new agent into a fresh group (design SpawnPlacementMenu)
 //   ⌘/Ctrl R  — toggle the Resume drawer (docked over the hub)
 //   ⌘/Ctrl K  — command palette
 //   ⌘/Ctrl /  — keyboard-shortcuts cheat sheet
@@ -123,6 +124,14 @@ export function useKeyboard() {
           if (focused) void store.splitSession(focused, autoSplitDir(focused), "shell", "standard");
           else void store.newPlate("shell", "standard");
           break;
+        case "g": {
+          // ⌘G — spawn a new agent into a fresh group of the active workspace.
+          if (!ws) return;
+          e.preventDefault();
+          const gid = store.addGroup(ws.id);
+          launcher.open(groupKey(gid), { dir: "row", groupId: gid, workspaceId: ws.id });
+          break;
+        }
         case "|":
         case "\\": {
           if (!focused) return;

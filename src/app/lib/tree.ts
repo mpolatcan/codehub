@@ -157,6 +157,48 @@ export function removeLeaf(node: LayoutNode, session: string): LayoutNode | null
   return { ...node, a, b };
 }
 
+// Swap two sessions' positions in the tree by exchanging the `session` field on
+// their leaves. No node is added or removed and no tmux session dies — the two
+// panes just trade slots, so their xterm surfaces survive (PaneMount reparents
+// by session on the next render). Used by drag-to-center "swap" (hub-states
+// HubStateDragging). Returns the node unchanged if either session is absent.
+export function swapLeaves(node: LayoutNode, a: string, b: string): LayoutNode {
+  if (a === b) return node;
+  if (node.kind === "leaf") {
+    if (node.session === a) return { ...node, session: b };
+    if (node.session === b) return { ...node, session: a };
+    return node;
+  }
+  return { ...node, a: swapLeaves(node.a, a, b), b: swapLeaves(node.b, a, b) };
+}
+
+// Move a session next to a target, splitting the target's slot in `dir`. The
+// dragged leaf is removed from its current position (collapsing its old split,
+// like a close) and re-inserted beside `target`; `before=true` places the moved
+// pane on the leading side (top/left), else trailing (bottom/right). No tmux
+// session dies — both panes survive the reshape (drag-to-edge split, hub-states
+// HubStateDragging). No-op when moving onto itself.
+export function moveLeaf(
+  node: LayoutNode,
+  session: string,
+  target: string,
+  dir: SplitDir,
+  before: boolean,
+): LayoutNode {
+  if (session === target) return node;
+  const without = removeLeaf(node, session);
+  if (without === null) return node; // dragged leaf was the whole tree — nothing to do
+  const moved = leafNode(session);
+  return replaceLeaf(without, target, (leaf) => ({
+    kind: "split",
+    id: nid(),
+    dir,
+    ratio: 0.5,
+    a: before ? moved : leaf,
+    b: before ? leaf : moved,
+  }));
+}
+
 // Immutably set a split node's ratio by node id (used by divider drag commit).
 export function setRatio(node: LayoutNode, id: number, ratio: number): LayoutNode {
   if (node.kind === "leaf") return node;
