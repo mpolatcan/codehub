@@ -23,11 +23,23 @@ export interface SplitNode {
 
 export type LayoutNode = LeafNode | SplitNode;
 
+// A group is a named, colored set of panes within a workspace — it owns its own
+// split tree + focus (design/screens/main-hub-a.jsx `GroupsBar` / `GroupGrid`).
+// A workspace holds N groups; one is active and shown in the grid. tmux sessions
+// stay flat in the single shared container — groups are frontend organisation.
+export interface Group {
+  id: string;
+  name: string;
+  color: string;
+  root: LayoutNode | null;
+  focused: string | null;
+}
+
 export interface Workspace {
   id: string;
   plate: number;
-  root: LayoutNode | null;
-  focused: string | null;
+  groups: Group[];
+  activeGroupId: string;
 }
 
 export interface SessionMeta {
@@ -36,6 +48,8 @@ export interface SessionMeta {
   alias: string;
   mode: Mode;
   workspaceId: string;
+  // Group within the workspace this session's pane lives in.
+  groupId: string;
   // Claude conversation id this session was launched with (`--session-id`, or
   // the id it resumed). Lets the Hub read this session's own transcript for a
   // live token tally. Only set for Claude sessions.
@@ -46,6 +60,54 @@ let nodeCounter = 0;
 export function nid(): number {
   nodeCounter += 1;
   return nodeCounter;
+}
+
+// Group accent palette — design GroupTab dots cycle these (var(--*) tokens).
+export const GROUP_COLORS = [
+  "var(--pri)",
+  "var(--a-codex)",
+  "var(--live)",
+  "var(--wait)",
+  "var(--idle)",
+];
+
+let groupCounter = 0;
+export function makeGroup(
+  name?: string,
+  root: LayoutNode | null = null,
+  focused: string | null = null,
+  color?: string,
+): Group {
+  groupCounter += 1;
+  const n = groupCounter;
+  return {
+    id: `grp-${n}-${Date.now().toString(36)}`,
+    name: name || `Group ${n}`,
+    color: color ?? GROUP_COLORS[(n - 1) % GROUP_COLORS.length],
+    root,
+    focused,
+  };
+}
+
+// The group currently shown in the grid. Falls back to the first group so
+// callers never have to null-check a malformed workspace.
+export function activeGroup(ws: Workspace): Group {
+  return ws.groups.find((g) => g.id === ws.activeGroupId) ?? ws.groups[0];
+}
+
+// Find which group within a workspace owns a given session (by leaf membership).
+export function findGroupOf(ws: Workspace, session: string): Group | undefined {
+  return ws.groups.find((g) => g.root != null && leavesList(g.root).includes(session));
+}
+
+// All session names across every group of a workspace.
+export function workspaceLeaves(ws: Workspace): string[] {
+  return ws.groups.flatMap((g) => leavesList(g.root));
+}
+
+// Immutably replace one group in a workspace's group list.
+export function updateGroup(ws: Workspace, groupId: string, fn: (g: Group) => Group): Workspace {
+  return { ...ws, groups: ws.groups.map((g) => (g.id === groupId ? fn(g) : g)) };
 }
 
 export function leafNode(session: string): LeafNode {

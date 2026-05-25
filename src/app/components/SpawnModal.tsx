@@ -17,6 +17,7 @@ export function SpawnModal() {
   const close = useLauncher((s) => s.close);
   const newPlate = useStore((s) => s.newPlate);
   const splitSession = useStore((s) => s.splitSession);
+  const addPaneToGroup = useStore((s) => s.addPaneToGroup);
   const defaultCli = useStore((s) => s.config?.defaultAgent ?? "claude");
 
   if (openKey === null) return null;
@@ -25,6 +26,8 @@ export function SpawnModal() {
   const launch = (cli: Cli, mode: Mode, prompt: string, account?: string) => {
     close();
     if (ctx?.session) void splitSession(ctx.session, ctx.dir, cli, mode, prompt, account);
+    else if (ctx?.groupId && ctx.workspaceId)
+      void addPaneToGroup(ctx.workspaceId, ctx.groupId, cli, mode, prompt, account);
     else void newPlate(cli, mode, undefined, prompt, account);
   };
 

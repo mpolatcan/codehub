@@ -1,28 +1,102 @@
 import { useEffect, useRef } from "react";
+import { groupKey, useLauncher } from "../lib/launcher";
 import * as registry from "../lib/panes";
 import { useStore } from "../lib/store";
-import type { LayoutNode, SplitNode, Workspace } from "../lib/tree";
-import { leavesOf } from "../lib/tree";
+import type { Group, LayoutNode, SplitNode, Workspace } from "../lib/tree";
+import { activeGroup, leavesOf } from "../lib/tree";
 import { PaneHead } from "./PaneHead";
 import { PaneMount } from "./PaneMount";
+import { Ico } from "./primitives/icons";
 
-// Renders a workspace's binary split tree. Leaves carry a PaneHead + the
-// reparented xterm surface (PaneMount); split nodes lay out two cells with a
-// draggable divider between them.
+// Renders the active pane group's binary split tree. Leaves carry a PaneHead +
+// the reparented xterm surface (PaneMount); split nodes lay out two cells with a
+// draggable divider between them. An empty group (no panes) shows the
+// group-grid empty-state CTA (design GroupGrid).
 export function Grid({ ws }: { ws: Workspace }) {
-  return <RenderNode node={ws.root as LayoutNode} ws={ws} />;
+  const group = activeGroup(ws);
+  if (!group?.root) return <EmptyGroup ws={ws} group={group} />;
+  return <RenderNode node={group.root} ws={ws} group={group} />;
 }
 
-function RenderNode({ node, ws }: { node: LayoutNode; ws: Workspace }) {
+// Empty-group state (design GroupGrid empty branch): a dashed-plus affordance +
+// a quick-spawn CTA. The CTA opens the shared launcher targeted at this group
+// (groupKey ctx), so the spawn lands here rather than in a new tab.
+function EmptyGroup({ ws, group }: { ws: Workspace; group: Group }) {
+  const open = useLauncher((s) => s.open);
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 16,
+        background: "var(--bg-0)",
+        minHeight: 0,
+        width: "100%",
+        padding: 32,
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 12,
+            border: "1.5px dashed var(--bd)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--fg-3)",
+          }}
+        >
+          {Ico.plus}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: group.color }} />
+          <span style={{ fontSize: 15, color: "var(--fg-0)", fontWeight: 500 }}>{group.name}</span>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--fg-2)", textAlign: "center", maxWidth: 384 }}>
+          This group is empty. Add an agent to start working here.
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() =>
+          open(groupKey(group.id), { dir: "row", groupId: group.id, workspaceId: ws.id })
+        }
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "7px 14px",
+          borderRadius: 7,
+          border: "none",
+          background: "var(--pri)",
+          color: "var(--pri-fg, #fff)",
+          fontSize: 13,
+          fontWeight: 500,
+          cursor: "pointer",
+        }}
+      >
+        {Ico.plus}
+        <span>Add agent</span>
+      </button>
+    </div>
+  );
+}
+
+function RenderNode({ node, ws, group }: { node: LayoutNode; ws: Workspace; group: Group }) {
   if (node.kind === "leaf") {
-    return <Leaf session={node.session} ws={ws} />;
+    return <Leaf session={node.session} group={group} />;
   }
-  return <Split node={node} ws={ws} />;
+  return <Split node={node} ws={ws} group={group} />;
 }
 
-function Leaf({ session, ws }: { session: string; ws: Workspace }) {
+function Leaf({ session, group }: { session: string; group: Group }) {
   const focusSession = useStore((s) => s.focusSession);
-  const focused = ws.focused === session;
+  const focused = group.focused === session;
   return (
     <div
       className={`pane-leaf${focused ? " focused" : ""}`}
@@ -37,7 +111,7 @@ function Leaf({ session, ws }: { session: string; ws: Workspace }) {
   );
 }
 
-function Split({ node, ws }: { node: SplitNode; ws: Workspace }) {
+function Split({ node, ws, group }: { node: SplitNode; ws: Workspace; group: Group }) {
   const aRef = useRef<HTMLDivElement>(null);
   const bRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -84,11 +158,11 @@ function Split({ node, ws }: { node: SplitNode; ws: Workspace }) {
   return (
     <div ref={wrapRef} className={`split ${node.dir}`}>
       <div ref={aRef} className="split-cell" style={{ flex: `${node.ratio} 1 0` }}>
-        <RenderNode key={node.a.id} node={node.a} ws={ws} />
+        <RenderNode key={node.a.id} node={node.a} ws={ws} group={group} />
       </div>
       <div className={`divider ${node.dir}`} onMouseDown={onDividerDown} />
       <div ref={bRef} className="split-cell" style={{ flex: `${1 - node.ratio} 1 0` }}>
-        <RenderNode key={node.b.id} node={node.b} ws={ws} />
+        <RenderNode key={node.b.id} node={node.b} ws={ws} group={group} />
       </div>
     </div>
   );

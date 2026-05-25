@@ -2,10 +2,16 @@ import { create } from "zustand";
 import type { SplitDir } from "./tree";
 
 // Context carried while the spawn modal is open. `session` present → the launch
-// splits that pane; absent → it opens a new tab.
+// splits that pane; `groupId` present → it spawns the first pane into that
+// (empty) group; absent → it opens a new tab.
 export interface LaunchCtx {
   dir: SplitDir;
   session?: string;
+  // Target an empty pane group (design GroupGrid empty-state CTA). Carries the
+  // owning workspace so the launch can resolve the group without active-tab
+  // assumptions.
+  groupId?: string;
+  workspaceId?: string;
 }
 
 // Every launch surface (new-tab "+", ⌘T, pane split controls, sidebar "New
@@ -29,3 +35,4 @@ export const useLauncher = create<LauncherState>((set) => ({
 }));
 
 export const splitKey = (session: string) => `split:${session}`;
+export const groupKey = (groupId: string) => `group:${groupId}`;

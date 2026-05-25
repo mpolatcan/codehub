@@ -1,7 +1,8 @@
 import { StatusDot } from "../../components/primitives/StatusDot";
+import { useBurnRate } from "../../hooks/useBurnRate";
 import type { ContainerState, ContainerStats } from "../../lib/ipc";
 import { activeWorkspace, useStore } from "../../lib/store";
-import { leavesList } from "../../lib/tree";
+import { activeGroup, workspaceLeaves } from "../../lib/tree";
 
 // Bottom status bar, ported from design/screens/main-hub-a.jsx (tabs) and
 // main-hub-b.jsx (the compare grid). Runtime state, focused session and tab are
@@ -58,7 +59,7 @@ function TabsStatusBar() {
   const status = useStore((s) => s.status);
   const error = useStore((s) => s.error);
   const active = useStore(activeWorkspace);
-  const focused = active?.focused ?? null;
+  const focused = (active && activeGroup(active)?.focused) ?? null;
   const focusedAlias = useStore((s) => (focused ? s.sessionMeta[focused]?.alias : undefined));
   const stats = useRuntimeStats();
 
@@ -88,11 +89,39 @@ function TabsStatusBar() {
       <span className="tnum" title="Network">
         net {stats ? `↓${(stats.netRx / 1024).toFixed(0)} KB` : "—"}
       </span>
+      <BurnRate />
       <span style={{ flex: 1 }} />
       <span>⌘N new</span>
       <span>⌘\ split</span>
       <span>⌘1–9 jump</span>
     </div>
+  );
+}
+
+// Spend-rate ($/h) derived from the cumulative est. cost climb (useBurnRate).
+// Em-dash until two samples span enough wall-clock to divide. Token-derived
+// estimate, never a billed figure — the tooltip says so.
+function BurnRate() {
+  const rate = useBurnRate();
+  return (
+    <span
+      className="tnum"
+      title="Spend rate — token-derived estimate (rolling), not a billed amount"
+      style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "var(--fg-1)" }}
+    >
+      {rate !== null && (
+        <span
+          style={{
+            width: 5,
+            height: 5,
+            borderRadius: "50%",
+            background: "var(--pri)",
+            boxShadow: "0 0 6px var(--pri)",
+          }}
+        />
+      )}
+      burn {rate !== null ? `$${rate.toFixed(2)}/h` : "—"}
+    </span>
   );
 }
 
@@ -107,7 +136,7 @@ function GridStatusBar() {
   const pending = useStore((s) => s.pendingPrompts);
   const stats = useRuntimeStats();
 
-  const sessions = workspaces.flatMap((ws) => leavesList(ws.root));
+  const sessions = workspaces.flatMap((ws) => workspaceLeaves(ws));
   const awaiting = new Set(pending.map((p) => p.session));
   // Awaiting takes precedence; otherwise "working" (live output) counts as running.
   const awaitingCount = sessions.filter((s) => awaiting.has(s)).length;
@@ -136,7 +165,7 @@ function GridStatusBar() {
             ? `${fmtGiB(stats.memUsed)} GiB`
             : "—"}
       </span>
-      <span title="Per-session tokens/cost live on the Usage screen">tokens / $ —</span>
+      <BurnRate />
       <span style={{ flex: 1 }} />
       <span>⌘1–9 focus</span>
       <span>⌘\ split</span>

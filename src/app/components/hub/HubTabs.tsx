@@ -5,7 +5,7 @@ import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
 import { useLauncher } from "../../lib/launcher";
 import { useStore } from "../../lib/store";
-import { leavesList } from "../../lib/tree";
+import { activeGroup, workspaceLeaves } from "../../lib/tree";
 
 // Workspace tab strip, ported from design/screens/main-hub-a.jsx. Each tab is a
 // live workspace; the agent glyphs reflect its panes. The trailing area carries
@@ -52,9 +52,10 @@ export function HubTabs() {
         style={{ display: "flex", minWidth: 0, overflowX: "auto", scrollbarWidth: "none" }}
       >
         {workspaces.map((ws) => {
-          const sessions = leavesList(ws.root);
+          const sessions = workspaceLeaves(ws);
           const active = ws.id === activeId;
-          const primary = ws.focused && sessions.includes(ws.focused) ? ws.focused : sessions[0];
+          const focused = activeGroup(ws)?.focused;
+          const primary = focused && sessions.includes(focused) ? focused : sessions[0];
           const meta = primary ? sessionMeta[primary] : undefined;
           const title = meta && sessions.length === 1 ? meta.alias : `Tab ${ws.plate}`;
           return (

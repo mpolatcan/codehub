@@ -1,5 +1,6 @@
 import { Ico } from "../../components/primitives/icons";
 import { activeWorkspace, useStore } from "../../lib/store";
+import { workspaceLeaves } from "../../lib/tree";
 import { Button } from "../../ui/button";
 import { HubBanner } from "./HubBanner";
 
@@ -21,7 +22,7 @@ export function RuntimeBanner() {
   const active = useStore(activeWorkspace);
 
   // Only alarm when there's live work to lose a connection to.
-  const hasGrid = !!active?.root;
+  const hasGrid = !!active && workspaceLeaves(active).length > 0;
   const disconnected = state === "unreachable";
   if (!hasGrid || (!disconnected && !error)) return null;
 

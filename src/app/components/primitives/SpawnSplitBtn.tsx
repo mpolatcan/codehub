@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { splitKey, useLauncher } from "../../lib/launcher";
 import { activeWorkspace, useStore } from "../../lib/store";
-import type { SplitDir } from "../../lib/tree";
+import { type SplitDir, activeGroup } from "../../lib/tree";
 import { Ico } from "./icons";
 
 // THE primary spawn CTA for the Hub ActionBar — one button replacing the old
@@ -18,7 +18,7 @@ import { Ico } from "./icons";
 export function SpawnSplitBtn() {
   const openLaunch = useLauncher((s) => s.open);
   const active = useStore(activeWorkspace);
-  const focused = active?.focused ?? null;
+  const focused = (active && activeGroup(active)?.focused) ?? null;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
