@@ -41,16 +41,11 @@ import {
 } from "./tree";
 
 // Top-level view, switched from the sidebar nav. "hub" is the terminal grid;
-// the rest are full-pane screens. All are live real-data screens — Integrations
-// reads the runtime's Claude config (signed-in account + configured MCP servers).
-export type HubView =
-  | "hub"
-  | "dashboard"
-  | "containers"
-  | "settings"
-  | "usage"
-  | "resume"
-  | "integrations";
+// the rest are full-pane screens. Resume is no longer a view — it's a docked
+// drawer over the hub (useOverlay.resume). Integrations is no longer a view
+// either — it's a Settings pane (settingsSection === "integrations"), reached by
+// deep-linking into Settings.
+export type HubView = "hub" | "dashboard" | "containers" | "settings" | "usage";
 
 interface CodeHubState {
   workspaces: Workspace[];
@@ -59,6 +54,11 @@ interface CodeHubState {
   status: ContainerStatus | null;
   error: string | null;
   view: HubView;
+  // Selected Settings sub-pane (NAV_GROUPS key in Settings.tsx). Lifted to the
+  // store so other surfaces can deep-link into a pane — e.g. the sidebar's
+  // "Integrations" entry and Welcome's "From GitHub" card open Settings with the
+  // integrations pane already selected.
+  settingsSection: string;
   // Session whose focused-detail view is open (terminal + workspace inspector),
   // or null for the normal view. Set from a pane's expand button; any sidebar
   // view switch or closing that session clears it.
@@ -121,6 +121,7 @@ interface CodeHubState {
   stopRuntime: () => Promise<void>;
   restartRuntime: () => Promise<void>;
   setView: (v: HubView) => void;
+  setSettingsSection: (key: string) => void;
   openDetail: (name: string) => void;
   closeDetail: () => void;
   setSessionActivity: (list: SessionActivity[]) => void;
@@ -255,6 +256,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     status: null,
     error: null,
     view: "hub",
+    settingsSection: "general",
     detailSession: null,
     sessionActivity: {},
     containerStats: null,
@@ -315,6 +317,9 @@ export const useStore = create<CodeHubState>((set, get) => {
 
     // Switching to a top-level view leaves any open session-detail view.
     setView: (view) => set({ view, detailSession: null }),
+
+    // Deep-link a Settings sub-pane (the caller usually also setView("settings")).
+    setSettingsSection: (settingsSection) => set({ settingsSection }),
 
     openDetail: (name) => {
       if (get().sessionMeta[name]) set({ detailSession: name });

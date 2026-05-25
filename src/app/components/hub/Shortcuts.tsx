@@ -46,7 +46,7 @@ export const SHORTCUT_GROUPS: { title: string; items: Sc[] }[] = [
     items: [
       { keys: ["⌘", "E"], desc: "Toggle Files panel" },
       { keys: ["⌘", "D"], desc: "Toggle Diff panel" },
-      { keys: ["⌘", "R"], desc: "Open Resume" },
+      { keys: ["⌘", "R"], desc: "Toggle Resume drawer" },
     ],
   },
   {

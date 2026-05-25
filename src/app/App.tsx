@@ -25,9 +25,8 @@ import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
 import { ContainerInspector } from "./screens/ContainerInspector";
 import { Dashboard } from "./screens/Dashboard";
 import { EmptyHero } from "./screens/EmptyState";
-import { Integrations } from "./screens/Integrations";
 import { NewWorkspace } from "./screens/NewWorkspace";
-import { Resume } from "./screens/Resume";
+import { ResumeDrawer } from "./screens/Resume";
 import { SessionDetail } from "./screens/SessionDetail";
 import { Settings } from "./screens/Settings";
 import { Usage } from "./screens/Usage";
@@ -98,10 +97,8 @@ export function App() {
         <Dashboard />
       ) : view === "usage" ? (
         <Usage />
-      ) : view === "resume" ? (
-        <Resume />
       ) : (
-        <Integrations />
+        <HubView />
       )}
 
       {/* Floating overlays, above every view (⌘K / ⌘/). Portalled, so placement
@@ -132,6 +129,9 @@ function HubView() {
   const setFiles = useOverlay((s) => s.setFiles);
   const diff = useOverlay((s) => s.diff);
   const setDiff = useOverlay((s) => s.setDiff);
+  // Resume drawer docks at the right, replacing the activity-rail slot (design
+  // resume.jsx). The drawer self-gates on the same flag, so it's null when closed.
+  const resume = useOverlay((s) => s.resume);
   // Real working/idle signal for PaneHead + the rail's Activity section.
   useActivityPoll();
   // Live awaiting-input + turn-history stream (← agent-native hooks, §7): keeps
@@ -177,7 +177,7 @@ function HubView() {
       </main>
 
       {diff !== null && <DiffViewer path={diff} onClose={() => setDiff(null)} />}
-      <ActivityRail />
+      {resume ? <ResumeDrawer /> : <ActivityRail />}
     </>
   );
 }

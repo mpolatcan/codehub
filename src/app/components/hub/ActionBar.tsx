@@ -12,14 +12,16 @@ import { Button } from "../../ui/button";
 //
 // REAL wiring: Files / Diff toggle the docked viewers via the overlay store
 // (the chip's active fill mirrors their open state); Shell spawns a real bash
-// pane (split off the focused pane, or a fresh tab when empty); Resume opens the
-// Resume screen. Nothing here fabricates data.
+// pane (split off the focused pane, or a fresh tab when empty); Resume toggles
+// the docked Resume drawer (its fill mirrors the open state). Nothing here
+// fabricates data.
 export function ActionBar() {
   const filesOpen = useOverlay((s) => s.files);
   const setFiles = useOverlay((s) => s.setFiles);
   const diffOpen = useOverlay((s) => s.diff) !== null;
   const setDiff = useOverlay((s) => s.setDiff);
-  const setView = useStore((s) => s.setView);
+  const resumeOpen = useOverlay((s) => s.resume);
+  const setResume = useOverlay((s) => s.setResume);
   const active = useStore(activeWorkspace);
   const focused = active?.focused ?? null;
   const splitSession = useStore((s) => s.splitSession);
@@ -60,8 +62,18 @@ export function ActionBar() {
       <Button
         variant="ghost"
         size="xs"
-        onClick={() => setView("resume")}
-        title="Resume a past session (⌘R)"
+        onClick={() => setResume(!resumeOpen)}
+        title={resumeOpen ? "Hide Resume drawer (⌘R)" : "Resume a past session (⌘R)"}
+        style={
+          resumeOpen
+            ? {
+                background: "var(--bg-3)",
+                color: "var(--fg-0)",
+                outline: "1px solid var(--bd-soft)",
+                outlineOffset: -1,
+              }
+            : undefined
+        }
       >
         {Ico.clock}
         Resume

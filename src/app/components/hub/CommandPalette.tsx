@@ -30,7 +30,6 @@ const VIEWS: { id: HubView; label: string; icon: keyof typeof Ico }[] = [
   { id: "hub", label: "Hub", icon: "hub" },
   { id: "dashboard", label: "Dashboard", icon: "grid" },
   { id: "usage", label: "Usage", icon: "cpu" },
-  { id: "resume", label: "Resume", icon: "expand" },
   { id: "containers", label: "Workspaces", icon: "container" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
@@ -40,11 +39,13 @@ export function CommandPalette() {
   const setPalette = useOverlay((s) => s.setPalette);
   const setDiff = useOverlay((s) => s.setDiff);
   const setFiles = useOverlay((s) => s.setFiles);
+  const setResume = useOverlay((s) => s.setResume);
   const sessionMeta = useStore((s) => s.sessionMeta);
   const sessionActivity = useStore((s) => s.sessionActivity);
   const workspaces = useStore((s) => s.workspaces);
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const setSettingsSection = useStore((s) => s.setSettingsSection);
   const focusSession = useStore((s) => s.focusSession);
   const newPlate = useStore((s) => s.newPlate);
   const restartRuntime = useStore((s) => s.restartRuntime);
@@ -81,6 +82,11 @@ export function CommandPalette() {
     setPalette(false);
     setView("hub");
     setFiles(true);
+  };
+  const openResume = () => {
+    setPalette(false);
+    setView("hub");
+    setResume(true);
   };
   const restart = () => {
     setPalette(false);
@@ -177,7 +183,7 @@ export function CommandPalette() {
         {/* Whole group is gated on a live runtime — all three commands need it —
             so the heading count stays honest (no "Commands · 3" with dead rows). */}
         {runtimeLive && (
-          <CommandGroup heading="Commands · 3">
+          <CommandGroup heading="Commands · 4">
             <CommandItem value="review all changes diff workspace" onSelect={openDiff}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.diff}</span>
               <span style={{ flex: 1 }}>Review all changes</span>
@@ -188,6 +194,13 @@ export function CommandPalette() {
             <CommandItem value="open files browser workspace" onSelect={openFiles}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.files}</span>
               <span style={{ flex: 1 }}>Open files browser</span>
+            </CommandItem>
+            <CommandItem value="resume past session drawer claude codex" onSelect={openResume}>
+              <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.clock}</span>
+              <span style={{ flex: 1 }}>Open Resume drawer</span>
+              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                ⌘R
+              </span>
             </CommandItem>
             <CommandItem value="restart runtime container" onSelect={restart}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.container}</span>
@@ -238,8 +251,12 @@ export function CommandPalette() {
                 key={repo.nameWithOwner}
                 value={`repo github ${repo.nameWithOwner}`}
                 // No clone-into-workspace command exists yet, so a GitHub repo row
-                // is informational (focuses Integrations) rather than a fake action.
-                onSelect={() => goView("settings")}
+                // is informational — it opens the Integrations pane (where the
+                // connected account + repo list live) rather than a fake action.
+                onSelect={() => {
+                  setSettingsSection("integrations");
+                  goView("settings");
+                }}
               >
                 <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.branch}</span>
                 <span style={{ flex: 1 }}>{repo.nameWithOwner}</span>

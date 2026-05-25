@@ -50,6 +50,7 @@ import { type Theme, useTheme } from "@/app/lib/theme";
 import { Button } from "@/app/ui/button";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { AgentDetail } from "./AgentDetail";
+import { IntegrationsPane } from "./Integrations";
 
 export interface SettingsProps {
   /** Kill every running session. Defaults to the store's closeAllSessions. */
@@ -63,6 +64,7 @@ const NAV_GROUPS: { label: string; items: { key: string; label: string; soon?: b
       { key: "general", label: "General" },
       { key: "agents", label: "Agents & API keys" },
       { key: "runtime", label: "Container runtime" },
+      { key: "integrations", label: "Integrations" },
       { key: "repos", label: "Repositories" },
       { key: "platform", label: "Platform" },
     ],
@@ -93,7 +95,11 @@ export function Settings({ onStopAll }: SettingsProps) {
   // runtime, Repositories, Keyboard shortcuts, Appearance, About) show live
   // data; the rest (General, Notifications) render honest disabled controls
   // until the Tier-2 config store lands (BACKEND_PLAN.md).
-  const [active, setActive] = useState("general");
+  // Active sub-pane is lifted to the store so other surfaces can deep-link into a
+  // pane (the sidebar's "Integrations" entry, Welcome's "From GitHub" card, the
+  // palette's GitHub repo rows) by setting it before navigating to Settings.
+  const active = useStore((s) => s.settingsSection);
+  const setActive = useStore((s) => s.setSettingsSection);
   const agentVersions = useStore((s) => s.agentVersions);
   const dockerInfo = useStore((s) => s.dockerInfo);
 
@@ -184,6 +190,8 @@ export function Settings({ onStopAll }: SettingsProps) {
           <AgentsPane onStopAll={onStopAll} />
         ) : active === "runtime" ? (
           <RuntimePane dockerInfo={dockerInfo} />
+        ) : active === "integrations" ? (
+          <IntegrationsPane />
         ) : active === "repos" ? (
           <ReposPane />
         ) : active === "platform" ? (

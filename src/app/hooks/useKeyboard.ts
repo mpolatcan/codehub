@@ -23,7 +23,7 @@ export function autoSplitDir(session: string): SplitDir {
 //   ⌘/Ctrl E  — toggle the Files docked viewer
 //   ⌘/Ctrl D  — toggle the all-changes Diff viewer
 //   ⌘⇧B       — add a Shell pane (split the focused pane, else a new tab)
-//   ⌘/Ctrl R  — open the Resume screen
+//   ⌘/Ctrl R  — toggle the Resume drawer (docked over the hub)
 //   ⌘/Ctrl K  — command palette
 //   ⌘/Ctrl /  — keyboard-shortcuts cheat sheet
 //   ⌘/Ctrl 1-9 — switch to tab N
@@ -99,9 +99,16 @@ export function useKeyboard() {
           e.preventDefault();
           overlay.setDiff(overlay.diff === null ? "" : null);
           break;
-        case "r": // open the Resume screen
+        case "r": // toggle the Resume drawer (docked over the hub)
           e.preventDefault();
-          store.setView("resume");
+          // Already on the hub with it open → close; otherwise jump to the hub
+          // (the drawer only renders there) and open it.
+          if (store.view === "hub" && overlay.resume) {
+            overlay.setResume(false);
+          } else {
+            store.setView("hub");
+            overlay.setResume(true);
+          }
           break;
         case "b": // ⌘⇧B — add a Shell pane
           if (!e.shiftKey) return;

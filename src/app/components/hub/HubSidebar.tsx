@@ -25,6 +25,8 @@ export function HubSidebar() {
   const status = useStore((s) => s.status);
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const settingsSection = useStore((s) => s.settingsSection);
+  const setSettingsSection = useStore((s) => s.setSettingsSection);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const focusSession = useStore((s) => s.focusSession);
   const closeSession = useStore((s) => s.closeSession);
@@ -130,23 +132,23 @@ export function HubSidebar() {
           {Ico.cpu}
           <span style={{ flex: 1 }}>Usage</span>
         </div>
+        {/* Integrations is a Settings sub-pane (design IA) — deep-link into it. */}
         <div
-          className={`side-item${view === "integrations" ? " active" : ""}`}
-          onClick={() => setView("integrations")}
+          className={`side-item${view === "settings" && settingsSection === "integrations" ? " active" : ""}`}
+          onClick={() => {
+            setSettingsSection("integrations");
+            setView("settings");
+          }}
         >
           {Ico.branch}
           <span style={{ flex: 1 }}>Integrations</span>
         </div>
         <div
-          className={`side-item${view === "resume" ? " active" : ""}`}
-          onClick={() => setView("resume")}
-        >
-          {Ico.expand}
-          <span style={{ flex: 1 }}>Resume</span>
-        </div>
-        <div
-          className={`side-item${view === "settings" ? " active" : ""}`}
-          onClick={() => setView("settings")}
+          className={`side-item${view === "settings" && settingsSection !== "integrations" ? " active" : ""}`}
+          onClick={() => {
+            setSettingsSection("general");
+            setView("settings");
+          }}
         >
           {Ico.settings}
           <span style={{ flex: 1 }}>Settings</span>
@@ -375,7 +377,13 @@ export function HubSidebar() {
             {status?.state ?? "—"}
           </div>
         </div>
-        <IconBtn title="Settings" onClick={() => setView("settings")}>
+        <IconBtn
+          title="Settings"
+          onClick={() => {
+            setSettingsSection("general");
+            setView("settings");
+          }}
+        >
           {Ico.settings}
         </IconBtn>
       </div>

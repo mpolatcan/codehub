@@ -36,7 +36,9 @@ function relTime(ms: number | null): string {
 export function Welcome() {
   const saved = useStore((s) => s.config?.savedWorkspaces) ?? [];
   const openWizard = useOverlay((s) => s.setNewWorkspace);
+  const setResume = useOverlay((s) => s.setResume);
   const setView = useStore((s) => s.setView);
+  const setSettingsSection = useStore((s) => s.setSettingsSection);
 
   const pinned = saved.filter((w) => w.pinned);
   // Everything else, most-recently-opened first.
@@ -144,14 +146,23 @@ export function Welcome() {
               desc="Browse the repositories your gh CLI can see, then open one."
               icon={Ico.search}
               cta="Browse repos"
-              onClick={() => setView("integrations")}
+              onClick={() => {
+                setSettingsSection("integrations");
+                setView("settings");
+              }}
             />
             <TemplateCard
               title="Resume a session"
               desc="Reattach to a recent Claude session and continue its transcript."
               icon={Ico.bell}
               cta="Browse sessions"
-              onClick={() => setView("resume")}
+              // Welcome only renders inside HubView (view is already "hub"), but
+              // force it for symmetry with ⌘R / the palette so the drawer always
+              // has a host to render in.
+              onClick={() => {
+                setView("hub");
+                setResume(true);
+              }}
             />
           </div>
         </div>
