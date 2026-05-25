@@ -25,11 +25,14 @@ export function HubSidebar() {
   const status = useStore((s) => s.status);
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const settingsSection = useStore((s) => s.settingsSection);
+  const setSettingsSection = useStore((s) => s.setSettingsSection);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const focusSession = useStore((s) => s.focusSession);
   const closeSession = useStore((s) => s.closeSession);
   const openLaunch = useLauncher((s) => s.open);
   const openAbout = useOverlay((s) => s.setAbout);
+  const openWizard = useOverlay((s) => s.setNewWorkspace);
 
   const sessionCount = Object.keys(sessionMeta).length;
   const runtimeLive = status?.state === "running";
@@ -66,7 +69,7 @@ export function HubSidebar() {
         </button>
       </div>
 
-      {/* quick actions */}
+      {/* quick actions — spawn an agent (primary), or create a saved workspace. */}
       <div style={{ padding: "10px 10px 6px", display: "flex", flexDirection: "column", gap: 4 }}>
         <Button
           onClick={() => openLaunch(NEW_KEY)}
@@ -78,9 +81,25 @@ export function HubSidebar() {
             <span className="kbd">N</span>
           </span>
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => openWizard(true)}
+          style={{ justifyContent: "space-between", width: "100%" }}
+        >
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {Ico.container}New workspace
+          </span>
+          <span style={{ display: "flex", gap: 2, opacity: 0.7 }}>
+            <span className="kbd">⌘⇧N</span>
+          </span>
+        </Button>
       </div>
 
-      {/* views */}
+      {/* views — order + labels match design NAV_ITEMS (main-hub-a). The
+          "Workspaces" item is the runtime inspector (view "containers" kept for
+          file-path stability). Integrations reads the runtime's Claude config
+          (signed-in account + MCP servers); all factual, no fabricated data. */}
       <div style={{ padding: "10px 10px 4px" }}>
         <div className="lbl" style={{ padding: "0 4px 6px" }}>
           Views
@@ -93,18 +112,18 @@ export function HubSidebar() {
           <span style={{ flex: 1 }}>Hub</span>
         </div>
         <div
-          className={`side-item${view === "workspace" ? " active" : ""}`}
-          onClick={() => setView("workspace")}
-        >
-          {Ico.files}
-          <span style={{ flex: 1 }}>Workspace</span>
-        </div>
-        <div
           className={`side-item${view === "dashboard" ? " active" : ""}`}
           onClick={() => setView("dashboard")}
         >
           {Ico.grid}
           <span style={{ flex: 1 }}>Dashboard</span>
+        </div>
+        <div
+          className={`side-item${view === "containers" ? " active" : ""}`}
+          onClick={() => setView("containers")}
+        >
+          {Ico.container}
+          <span style={{ flex: 1 }}>Workspaces</span>
         </div>
         <div
           className={`side-item${view === "usage" ? " active" : ""}`}
@@ -113,23 +132,23 @@ export function HubSidebar() {
           {Ico.cpu}
           <span style={{ flex: 1 }}>Usage</span>
         </div>
+        {/* Integrations is a Settings sub-pane (design IA) — deep-link into it. */}
         <div
-          className={`side-item${view === "resume" ? " active" : ""}`}
-          onClick={() => setView("resume")}
+          className={`side-item${view === "settings" && settingsSection === "integrations" ? " active" : ""}`}
+          onClick={() => {
+            setSettingsSection("integrations");
+            setView("settings");
+          }}
         >
-          {Ico.expand}
-          <span style={{ flex: 1 }}>Resume</span>
+          {Ico.branch}
+          <span style={{ flex: 1 }}>Integrations</span>
         </div>
         <div
-          className={`side-item${view === "containers" ? " active" : ""}`}
-          onClick={() => setView("containers")}
-        >
-          {Ico.container}
-          <span style={{ flex: 1 }}>Containers</span>
-        </div>
-        <div
-          className={`side-item${view === "settings" ? " active" : ""}`}
-          onClick={() => setView("settings")}
+          className={`side-item${view === "settings" && settingsSection !== "integrations" ? " active" : ""}`}
+          onClick={() => {
+            setSettingsSection("general");
+            setView("settings");
+          }}
         >
           {Ico.settings}
           <span style={{ flex: 1 }}>Settings</span>
@@ -142,21 +161,6 @@ export function HubSidebar() {
           <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-3)" }}>
             window
           </span>
-        </div>
-      </div>
-
-      {/* More — secondary views. Integrations reads the runtime's Claude config
-          (signed-in account + MCP servers); all factual, no fabricated data. */}
-      <div style={{ padding: "2px 10px 4px" }}>
-        <div className="lbl" style={{ padding: "0 4px 6px" }}>
-          More
-        </div>
-        <div
-          className={`side-item${view === "integrations" ? " active" : ""}`}
-          onClick={() => setView("integrations")}
-        >
-          {Ico.diff}
-          <span style={{ flex: 1 }}>Integrations</span>
         </div>
       </div>
 
@@ -373,7 +377,13 @@ export function HubSidebar() {
             {status?.state ?? "—"}
           </div>
         </div>
-        <IconBtn title="Settings" onClick={() => setView("settings")}>
+        <IconBtn
+          title="Settings"
+          onClick={() => {
+            setSettingsSection("general");
+            setView("settings");
+          }}
+        >
           {Ico.settings}
         </IconBtn>
       </div>

@@ -17,8 +17,13 @@ export function autoSplitDir(session: string): SplitDir {
 
 // Global keyboard shortcuts:
 //   ⌘/Ctrl N  — new tab (opens the launcher); ⌘/Ctrl T kept as an alias
+//   ⌘⇧N       — new-workspace wizard (the Welcome launcher's CTA)
 //   ⌘/Ctrl W  — close the focused session
-//   ⌘/Ctrl \  — split the focused pane
+//   ⌘/Ctrl \  — split the focused pane (longer axis); ⌘⇧\ forces a column split
+//   ⌘/Ctrl E  — toggle the Files docked viewer
+//   ⌘/Ctrl D  — toggle the all-changes Diff viewer
+//   ⌘⇧B       — add a Shell pane (split the focused pane, else a new tab)
+//   ⌘/Ctrl R  — toggle the Resume drawer (docked over the hub)
 //   ⌘/Ctrl K  — command palette
 //   ⌘/Ctrl /  — keyboard-shortcuts cheat sheet
 //   ⌘/Ctrl 1-9 — switch to tab N
@@ -63,6 +68,11 @@ export function useKeyboard() {
 
       switch (e.key.toLowerCase()) {
         case "n":
+          e.preventDefault();
+          // ⌘⇧N opens the new-workspace wizard; plain ⌘N (and ⌘T) the spawn launcher.
+          if (e.shiftKey) overlay.setNewWorkspace(true);
+          else launcher.open("newtab");
+          break;
         case "t":
           e.preventDefault();
           launcher.open("newtab");
@@ -81,11 +91,41 @@ export function useKeyboard() {
           if (!confirmCloseRunningSession(ws.focused)) return;
           void store.closeSession(ws.focused);
           break;
+        case "e": // toggle the Files docked viewer
+          e.preventDefault();
+          overlay.setFiles(!overlay.files);
+          break;
+        case "d": // toggle the all-changes Diff viewer
+          e.preventDefault();
+          overlay.setDiff(overlay.diff === null ? "" : null);
+          break;
+        case "r": // toggle the Resume drawer (docked over the hub)
+          e.preventDefault();
+          // Already on the hub with it open → close; otherwise jump to the hub
+          // (the drawer only renders there) and open it.
+          if (store.view === "hub" && overlay.resume) {
+            overlay.setResume(false);
+          } else {
+            store.setView("hub");
+            overlay.setResume(true);
+          }
+          break;
+        case "b": // ⌘⇧B — add a Shell pane
+          if (!e.shiftKey) return;
+          e.preventDefault();
+          if (ws?.focused)
+            void store.splitSession(ws.focused, autoSplitDir(ws.focused), "shell", "standard");
+          else void store.newPlate("shell", "standard");
+          break;
+        case "|":
         case "\\": {
           if (!ws?.focused) return;
           e.preventDefault();
           const focused = ws.focused;
-          launcher.open(splitKey(focused), { dir: autoSplitDir(focused), session: focused });
+          // ⌘⇧\ (arrives as "|") forces a downward column split; plain ⌘\ picks
+          // the longer visible axis automatically.
+          const dir: SplitDir = e.shiftKey ? "col" : autoSplitDir(focused);
+          launcher.open(splitKey(focused), { dir, session: focused });
           break;
         }
       }

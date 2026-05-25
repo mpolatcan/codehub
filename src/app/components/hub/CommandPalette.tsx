@@ -24,27 +24,28 @@ import {
  */
 import { AgentGlyph } from "../primitives/AgentGlyph";
 import { Ico } from "../primitives/icons";
+import { shortPath } from "../spawn-form";
 
 const VIEWS: { id: HubView; label: string; icon: keyof typeof Ico }[] = [
   { id: "hub", label: "Hub", icon: "hub" },
   { id: "dashboard", label: "Dashboard", icon: "grid" },
   { id: "usage", label: "Usage", icon: "cpu" },
-  { id: "resume", label: "Resume", icon: "expand" },
-  { id: "containers", label: "Containers", icon: "container" },
+  { id: "containers", label: "Workspaces", icon: "container" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 
 export function CommandPalette() {
   const open = useOverlay((s) => s.palette);
   const setPalette = useOverlay((s) => s.setPalette);
-  const setBroadcast = useOverlay((s) => s.setBroadcast);
   const setDiff = useOverlay((s) => s.setDiff);
   const setFiles = useOverlay((s) => s.setFiles);
+  const setResume = useOverlay((s) => s.setResume);
   const sessionMeta = useStore((s) => s.sessionMeta);
   const sessionActivity = useStore((s) => s.sessionActivity);
   const workspaces = useStore((s) => s.workspaces);
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const setSettingsSection = useStore((s) => s.setSettingsSection);
   const focusSession = useStore((s) => s.focusSession);
   const newPlate = useStore((s) => s.newPlate);
   const restartRuntime = useStore((s) => s.restartRuntime);
@@ -82,6 +83,11 @@ export function CommandPalette() {
     setView("hub");
     setFiles(true);
   };
+  const openResume = () => {
+    setPalette(false);
+    setView("hub");
+    setResume(true);
+  };
   const restart = () => {
     setPalette(false);
     if (
@@ -103,7 +109,7 @@ export function CommandPalette() {
       <CommandList>
         <CommandEmpty>No matches.</CommandEmpty>
 
-        <CommandGroup heading="Go to">
+        <CommandGroup heading={`Go to · ${VIEWS.length}`}>
           {VIEWS.map((v) => (
             <CommandItem
               key={v.id}
@@ -174,20 +180,10 @@ export function CommandPalette() {
           </CommandGroup>
         )}
 
-        <CommandGroup heading="Commands">
-          {sessions.length > 0 && (
-            <CommandItem
-              value="broadcast prompt to agents compare"
-              onSelect={() => {
-                setPalette(false);
-                setBroadcast(true);
-              }}
-            >
-              <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.arrowR}</span>
-              <span style={{ flex: 1 }}>Broadcast a prompt to agents…</span>
-            </CommandItem>
-          )}
-          {runtimeLive && (
+        {/* Whole group is gated on a live runtime — all three commands need it —
+            so the heading count stays honest (no "Commands · 3" with dead rows). */}
+        {runtimeLive && (
+          <CommandGroup heading="Commands · 4">
             <CommandItem value="review all changes diff workspace" onSelect={openDiff}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.diff}</span>
               <span style={{ flex: 1 }}>Review all changes</span>
@@ -195,14 +191,17 @@ export function CommandPalette() {
                 workspace diff
               </span>
             </CommandItem>
-          )}
-          {runtimeLive && (
             <CommandItem value="open files browser workspace" onSelect={openFiles}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.files}</span>
               <span style={{ flex: 1 }}>Open files browser</span>
             </CommandItem>
-          )}
-          {runtimeLive && (
+            <CommandItem value="resume past session drawer claude codex" onSelect={openResume}>
+              <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.clock}</span>
+              <span style={{ flex: 1 }}>Open Resume drawer</span>
+              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                ⌘R
+              </span>
+            </CommandItem>
             <CommandItem value="restart runtime container" onSelect={restart}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.container}</span>
               <span style={{ flex: 1 }}>Restart runtime container</span>
@@ -210,11 +209,11 @@ export function CommandPalette() {
                 ends sessions
               </span>
             </CommandItem>
-          )}
-        </CommandGroup>
+          </CommandGroup>
+        )}
 
         {runtimeLive && (
-          <CommandGroup heading="Spawn new agent">
+          <CommandGroup heading={`Spawn new agent · ${CLIS.length}`}>
             {CLIS.map((c) => (
               <CommandItem key={c.id} value={`spawn ${c.label}`} onSelect={() => spawn(c.id)}>
                 <AgentGlyph agent={c.id} size={13} color={`var(--a-${c.id})`} />
@@ -231,7 +230,9 @@ export function CommandPalette() {
             to a connected GitHub account (honest-empty until the BE connector
             lands). Selecting a recent re-points the /workspace mount. */}
         {(recents.length > 0 || githubRepos.length > 0) && (
-          <CommandGroup heading="Repos">
+          <CommandGroup
+            heading={`Repos · ${Math.min(recents.length, 6) + Math.min(githubRepos.length, 6)}`}
+          >
             {recents.slice(0, 6).map((path) => (
               <CommandItem
                 key={path}
@@ -250,8 +251,12 @@ export function CommandPalette() {
                 key={repo.nameWithOwner}
                 value={`repo github ${repo.nameWithOwner}`}
                 // No clone-into-workspace command exists yet, so a GitHub repo row
-                // is informational (focuses Integrations) rather than a fake action.
-                onSelect={() => goView("settings")}
+                // is informational — it opens the Integrations pane (where the
+                // connected account + repo list live) rather than a fake action.
+                onSelect={() => {
+                  setSettingsSection("integrations");
+                  goView("settings");
+                }}
               >
                 <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.branch}</span>
                 <span style={{ flex: 1 }}>{repo.nameWithOwner}</span>
@@ -265,11 +270,4 @@ export function CommandPalette() {
       </CommandList>
     </CommandDialog>
   );
-}
-
-// Compact a host path: last two segments, ellipsized.
-function shortPath(p: string): string {
-  const parts = p.split("/").filter(Boolean);
-  const tail = parts.slice(-2).join("/");
-  return parts.length > 2 ? `…/${tail}` : `/${tail}`;
 }

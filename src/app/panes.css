@@ -552,26 +552,121 @@ body.dragging .divider::after {
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fg-0) 20%, transparent);
 }
 
-/* ---- Hub B compare grid ----------------------------------------------- */
-/* The grid layout (settings.hubLayout === "grid") tiles every live session as
-   its own pane, 1px-rule background like the split grid. Column count is set
-   inline (sqrt of the tile count). Tiles reuse `.pane-leaf` chrome. */
-.compare-grid {
-  flex: 1;
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-  min-height: 0;
-  background: var(--bd-soft);
+/* ---- Hub action bar (bottom chrome) ----------------------------------- */
+/* PaneAddBtn — icon-only square toggle for the Files / Diff docked viewers
+   (and the one-shot Shell spawn). Active = tinted with the pane-type accent
+   (--pa-c), ported from design/screens/workspace.jsx. */
+.pane-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--bd-soft);
+  border-radius: 5px;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.compare-grid .pane-leaf {
-  margin: 0;
-  background: var(--bg-0);
-  border: none;
-  animation: none;
+.pane-add-btn:hover {
+  background: var(--bg-3);
+  border-color: var(--bd);
+  color: var(--fg-0);
 }
-.compare-grid .pane-leaf.focused {
-  border: none;
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fg-0) 36%, transparent);
-  z-index: 1;
+.pane-add-btn.active {
+  background: color-mix(in oklab, var(--pa-c) 22%, var(--bg-1));
+  border-color: var(--pa-c);
+  color: var(--fg-0);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pa-c) 35%, transparent);
+}
+.pane-add-btn.active:hover {
+  background: color-mix(in oklab, var(--pa-c) 30%, var(--bg-1));
+}
+
+/* SpawnSplitBtn — the one primary CTA that replaces the old split-button trio.
+   Two halves share the violet --pri solid fill (recipe ported from design
+   .btn.pri.solid); the chevron half opens a placement popover. */
+.spawn-half {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 10px;
+  font: 500 12px / 1 var(--mono);
+  background: color-mix(in oklab, var(--pri) 82%, var(--bg-0));
+  color: var(--bg-0);
+  border: 1px solid color-mix(in oklab, var(--pri) 82%, var(--bg-0));
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.spawn-half:hover {
+  background: var(--pri);
+}
+.spawn-half.spawn-main {
+  border-radius: 5px 0 0 5px;
+  border-right: none;
+}
+.spawn-half.spawn-chev {
+  border-radius: 0 5px 5px 0;
+  padding: 0 7px;
+  border-left: 1px solid color-mix(in oklab, var(--bg-0) 22%, transparent);
+}
+.spawn-half.spawn-chev.open {
+  background: color-mix(in oklab, var(--bg-0) 14%, var(--pri));
+}
+.spawn-half .kbd {
+  background: rgba(0, 0, 0, 0.18);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: var(--bg-0);
+}
+
+/* Placement-menu row (small popover list item). */
+.ctx-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--fg-1);
+}
+.ctx-row:hover {
+  background: var(--bg-3);
+  color: var(--fg-0);
+}
+.ctx-row[aria-disabled="true"] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ---- Welcome launcher ------------------------------------------------- */
+/* Saved-workspace + template cards on the Welcome screen. Both lift on hover;
+   the workspace card reveals its remove affordance only on hover so the resting
+   card stays clean. */
+.ws-card {
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.ws-card:hover {
+  border-color: var(--bd-strong);
+  background: var(--bg-3);
+}
+.ws-card .ws-remove {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ws-card:hover .ws-remove,
+.ws-card:focus-within .ws-remove {
+  opacity: 1;
+}
+.tmpl-card {
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.tmpl-card:not([aria-disabled="true"]):hover {
+  border-color: var(--bd-strong);
+  background: var(--bg-3);
 }

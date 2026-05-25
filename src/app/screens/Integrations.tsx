@@ -29,14 +29,15 @@ import { StatusDot } from "@/app/components/primitives/StatusDot";
 import { Tag } from "@/app/components/primitives/Tag";
 import { Ico } from "@/app/components/primitives/icons";
 import { type ClaudeIntegrations, type GithubRepo, type GithubStatus, ipc } from "@/app/lib/ipc";
-import { useLauncher } from "@/app/lib/launcher";
 import { useStore } from "@/app/lib/store";
-import { Button } from "@/app/ui/button";
 import { useEffect, useState } from "react";
 
-export function Integrations() {
+// Rendered as a Settings sub-pane (Settings.tsx → NAV_GROUPS "integrations"),
+// matching the design IA where Integrations lives inside the Settings shell. It
+// returns a pane fragment (header + content) — the Settings pane container
+// supplies the scroll + padding — not its own <main>.
+export function IntegrationsPane() {
   const status = useStore((s) => s.status);
-  const openLaunch = useLauncher((s) => s.open);
   const state = status?.state ?? "missing";
   const running = state === "running";
 
@@ -78,94 +79,72 @@ export function Integrations() {
     };
   }, [running]);
 
-  const summary = githubStatus?.connected
-    ? `GitHub connected${githubStatus.login ? ` · ${githubStatus.login}` : ""}`
-    : data
-      ? `${data.account ? "1 account" : "no account"} · ${data.mcpServers.length} MCP`
-      : `runtime ${state}`;
-
   return (
-    <main
-      style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        background: "var(--bg-1)",
-        minWidth: 0,
-        color: "var(--fg-1)",
-      }}
-    >
-      <div style={{ padding: "20px 28px 14px", borderBottom: "1px solid var(--bd-soft)" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: "-0.01em" }}>
-            Integrations
-          </h1>
-          <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
-            {summary}
-          </span>
-          <span style={{ flex: 1 }} />
-          <Button size="sm" onClick={() => openLaunch("newtab")}>
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {Ico.plus}New agent
-            </span>
-          </Button>
-        </div>
-        <p className="mono" style={{ margin: "8px 0 0", fontSize: 11, color: "var(--fg-3)" }}>
-          Connections are surfaced presence-only — no credential value is read or stored. GitHub
-          auth is a host env var; the Claude account + MCP config is read from the runtime
-          container.
-        </p>
+    <>
+      <h1
+        style={{
+          margin: "0 0 4px",
+          fontSize: 22,
+          fontWeight: 600,
+          letterSpacing: "-0.01em",
+          color: "var(--fg-0)",
+        }}
+      >
+        Integrations
+      </h1>
+      <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: 13 }}>
+        Connect external services so agents can read context and act on your behalf. Connections are
+        surfaced presence-only — no credential value is read or stored. GitHub auth is a host env
+        var; the Claude account + MCP config is read from the runtime container.
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 760 }}>
+        {/* GitHub — host env var, presence-only */}
+        <section>
+          <SectionHead label="Source control" />
+          <GitHubCard status={githubStatus} repos={githubRepos} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+            <SoonRow name="GitLab" desc="Self-hosted or saas.gitlab.com" />
+            <SoonRow name="Bitbucket" desc="Cloud + Data Center" />
+            <SoonRow name="Gitea" desc="Self-hosted" />
+            <SoonRow name="Sourcehut" desc="git.sr.ht" />
+          </div>
+        </section>
+
+        {/* Other categories — no data source yet, honestly "Coming soon" */}
+        <section>
+          <SectionHead label="Project trackers" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <SoonRow name="Linear" desc="Read issues, comment, transition status" />
+            <SoonRow name="Jira" desc="Atlassian cloud + server" />
+            <SoonRow name="Notion" desc="Read docs, append to pages" />
+            <SoonRow name="Asana" desc="Tasks & projects" />
+          </div>
+        </section>
+
+        <section>
+          <SectionHead label="Observability" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <SoonRow name="Sentry" desc="Pipe runtime errors back to the agent for triage" />
+            <SoonRow name="Datadog" desc="Logs, traces, metrics" />
+            <SoonRow name="Honeycomb" desc="Distributed traces" />
+            <SoonRow name="Grafana" desc="Read panels, query Prometheus" />
+          </div>
+        </section>
+
+        {/* Runtime Claude config — account + MCP (identity / non-secret only) */}
+        <section>
+          <SectionHead label="Runtime agent config" />
+          {!running ? (
+            <ClaudeBody empty="Runtime not running — no Claude config to read." />
+          ) : data === null ? (
+            <ClaudeBody empty="Reading Claude config…" />
+          ) : (
+            <ClaudeBody data={data} />
+          )}
+        </section>
       </div>
-
-      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: 24 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 760 }}>
-          {/* GitHub — host env var, presence-only */}
-          <section>
-            <SectionHead label="Source control" />
-            <GitHubCard status={githubStatus} repos={githubRepos} />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-              <SoonRow name="GitLab" desc="Self-hosted or saas.gitlab.com" />
-              <SoonRow name="Bitbucket" desc="Cloud + Data Center" />
-              <SoonRow name="Gitea" desc="Self-hosted" />
-              <SoonRow name="Sourcehut" desc="git.sr.ht" />
-            </div>
-          </section>
-
-          {/* Other categories — no data source yet, honestly "Coming soon" */}
-          <section>
-            <SectionHead label="Project trackers" />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <SoonRow name="Linear" desc="Read issues, comment, transition status" />
-              <SoonRow name="Jira" desc="Atlassian cloud + server" />
-              <SoonRow name="Notion" desc="Read docs, append to pages" />
-              <SoonRow name="Asana" desc="Tasks & projects" />
-            </div>
-          </section>
-
-          <section>
-            <SectionHead label="Observability" />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <SoonRow name="Sentry" desc="Pipe runtime errors back to the agent for triage" />
-              <SoonRow name="Datadog" desc="Logs, traces, metrics" />
-              <SoonRow name="Honeycomb" desc="Distributed traces" />
-              <SoonRow name="Grafana" desc="Read panels, query Prometheus" />
-            </div>
-          </section>
-
-          {/* Runtime Claude config — account + MCP (identity / non-secret only) */}
-          <section>
-            <SectionHead label="Runtime agent config" />
-            {!running ? (
-              <ClaudeBody empty="Runtime not running — no Claude config to read." />
-            ) : data === null ? (
-              <ClaudeBody empty="Reading Claude config…" />
-            ) : (
-              <ClaudeBody data={data} />
-            )}
-          </section>
-        </div>
-      </div>
-    </main>
+    </>
   );
 }
 

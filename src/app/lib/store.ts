@@ -18,6 +18,7 @@ import type {
   KeyStatus,
   Mode,
   PendingPrompt,
+  SavedWorkspace,
   SessionActivity,
   UpdateStatus,
   WorkspaceInfo,
@@ -40,17 +41,11 @@ import {
 } from "./tree";
 
 // Top-level view, switched from the sidebar nav. "hub" is the terminal grid;
-// the rest are full-pane screens. All are live real-data screens — Integrations
-// reads the runtime's Claude config (signed-in account + configured MCP servers).
-export type HubView =
-  | "hub"
-  | "workspace"
-  | "dashboard"
-  | "containers"
-  | "settings"
-  | "usage"
-  | "resume"
-  | "integrations";
+// the rest are full-pane screens. Resume is no longer a view — it's a docked
+// drawer over the hub (useOverlay.resume). Integrations is no longer a view
+// either — it's a Settings pane (settingsSection === "integrations"), reached by
+// deep-linking into Settings.
+export type HubView = "hub" | "dashboard" | "containers" | "settings" | "usage";
 
 interface CodeHubState {
   workspaces: Workspace[];
@@ -59,6 +54,11 @@ interface CodeHubState {
   status: ContainerStatus | null;
   error: string | null;
   view: HubView;
+  // Selected Settings sub-pane (NAV_GROUPS key in Settings.tsx). Lifted to the
+  // store so other surfaces can deep-link into a pane — e.g. the sidebar's
+  // "Integrations" entry and Welcome's "From GitHub" card open Settings with the
+  // integrations pane already selected.
+  settingsSection: string;
   // Session whose focused-detail view is open (terminal + workspace inspector),
   // or null for the normal view. Set from a pane's expand button; any sidebar
   // view switch or closing that session clears it.
@@ -121,6 +121,7 @@ interface CodeHubState {
   stopRuntime: () => Promise<void>;
   restartRuntime: () => Promise<void>;
   setView: (v: HubView) => void;
+  setSettingsSection: (key: string) => void;
   openDetail: (name: string) => void;
   closeDetail: () => void;
   setSessionActivity: (list: SessionActivity[]) => void;
@@ -161,6 +162,16 @@ interface CodeHubState {
   selectWorkspaceDir: (path: string) => Promise<void>;
   // Remove + recreate the runtime so a changed mount applies (kills sessions).
   recreateRuntime: () => Promise<void>;
+
+  // Saved workspaces (Welcome launcher). Persisted through updateConfig — a saved
+  // workspace is a name + dir pointer; the container is always the shared runtime.
+  // saveWorkspace returns the new id. openSavedWorkspace touches lastOpened and
+  // points the /workspace mount at its dir (the caller then opens the spawn
+  // launcher to start the first agent).
+  saveWorkspace: (name: string, dir: string) => Promise<string>;
+  removeSavedWorkspace: (id: string) => Promise<void>;
+  toggleWorkspacePin: (id: string) => Promise<void>;
+  openSavedWorkspace: (id: string) => Promise<void>;
 
   // Tier-3 account profiles (label-only).
   loadAccountProfiles: () => Promise<void>;
@@ -245,6 +256,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     status: null,
     error: null,
     view: "hub",
+    settingsSection: "general",
     detailSession: null,
     sessionActivity: {},
     containerStats: null,
@@ -305,6 +317,9 @@ export const useStore = create<CodeHubState>((set, get) => {
 
     // Switching to a top-level view leaves any open session-detail view.
     setView: (view) => set({ view, detailSession: null }),
+
+    // Deep-link a Settings sub-pane (the caller usually also setView("settings")).
+    setSettingsSection: (settingsSection) => set({ settingsSection }),
 
     openDetail: (name) => {
       if (get().sessionMeta[name]) set({ detailSession: name });
@@ -577,6 +592,47 @@ export const useStore = create<CodeHubState>((set, get) => {
       } catch (e) {
         set({ error: `recreate runtime failed: ${e}` });
       }
+    },
+
+    // ── Saved workspaces (Welcome launcher) ─────────────────────────────────
+    // All mutations route through updateConfig (optimistic + reverts on failure)
+    // — a saved workspace lives in settings.json alongside the other prefs, so
+    // there's no separate command to wire.
+    saveWorkspace: async (name, dir) => {
+      const id = `sw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const entry: SavedWorkspace = {
+        id,
+        name: name.trim() || "Untitled workspace",
+        dir,
+        pinned: false,
+        lastOpened: null,
+      };
+      const list = get().config?.savedWorkspaces ?? [];
+      await get().updateConfig({ savedWorkspaces: [...list, entry] });
+      return id;
+    },
+    removeSavedWorkspace: async (id) => {
+      const list = get().config?.savedWorkspaces ?? [];
+      await get().updateConfig({ savedWorkspaces: list.filter((w) => w.id !== id) });
+    },
+    toggleWorkspacePin: async (id) => {
+      const list = get().config?.savedWorkspaces ?? [];
+      await get().updateConfig({
+        savedWorkspaces: list.map((w) => (w.id === id ? { ...w, pinned: !w.pinned } : w)),
+      });
+    },
+    // Touch lastOpened, then point the /workspace mount at this workspace's dir
+    // (selectWorkspaceDir bumps recents + workspace_dir; a changed mount surfaces
+    // the existing "restart runtime to apply" affordance). The caller opens the
+    // spawn launcher afterwards to start the first agent.
+    openSavedWorkspace: async (id) => {
+      const ws = (get().config?.savedWorkspaces ?? []).find((w) => w.id === id);
+      if (!ws) return;
+      const list = (get().config?.savedWorkspaces ?? []).map((w) =>
+        w.id === id ? { ...w, lastOpened: Date.now() } : w,
+      );
+      await get().updateConfig({ savedWorkspaces: list });
+      await get().selectWorkspaceDir(ws.dir);
     },
 
     loadAccountProfiles: async () => {

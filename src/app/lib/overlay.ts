@@ -16,18 +16,26 @@ interface OverlayState {
   // Files browser open/closed. Like `diff`, lives here so the Hub toolbar's
   // Files button (and later a shortcut) drive the one viewer.
   files: boolean;
-  // Broadcast composer open/closed — send one prompt to many running sessions.
-  broadcast: boolean;
+  // Resume drawer open/closed (⌘R, the ActionBar "Resume" button, Welcome's
+  // "Browse sessions" card). A docked right-side drawer over the live hub — past
+  // Claude/Codex transcripts, grouped by agent. Lives here (not a top-level view)
+  // so resuming pulls a session INTO the current workspace without leaving it.
+  resume: boolean;
   // About dialog open/closed — app + environment identity (real data), opened
   // from the sidebar wordmark. A modal "About this app", separate from the
   // Settings › About pane which embeds the same facts in the config surface.
   about: boolean;
+  // New-workspace wizard open/closed (⌘⇧N, the Welcome launcher's CTA + "Blank"
+  // template). A modal over the Welcome list; creates a saved workspace + opens
+  // its first agent. Lives here so a keyboard handler can open it directly.
+  newWorkspace: boolean;
   setPalette: (open: boolean) => void;
   setShortcuts: (open: boolean) => void;
   setDiff: (path: string | null) => void;
   setFiles: (open: boolean) => void;
-  setBroadcast: (open: boolean) => void;
+  setResume: (open: boolean) => void;
   setAbout: (open: boolean) => void;
+  setNewWorkspace: (open: boolean) => void;
   togglePalette: () => void;
   toggleShortcuts: () => void;
 }
@@ -37,14 +45,16 @@ export const useOverlay = create<OverlayState>((set) => ({
   shortcuts: false,
   diff: null,
   files: false,
-  broadcast: false,
+  resume: false,
   about: false,
+  newWorkspace: false,
   setPalette: (palette) => set({ palette }),
   setShortcuts: (shortcuts) => set({ shortcuts }),
   setDiff: (diff) => set({ diff }),
   setFiles: (files) => set({ files }),
-  setBroadcast: (broadcast) => set({ broadcast }),
+  setResume: (resume) => set({ resume }),
   setAbout: (about) => set({ about }),
+  setNewWorkspace: (newWorkspace) => set({ newWorkspace }),
   // Opening one overlay closes the other so they never stack.
   togglePalette: () => set((s) => ({ palette: !s.palette, shortcuts: false })),
   toggleShortcuts: () => set((s) => ({ shortcuts: !s.shortcuts, palette: false })),

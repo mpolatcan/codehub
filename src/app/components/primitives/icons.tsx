@@ -273,6 +273,40 @@ export const Ico = {
       <path d="M3 8l3.5 3.5L13 5" />
     </svg>
   ),
+  // Terminal / shell glyph — the ActionBar's Shell pane affordance.
+  terminal: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="3" width="12" height="10" rx="1.5" />
+      <path d="M5 7l2 1.5L5 10M9 10.5h2.5" />
+    </svg>
+  ),
+  // Clock glyph — the ActionBar's Resume affordance.
+  clock: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 4.5V8l2.5 1.5" />
+    </svg>
+  ),
 } as const;
 
 export type IcoKey = keyof typeof Ico;
