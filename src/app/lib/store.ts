@@ -423,6 +423,8 @@ export const useStore = create<CodeHubState>((set, get) => {
         activeGroupId: group.id,
       };
       registerMeta(name, cli, mode, ws.id, group.id, claudeId);
+      // New tab becomes active — clear focus mode / drag from the old workspace.
+      resetGridOverlays();
       set((s) => ({
         plateCounter: plate,
         workspaces: [...s.workspaces, ws],
@@ -516,6 +518,9 @@ export const useStore = create<CodeHubState>((set, get) => {
         removeWorkspace(get, set, ws.id);
         return;
       }
+      // Emptied group falls to a sibling — clear focus mode / drag if it was the
+      // active one so they don't carry over.
+      if (ws.activeGroupId === grp.id) resetGridOverlays();
       set((s) => ({
         workspaces: updateWs(s.workspaces, ws.id, (w) => {
           const groups = w.groups.filter((g) => g.id !== grp.id);
@@ -566,6 +571,16 @@ export const useStore = create<CodeHubState>((set, get) => {
     focusSession: (name) => {
       const meta = get().sessionMeta[name];
       if (!meta) return;
+      // If this jumps to a DIFFERENT group/workspace (e.g. the palette "go to
+      // session", a sidebar session click), drop focus mode / any in-flight drag
+      // so they don't bleed into the grid we land on. A same-group focus (⌘1-9,
+      // a MiniPane click while maximized) must NOT exit focus mode — that would
+      // break click-to-swap in the focus strip — so the reset is conditional.
+      const cur = get();
+      const curWs = cur.workspaces.find((w) => w.id === cur.activeWorkspaceId);
+      const crossing =
+        cur.activeWorkspaceId !== meta.workspaceId || curWs?.activeGroupId !== meta.groupId;
+      if (crossing) resetGridOverlays();
       set((s) => ({
         activeWorkspaceId: meta.workspaceId,
         workspaces: updateWs(s.workspaces, meta.workspaceId, (w) => ({
@@ -649,6 +664,9 @@ export const useStore = create<CodeHubState>((set, get) => {
     },
 
     addGroup: (wsId) => {
+      // New empty group becomes active — clear focus mode / drag so they don't
+      // re-engage once a 2nd pane lands in it.
+      resetGridOverlays();
       const group = makeGroup();
       set((s) => ({
         workspaces: updateWs(s.workspaces, wsId, (w) => ({
@@ -686,6 +704,11 @@ export const useStore = create<CodeHubState>((set, get) => {
       if (ws.groups.length <= 1) {
         removeWorkspace(get, set, wsId);
         return;
+      }
+      // Closing the active group falls to a sibling — clear focus mode / drag so
+      // they don't carry over into it.
+      if (get().workspaces.find((w) => w.id === wsId)?.activeGroupId === groupId) {
+        resetGridOverlays();
       }
       set((s) => ({
         workspaces: updateWs(s.workspaces, wsId, (w) => {
@@ -1014,6 +1037,9 @@ function removeWorkspace(get: Get, set: Set, id: string) {
   const nextActive = wasActive
     ? (next[idx]?.id ?? next[idx - 1]?.id ?? null)
     : get().activeWorkspaceId;
+  // Closing the active tab falls to a sibling — clear focus mode / drag so they
+  // don't carry over into it.
+  if (wasActive) resetGridOverlays();
   set({ workspaces: next, activeWorkspaceId: nextActive });
 }
 
