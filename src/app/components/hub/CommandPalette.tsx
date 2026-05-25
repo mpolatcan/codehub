@@ -24,20 +24,20 @@ import {
  */
 import { AgentGlyph } from "../primitives/AgentGlyph";
 import { Ico } from "../primitives/icons";
+import { shortPath } from "../spawn-form";
 
 const VIEWS: { id: HubView; label: string; icon: keyof typeof Ico }[] = [
   { id: "hub", label: "Hub", icon: "hub" },
   { id: "dashboard", label: "Dashboard", icon: "grid" },
   { id: "usage", label: "Usage", icon: "cpu" },
   { id: "resume", label: "Resume", icon: "expand" },
-  { id: "containers", label: "Containers", icon: "container" },
+  { id: "containers", label: "Workspaces", icon: "container" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 
 export function CommandPalette() {
   const open = useOverlay((s) => s.palette);
   const setPalette = useOverlay((s) => s.setPalette);
-  const setBroadcast = useOverlay((s) => s.setBroadcast);
   const setDiff = useOverlay((s) => s.setDiff);
   const setFiles = useOverlay((s) => s.setFiles);
   const sessionMeta = useStore((s) => s.sessionMeta);
@@ -175,18 +175,6 @@ export function CommandPalette() {
         )}
 
         <CommandGroup heading="Commands">
-          {sessions.length > 0 && (
-            <CommandItem
-              value="broadcast prompt to agents compare"
-              onSelect={() => {
-                setPalette(false);
-                setBroadcast(true);
-              }}
-            >
-              <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.arrowR}</span>
-              <span style={{ flex: 1 }}>Broadcast a prompt to agents…</span>
-            </CommandItem>
-          )}
           {runtimeLive && (
             <CommandItem value="review all changes diff workspace" onSelect={openDiff}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.diff}</span>
@@ -265,11 +253,4 @@ export function CommandPalette() {
       </CommandList>
     </CommandDialog>
   );
-}
-
-// Compact a host path: last two segments, ellipsized.
-function shortPath(p: string): string {
-  const parts = p.split("/").filter(Boolean);
-  const tail = parts.slice(-2).join("/");
-  return parts.length > 2 ? `…/${tail}` : `/${tail}`;
 }

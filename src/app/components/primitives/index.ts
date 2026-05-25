@@ -31,6 +31,11 @@ export type { LogoProps } from "./Logo";
 export { IconBtn } from "./IconBtn";
 export type { IconBtnProps } from "./IconBtn";
 
+export { PaneAddBtn } from "./PaneAddBtn";
+export type { PaneAddKind } from "./PaneAddBtn";
+
+export { SpawnSplitBtn } from "./SpawnSplitBtn";
+
 export { Segmented } from "./Segmented";
 export type { SegmentedOption, SegmentedProps } from "./Segmented";
 

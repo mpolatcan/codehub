@@ -102,34 +102,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Pixel labels — Silkscreen, tiny caps. */
+/* Pixel labels — tiny mono caps (legacy alias; HUD face dropped in the reskin). */
 .pixel {
   font-family: var(--font-pixel);
   font-size: var(--fs-pixel);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-}
-/* Faint scanline + vignette atmosphere, ported from the vanilla skin. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  opacity: 0.4;
-  background-image: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.15) 0px,
-    rgba(0, 0, 0, 0.15) 1px,
-    transparent 1px,
-    transparent 3px
-  );
-}
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9998;
-  background: radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.4) 100%);
 }

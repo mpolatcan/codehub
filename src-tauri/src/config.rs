@@ -83,6 +83,28 @@ pub fn profile_statuses(profiles: Vec<AccountProfile>) -> Vec<AccountProfileStat
         .collect()
 }
 
+/// A user-saved workspace shown on the Welcome launcher: a named pointer to a
+/// host repo directory. Opening one points the `/workspace` mount at its `dir`
+/// and starts a tab. **There is no per-workspace container** — every workspace
+/// shares the one runtime, and the mounted dir is the only thing that varies, so
+/// there is deliberately no size/cost field here to fabricate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedWorkspace {
+    /// Stable opaque id (generated on create).
+    pub id: String,
+    /// Human name shown on the launcher card.
+    pub name: String,
+    /// Host directory bound at `/workspace` when this workspace is opened.
+    pub dir: String,
+    /// Pinned to the top of the launcher.
+    #[serde(default)]
+    pub pinned: bool,
+    /// Epoch-ms of the last time it was opened (`None` = not opened since saved).
+    #[serde(default)]
+    pub last_opened: Option<i64>,
+}
+
 /// All persisted preferences. Serialized to the frontend (and the dev bridge) as
 /// camelCase to match the rest of the IPC surface.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,9 +117,12 @@ pub struct Settings {
     /// "comfortable" | "compact" (consumed once the compact layout pass lands).
     #[serde(default = "default_density")]
     pub density: String,
-    /// Hub main-region layout: "tabs" (per-workspace split grid) | "grid" (2×2
-    /// compare grid tiling every live session). Persisted so the chosen layout
-    /// survives a reload.
+    /// Hub main-region layout, historically "tabs" | "grid". The grid (compare)
+    /// layout + its toggle were removed in the design-fidelity pass, so the UI no
+    /// longer reads this — but it is RETAINED to keep the wholesale config
+    /// round-trip intact for users who already have it in settings.json. Do not
+    /// delete (that would drop the key on read-modify-write); reuse it if a layout
+    /// choice returns.
     #[serde(default = "default_hub_layout")]
     pub hub_layout: String,
 
@@ -127,6 +152,10 @@ pub struct Settings {
     /// Recently-selected workspace directories (MRU, newest first, capped).
     #[serde(default)]
     pub recent_workspaces: Vec<String>,
+    /// User-saved workspaces shown on the Welcome launcher (name + dir pointers;
+    /// the container is always the shared runtime). Mutated through `set_config`.
+    #[serde(default)]
+    pub saved_workspaces: Vec<SavedWorkspace>,
 
     // — Accounts (Tier-3, label-only — no secrets stored, see AccountProfile) —
     /// Named per-agent accounts the spawn dialog offers. Each maps to a host

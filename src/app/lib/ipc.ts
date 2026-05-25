@@ -90,6 +90,9 @@ export interface AppSettings {
   // Workspace (Tier-2 repo picker). workspaceDir null → built-in default mount.
   workspaceDir: string | null;
   recentWorkspaces: string[];
+  // Saved workspaces shown on the Welcome launcher (config::SavedWorkspace).
+  // Name + dir pointers only — the container is always the shared runtime.
+  savedWorkspaces: SavedWorkspace[];
   // Accounts (Tier-3, label-only — no secrets). Each maps an agent to a host
   // env var NAME; the value is never stored here.
   accountProfiles: AccountProfile[];
@@ -97,6 +100,19 @@ export interface AppSettings {
   notifyAwaitInput: boolean;
   notifyTurnFinish: boolean;
   playSound: boolean;
+}
+
+// A user-saved workspace shown on the Welcome launcher (config::SavedWorkspace).
+// A named pointer to a host repo dir; opening it points /workspace at `dir` and
+// starts a tab. No per-workspace container — every workspace shares the runtime,
+// so there is no size/cost field (honest: nothing to fabricate).
+export interface SavedWorkspace {
+  id: string;
+  name: string;
+  dir: string;
+  pinned: boolean;
+  // Epoch-ms of the last open, or null if not opened since it was saved.
+  lastOpened: number | null;
 }
 
 // A label-only account profile (config::AccountProfile). `varName` is the NAME

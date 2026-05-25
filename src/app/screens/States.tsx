@@ -623,11 +623,11 @@ export default function StatesGallery() {
           caption="quiet states with a clear next step — not blank pages"
         />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
-          <StateCard caption="No containers" desc="Container Inspector before any spawn.">
+          <StateCard caption="No workspaces" desc="Workspaces inspector before any spawn.">
             <EmptyPanel
               icon={Ico.container}
-              title="No containers yet"
-              hint="A container is created when you spawn your first agent."
+              title="No workspaces yet"
+              hint="A workspace is created when you spawn your first agent."
               cta="New agent"
             />
           </StateCard>

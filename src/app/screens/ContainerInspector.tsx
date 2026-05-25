@@ -237,7 +237,7 @@ export function ContainerInspector() {
       <div style={{ padding: "20px 28px 14px", borderBottom: "1px solid var(--bd-soft)" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: "-0.01em" }}>
-            Containers
+            Workspaces
           </h1>
           <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
             {state === "running" ? "1 running" : `0 running · ${state}`}

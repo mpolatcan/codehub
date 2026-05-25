@@ -2,10 +2,9 @@ import { useEffect } from "react";
 import { AboutDialog } from "./components/AboutDialog";
 import { Grid } from "./components/Grid";
 import { SpawnModal } from "./components/SpawnModal";
+import { ActionBar } from "./components/hub/ActionBar";
 import { ActivityRail } from "./components/hub/ActivityRail";
-import { BroadcastModal } from "./components/hub/BroadcastModal";
 import { CommandPalette } from "./components/hub/CommandPalette";
-import { CompareGrid } from "./components/hub/CompareGrid";
 import { HubSidebar } from "./components/hub/HubSidebar";
 import { HubStatusBar } from "./components/hub/HubStatusBar";
 import { HubTabs } from "./components/hub/HubTabs";
@@ -18,16 +17,18 @@ import { useKeyboard } from "./hooks/useKeyboard";
 import { listen } from "./lib/bridge";
 import { ipc } from "./lib/ipc";
 import { useLauncher } from "./lib/launcher";
+import { useOverlay } from "./lib/overlay";
 import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
 import { ContainerInspector } from "./screens/ContainerInspector";
 import { Dashboard } from "./screens/Dashboard";
 import { EmptyHero } from "./screens/EmptyState";
 import { Integrations } from "./screens/Integrations";
+import { NewWorkspace } from "./screens/NewWorkspace";
 import { Resume } from "./screens/Resume";
 import { SessionDetail } from "./screens/SessionDetail";
 import { Settings } from "./screens/Settings";
 import { Usage } from "./screens/Usage";
-import { Workspace } from "./screens/Workspace";
+import { Welcome } from "./screens/Welcome";
 
 // App shell. The left sidebar is always present; the main region swaps on the
 // sidebar's view nav (P4). "hub" is the live terminal grid + activity rail; the
@@ -35,6 +36,7 @@ import { Workspace } from "./screens/Workspace";
 export function App() {
   const view = useStore((s) => s.view);
   const detailSession = useStore((s) => s.detailSession);
+  const newWorkspace = useOverlay((s) => s.newWorkspace);
 
   useKeyboard();
   // One app-wide runtime-stats poll, shared by every resource gauge (see hook).
@@ -85,8 +87,6 @@ export function App() {
         <SessionDetail session={detailSession} />
       ) : view === "hub" ? (
         <HubView />
-      ) : view === "workspace" ? (
-        <Workspace />
       ) : view === "containers" ? (
         <ContainerInspector />
       ) : view === "settings" ? (
@@ -105,9 +105,9 @@ export function App() {
           here is incidental. */}
       <CommandPalette />
       <Shortcuts />
-      <BroadcastModal />
       <SpawnModal />
       <AboutDialog />
+      {newWorkspace && <NewWorkspace />}
     </div>
   );
 }
@@ -118,7 +118,9 @@ export function App() {
 function HubView() {
   const active = useStore(activeWorkspace);
   const openLaunch = useLauncher((s) => s.open);
-  const grid = useStore((s) => s.config?.hubLayout === "grid");
+  // No tab open → the launcher. With saved workspaces, show the Welcome picker;
+  // on a cold first run with none, the original setup hero.
+  const hasSaved = useStore((s) => (s.config?.savedWorkspaces?.length ?? 0) > 0);
   // Real working/idle signal for PaneHead + the rail's Activity section.
   useActivityPoll();
   // Live awaiting-input + turn-history stream (← agent-native hooks, §7): keeps
@@ -139,25 +141,26 @@ function HubView() {
       >
         <HubTabs />
         {active?.root ? (
-          grid ? (
-            // Compare grid: every session tiled side-by-side; no per-workspace
-            // split bar (splits are a single-workspace concept).
-            <CompareGrid />
-          ) : (
-            <>
-              <WorkspaceBar />
-              <div className="hub-grid">
-                <Grid ws={active} />
-              </div>
-            </>
-          )
+          <>
+            <WorkspaceBar />
+            <div className="hub-grid">
+              <Grid ws={active} />
+            </div>
+            {/* Bottom chrome: Files / Shell / Diff + Resume + the spawn CTA. Only
+                with a live pane grid — the empty hero owns the space otherwise. */}
+            <ActionBar />
+          </>
+        ) : hasSaved ? (
+          <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+            <Welcome />
+          </div>
         ) : (
           <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
             {/* New-agent flow opens the shared launcher anchored in the sidebar. */}
             <EmptyHero onNew={() => openLaunch("newtab")} />
           </div>
         )}
-        <HubStatusBar variant={grid ? "grid" : "tabs"} />
+        <HubStatusBar />
       </main>
 
       <ActivityRail />

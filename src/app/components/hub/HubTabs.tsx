@@ -3,15 +3,14 @@ import { AgentGlyph } from "../../components/primitives/AgentGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
-import { splitKey, useLauncher } from "../../lib/launcher";
-import { useOverlay } from "../../lib/overlay";
-import { activeWorkspace, useStore } from "../../lib/store";
+import { useLauncher } from "../../lib/launcher";
+import { useStore } from "../../lib/store";
 import { leavesList } from "../../lib/tree";
 
 // Workspace tab strip, ported from design/screens/main-hub-a.jsx. Each tab is a
-// live workspace; the agent glyphs reflect its panes. The trailing action group
-// (files / diff / bell) lands in later phases — rendered but inert. The "+"
-// opens the shared launcher to start a new tab.
+// live workspace; the agent glyphs reflect its panes. The trailing area carries
+// only the awaiting-input bell — Files/Shell/Diff toggles + the spawn CTA live
+// in the bottom ActionBar (design contract). The "+" opens the shared launcher.
 const NEW_KEY = "tabbar";
 
 export function HubTabs() {
@@ -21,29 +20,10 @@ export function HubTabs() {
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const closeWorkspace = useStore((s) => s.closeWorkspace);
   const openLaunch = useLauncher((s) => s.open);
-  // Diff button opens the combined "all changes" diff (reuses the rail's
-  // DiffViewer + container_git_diff_all); Files opens the /workspace browser.
-  // Both reuse the rail-mounted viewers and only matter while the runtime is up.
-  const setDiff = useOverlay((s) => s.setDiff);
-  const setFiles = useOverlay((s) => s.setFiles);
-  const setBroadcast = useOverlay((s) => s.setBroadcast);
-  const running = useStore((s) => s.status?.state === "running");
-  const hasSessions = useStore((s) => s.workspaces.length > 0);
-  // Hub layout toggle (tabs ↔ compare grid), persisted via the config store.
-  const layout = useStore((s) => s.config?.hubLayout ?? "tabs");
-  const updateConfig = useStore((s) => s.updateConfig);
-  // Focused pane of the active workspace — the split buttons target it (same as
-  // ⌘\ / the PaneHead split controls).
-  const focused = useStore((s) => activeWorkspace(s)?.focused ?? null);
   // Awaiting-input signal for the bell dot: any session with a pending prompt
   // (← pending_prompts / live agent-event, §7). Real for Claude/Codex; empty
   // (no dot) for Antigravity and until the BE track lands.
   const pendingCount = useStore((s) => s.pendingPrompts.length);
-
-  const armSplit = (dir: "row" | "col") => {
-    if (!focused) return;
-    openLaunch(splitKey(focused), { dir, session: focused });
-  };
 
   const stripRef = useRef<HTMLDivElement>(null);
   const prevCount = useRef(workspaces.length);
@@ -104,7 +84,7 @@ export function HubTabs() {
                     left: 0,
                     right: 0,
                     height: 2,
-                    background: "var(--fg-0)",
+                    background: "var(--pri)",
                   }}
                 />
               )}
@@ -171,71 +151,9 @@ export function HubTabs() {
 
       <div style={{ flex: 1 }} />
 
-      {/* trailing actions — Diff is live (combined /workspace diff); files +
-          notifications land in later phases. */}
+      {/* trailing actions — the awaiting-input bell. Files / Diff / split / spawn
+          live in the bottom ActionBar (design: main-hub-a), not here. */}
       <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "0 8px" }}>
-        {/* layout toggle: per-workspace tabs vs the compare grid (Hub B) */}
-        <IconBtn
-          title="Tabs layout"
-          onClick={() => void updateConfig({ hubLayout: "tabs" })}
-          style={
-            layout === "tabs" ? { background: "var(--bg-3)", color: "var(--fg-0)" } : undefined
-          }
-        >
-          {Ico.hub}
-        </IconBtn>
-        <IconBtn
-          title="Compare grid layout"
-          disabled={!hasSessions}
-          onClick={() => void updateConfig({ hubLayout: "grid" })}
-          style={
-            layout === "grid" ? { background: "var(--bg-3)", color: "var(--fg-0)" } : undefined
-          }
-        >
-          {Ico.grid}
-        </IconBtn>
-        <span className="vr" style={{ height: 16, margin: "0 4px" }} />
-        {/* split the focused pane — column (below) / row (right), like ⌘\ */}
-        <IconBtn
-          title={focused ? "Split focused pane below" : "Split (no focused pane)"}
-          disabled={!focused}
-          onClick={() => armSplit("col")}
-        >
-          {Ico.splitH}
-        </IconBtn>
-        <IconBtn
-          title={focused ? "Split focused pane right (⌘\\)" : "Split (no focused pane)"}
-          disabled={!focused}
-          onClick={() => armSplit("row")}
-        >
-          {Ico.splitV}
-        </IconBtn>
-        <span className="vr" style={{ height: 16, margin: "0 4px" }} />
-        <IconBtn
-          title={running ? "Browse /workspace files" : "Files (runtime not running)"}
-          disabled={!running}
-          onClick={() => setFiles(true)}
-        >
-          {Ico.files}
-        </IconBtn>
-        <IconBtn
-          title={
-            running && hasSessions
-              ? "Broadcast a prompt to agents"
-              : "Broadcast (no running sessions)"
-          }
-          disabled={!running || !hasSessions}
-          onClick={() => setBroadcast(true)}
-        >
-          {Ico.arrowR}
-        </IconBtn>
-        <IconBtn
-          title={running ? "Review all workspace changes" : "Diff (runtime not running)"}
-          disabled={!running}
-          onClick={() => setDiff("")}
-        >
-          {Ico.diff}
-        </IconBtn>
         <IconBtn
           title={
             pendingCount > 0
