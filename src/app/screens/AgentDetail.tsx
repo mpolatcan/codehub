@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AGENT_META, AgentGlyph } from "../components/primitives/AgentGlyph";
 import { StatusDot } from "../components/primitives/StatusDot";
 import { Ico } from "../components/primitives/icons";
+import { CLIS } from "../lib/catalog";
 import { type AgentCli, type AgentConfig, type ClaudeIntegrations, ipc } from "../lib/ipc";
 import { useStore } from "../lib/store";
 
@@ -20,10 +21,21 @@ import { useStore } from "../lib/store";
  * Antigravity render their version/key + a note that no extra config is
  * surfaced, rather than inventing one.
  */
-export function AgentDetail({ agent, onBack }: { agent: AgentCli; onBack: () => void }) {
+export function AgentDetail({
+  agent,
+  onBack,
+  onSwitch,
+}: {
+  agent: AgentCli;
+  onBack: () => void;
+  // Switch to another agent's detail in place (the design's agent tab bar). When
+  // omitted the tab bar is hidden and only the back affordance shows.
+  onSwitch?: (agent: AgentCli) => void;
+}) {
   const meta = AGENT_META[agent];
   const version = useStore((s) => s.agentVersions?.[agent]?.version ?? null);
   const key = useStore((s) => s.keyStatus?.[agent] ?? null);
+  const keyStatus = useStore((s) => s.keyStatus);
   const running = useStore((s) => s.status?.state === "running");
 
   const isClaude = agent === "claude";
@@ -58,17 +70,30 @@ export function AgentDetail({ agent, onBack }: { agent: AgentCli; onBack: () => 
 
   return (
     <div style={{ maxWidth: 820 }}>
-      {/* hero */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24 }}>
+      {/* agent tab bar — switch agents in place (design agent-settings.jsx). The
+          back chip returns to the Agents card list (settings.jsx Agents pane). */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "stretch",
+          gap: 2,
+          height: 44,
+          marginBottom: 22,
+          borderBottom: "1px solid var(--bd-soft)",
+        }}
+      >
         <button
           type="button"
           onClick={onBack}
+          title="Back to Agents"
           className="mono"
           style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
+            alignSelf: "center",
             padding: "5px 9px",
+            marginRight: 6,
             background: "transparent",
             border: "1px solid var(--bd-soft)",
             borderRadius: 6,
@@ -80,6 +105,44 @@ export function AgentDetail({ agent, onBack }: { agent: AgentCli; onBack: () => 
           <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>{Ico.arrowR}</span>
           Agents
         </button>
+        {CLIS.map((c) => (
+          <AgentTab
+            key={c.id}
+            agent={c.id}
+            name={c.label}
+            active={c.id === agent}
+            present={keyStatus?.[c.id]?.present ?? false}
+            onClick={() => c.id !== agent && onSwitch?.(c.id)}
+          />
+        ))}
+        <span style={{ flex: 1 }} />
+        {/* No custom-agent backend yet — inert, mirrors the Settings stub. */}
+        <button
+          type="button"
+          disabled
+          className="mono"
+          title="Custom agents aren't supported yet"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            alignSelf: "center",
+            padding: "5px 9px",
+            background: "transparent",
+            border: "1px solid var(--bd-soft)",
+            borderRadius: 6,
+            color: "var(--fg-3)",
+            fontSize: 11.5,
+            opacity: 0.55,
+            cursor: "default",
+          }}
+        >
+          {Ico.plus}Custom agent
+        </button>
+      </div>
+
+      {/* hero */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24 }}>
         <div
           style={{
             width: 44,
@@ -329,6 +392,55 @@ export function AgentDetail({ agent, onBack }: { agent: AgentCli; onBack: () => 
         </>
       )}
     </div>
+  );
+}
+
+// One agent tab in the detail's top bar. Glyph + name + a real key-presence
+// subline (connected / key needed) — no fabricated provider counts. The active
+// tab carries the design's 2px underline.
+function AgentTab({
+  agent,
+  name,
+  active,
+  present,
+  onClick,
+}: {
+  agent: AgentCli;
+  name: string;
+  active: boolean;
+  present: boolean;
+  onClick: () => void;
+}) {
+  const meta = AGENT_META[agent];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "0 14px",
+        height: "100%",
+        background: "transparent",
+        border: "none",
+        borderBottom: `2px solid ${active ? "var(--fg-0)" : "transparent"}`,
+        color: active ? "var(--fg-0)" : "var(--fg-2)",
+        cursor: active ? "default" : "pointer",
+        fontSize: 13,
+        fontWeight: active ? 500 : 400,
+        fontFamily: "var(--sans)",
+      }}
+    >
+      <AgentGlyph agent={agent} size={13} color={meta.accent} />
+      {name}
+      <span
+        className="mono"
+        style={{ fontSize: 10.5, color: present ? "var(--live)" : "var(--fg-3)" }}
+      >
+        · {present ? "connected" : "key needed"}
+      </span>
+    </button>
   );
 }
 

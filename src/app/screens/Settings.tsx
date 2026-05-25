@@ -248,7 +248,8 @@ function AgentsPane({ onStopAll }: { onStopAll?: () => void }) {
     (onStopAll ?? (() => void closeAllSessions()))();
   };
 
-  if (detail) return <AgentDetail agent={detail} onBack={() => setDetail(null)} />;
+  if (detail)
+    return <AgentDetail agent={detail} onBack={() => setDetail(null)} onSwitch={setDetail} />;
 
   return (
     <div style={{ maxWidth: 720 }}>
