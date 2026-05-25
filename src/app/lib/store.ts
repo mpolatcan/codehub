@@ -168,8 +168,9 @@ interface CodeHubState {
   // ── Pane groups within a workspace (design GroupsBar / GroupGrid) ──────────
   // Groups are frontend-only organisation over the flat tmux session set; they
   // own their own split tree + focus. addGroup appends an empty group and makes
-  // it active (its grid shows the empty-state CTA until addPaneToGroup runs).
-  addGroup: (wsId: string) => void;
+  // it active (its grid shows the empty-state CTA until addPaneToGroup runs);
+  // it returns the new group's id so callers can immediately spawn into it.
+  addGroup: (wsId: string) => string;
   closeGroup: (wsId: string, groupId: string) => Promise<void>;
   renameGroup: (wsId: string, groupId: string, name: string) => void;
   setGroupColor: (wsId: string, groupId: string, color: string) => void;
@@ -608,6 +609,7 @@ export const useStore = create<CodeHubState>((set, get) => {
           activeGroupId: group.id,
         })),
       }));
+      return group.id;
     },
 
     // Kill every session in the group (tmux first, then detach — matches

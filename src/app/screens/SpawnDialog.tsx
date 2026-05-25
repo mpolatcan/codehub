@@ -32,17 +32,43 @@ import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
 import { useState } from "react";
 
+/** A group of the active workspace the agent can be spawned into (design Group row). */
+export interface GroupChoice {
+  id: string;
+  name: string;
+  color: string;
+  count: number;
+}
+
+/** Sentinel target → create a fresh group in the active workspace, then spawn into it. */
+export const NEW_GROUP = "__new_group__";
+
 export interface SpawnDialogProps {
   /**
    * Called with the chosen agent, permission mode, initial prompt + optional
-   * account-profile id (undefined → the default host-env credential) on launch.
+   * account-profile id (undefined → the default host-env credential). The final
+   * arg is the spawn target: undefined → a new workspace tab (the default),
+   * a group id → into that group of the active workspace, NEW_GROUP → a fresh
+   * group in the active workspace.
    */
-  onLaunch?: (cli: Cli, mode: Mode, initialPrompt: string, account?: string) => void;
+  onLaunch?: (
+    cli: Cli,
+    mode: Mode,
+    initialPrompt: string,
+    account?: string,
+    targetGroupId?: string,
+  ) => void;
   onCancel?: () => void;
   /** Pre-selected agent (from the persisted default). Defaults to Claude. */
   defaultCli?: Cli;
   /** True when invoked from a pane split / tab-add (adjusts the head + footer copy). */
   splitting?: boolean;
+  /**
+   * Groups of the active workspace (design Group row). When present (and not
+   * splitting), the dialog offers spawning into one of them or a new group,
+   * with "New tab" as the default. Omitted → the launch always opens a new tab.
+   */
+  groups?: GroupChoice[];
 }
 
 export function SpawnDialog({
@@ -50,12 +76,18 @@ export function SpawnDialog({
   onCancel,
   defaultCli = "claude",
   splitting,
+  groups,
 }: SpawnDialogProps) {
   const [agent, setAgentRaw] = useState<Cli>(defaultCli);
   const [mode, setMode] = useState<Mode>("standard");
   const [prompt, setPrompt] = useState("");
   // Selected account-profile id; undefined → the default host-env credential.
   const [account, setAccount] = useState<string | undefined>(undefined);
+  // Spawn target: "" → a new workspace tab (default, preserves the historic
+  // surface behaviour); a group id → into that group of the active workspace;
+  // NEW_GROUP → a fresh group in the active workspace.
+  const [target, setTarget] = useState<string>("");
+  const showGroups = !splitting && !!groups && groups.length > 0;
 
   const keyStatus = useStore((s) => s.keyStatus);
   const accountProfiles = useStore((s) => s.accountProfiles);
@@ -200,6 +232,38 @@ export function SpawnDialog({
             <SharedRuntimePanel />
           </FormRow>
 
+          {/* Group — where the agent's pane lands. Real (tree.ts pane groups):
+              "New tab" opens a fresh workspace (the historic default for every
+              launch surface); the rest add the pane into a group of the active
+              workspace, or a brand-new group. Hidden while splitting (a split
+              always lands in the active group) and when no workspace exists. */}
+          {showGroups && (
+            <FormRow label="Group">
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <GroupTargetChip
+                  label="New tab"
+                  selected={target === ""}
+                  onSelect={() => setTarget("")}
+                />
+                {groups?.map((g) => (
+                  <GroupTargetChip
+                    key={g.id}
+                    label={g.name}
+                    count={g.count}
+                    dot={g.color}
+                    selected={target === g.id}
+                    onSelect={() => setTarget(g.id)}
+                  />
+                ))}
+                <GroupTargetChip
+                  label="+ new group"
+                  selected={target === NEW_GROUP}
+                  onSelect={() => setTarget(NEW_GROUP)}
+                />
+              </div>
+            </FormRow>
+          )}
+
           <FormRow label="Initial prompt" optional>
             <textarea
               value={prompt}
@@ -264,7 +328,7 @@ export function SpawnDialog({
           <Button
             size="sm"
             style={{ padding: "6px 14px" }}
-            onClick={() => onLaunch?.(agent, mode, prompt, account)}
+            onClick={() => onLaunch?.(agent, mode, prompt, account, target || undefined)}
           >
             Launch agent
             <span className="kbd" style={{ marginLeft: 6 }}>
@@ -274,6 +338,54 @@ export function SpawnDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+// Target chip for the Group row (design/screens/spawn-dialog.jsx GroupChip):
+// optional color dot + label + pane count, --pri border when selected.
+function GroupTargetChip({
+  label,
+  count,
+  dot,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  count?: number;
+  dot?: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 9px",
+        borderRadius: 5,
+        background: selected ? "var(--bg-3)" : "transparent",
+        border: `1px solid ${selected ? "var(--pri)" : "var(--bd)"}`,
+        fontSize: 12,
+        color: selected ? "var(--fg-0)" : "var(--fg-2)",
+        cursor: "pointer",
+      }}
+    >
+      {dot && (
+        <span
+          aria-hidden="true"
+          style={{ width: 7, height: 7, borderRadius: "50%", background: dot }}
+        />
+      )}
+      <span>{label}</span>
+      {count !== undefined && (
+        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+          · {count}
+        </span>
+      )}
+    </button>
   );
 }
 

@@ -1,7 +1,8 @@
 import type { Cli, Mode } from "../lib/ipc";
 import { useLauncher } from "../lib/launcher";
-import { useStore } from "../lib/store";
-import { SpawnDialog } from "../screens/SpawnDialog";
+import { activeWorkspace, useStore } from "../lib/store";
+import { leavesList } from "../lib/tree";
+import { type GroupChoice, NEW_GROUP, SpawnDialog } from "../screens/SpawnDialog";
 
 // The single agent-creation modal, shared by every launch surface (sidebar
 // "New agent", tab "+", pane split control, ⌘N / ⌘T). Driven entirely by the
@@ -18,17 +19,51 @@ export function SpawnModal() {
   const newPlate = useStore((s) => s.newPlate);
   const splitSession = useStore((s) => s.splitSession);
   const addPaneToGroup = useStore((s) => s.addPaneToGroup);
+  const addGroup = useStore((s) => s.addGroup);
   const defaultCli = useStore((s) => s.config?.defaultAgent ?? "claude");
+  const active = useStore(activeWorkspace);
+  const runtimeLive = useStore((s) => s.status?.state === "running");
 
   if (openKey === null) return null;
   const splitting = Boolean(ctx?.session);
 
-  const launch = (cli: Cli, mode: Mode, prompt: string, account?: string) => {
+  // The active workspace's groups, offered as spawn targets in the dialog. Only
+  // for the plain new-tab launch — a split (ctx.session) or empty-group CTA
+  // (ctx.groupId) already fixes where the pane lands, so no picker is shown.
+  const groups: GroupChoice[] | undefined =
+    !splitting && !ctx?.groupId && active
+      ? active.groups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          color: g.color,
+          count: leavesList(g.root).length,
+        }))
+      : undefined;
+
+  const launch = (
+    cli: Cli,
+    mode: Mode,
+    prompt: string,
+    account?: string,
+    targetGroupId?: string,
+  ) => {
     close();
-    if (ctx?.session) void splitSession(ctx.session, ctx.dir, cli, mode, prompt, account);
-    else if (ctx?.groupId && ctx.workspaceId)
+    if (ctx?.session) {
+      void splitSession(ctx.session, ctx.dir, cli, mode, prompt, account);
+    } else if (ctx?.groupId && ctx.workspaceId) {
       void addPaneToGroup(ctx.workspaceId, ctx.groupId, cli, mode, prompt, account);
-    else void newPlate(cli, mode, undefined, prompt, account);
+    } else if (targetGroupId && active) {
+      // Spawn into the active workspace: an existing group, or a fresh one.
+      // addPaneToGroup no-ops when the runtime is down; only create a NEW group
+      // once we know the spawn can land, so a stopped container can't orphan an
+      // empty, now-active group.
+      if (targetGroupId === NEW_GROUP && !runtimeLive) return;
+      const groupId = targetGroupId === NEW_GROUP ? addGroup(active.id) : targetGroupId;
+      void addPaneToGroup(active.id, groupId, cli, mode, prompt, account);
+    } else {
+      // Default (and historic) behaviour: a brand-new workspace tab.
+      void newPlate(cli, mode, undefined, prompt, account);
+    }
   };
 
   return (
@@ -44,6 +79,7 @@ export function SpawnModal() {
       <SpawnDialog
         defaultCli={defaultCli}
         splitting={splitting}
+        groups={groups}
         onLaunch={launch}
         onCancel={close}
       />
