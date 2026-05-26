@@ -14,7 +14,7 @@ export function useGitStatusPoll() {
   const running = useStore((s) => s.status?.state === "running");
   const setGitStatus = useStore((s) => s.setGitStatus);
   // The /workspace shown belongs to the ACTIVE workspace's container; re-poll
-  // when it changes. undefined → shared runtime (per-workspace off, or no tab).
+  // when it changes. Always defined when a workspace tab is open.
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
 
   useEffect(() => {

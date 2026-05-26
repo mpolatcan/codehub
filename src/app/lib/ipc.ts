@@ -26,9 +26,10 @@ export interface SessionInfo {
   // Unix epoch seconds the tmux session was created; 0 when unreported.
   created: number;
   // Workspace key of the per-workspace container this session lives in (from the
-  // container's `codehub.workspace` label). Undefined for the shared runtime.
-  // Restore uses it as the session's routing `containerKey`.
-  workspace?: string;
+  // container's `codehub.workspace` label). Always present: every session lives
+  // in a per-workspace container. Restore uses it as the session's routing
+  // `containerKey`.
+  workspace: string;
 }
 
 // The AI coding agents (version/key-probed, mode-aware). Distinct from `Cli`,
@@ -102,7 +103,7 @@ export interface AppSettings {
   workspaceDir: string | null;
   recentWorkspaces: string[];
   // Saved workspaces shown on the Welcome launcher (config::SavedWorkspace).
-  // Name + dir pointers only — the container is always the shared runtime.
+  // Name + dir pointers only — each opens in its own per-workspace container.
   savedWorkspaces: SavedWorkspace[];
   // Accounts (Tier-3, label-only — no secrets). Each maps an agent to a host
   // env var NAME; the value is never stored here.
@@ -115,8 +116,7 @@ export interface AppSettings {
 
 // A user-saved workspace shown on the Welcome launcher (config::SavedWorkspace).
 // A named pointer to a host repo dir; opening it points /workspace at `dir` and
-// starts a tab. No per-workspace container — every workspace shares the runtime,
-// so there is no size/cost field (honest: nothing to fabricate).
+// starts a tab in its own per-workspace container.
 export interface SavedWorkspace {
   id: string;
   name: string;
@@ -574,13 +574,12 @@ export interface UpdateStatus {
 }
 
 export const ipc = {
-  // `workspace` (per-workspace-container key) targets a specific workspace's
-  // container; omitted / flag off → the shared runtime (unchanged behaviour).
+  // `workspace` (per-workspace-container key) targets a workspace's container.
   containerStatus: (workspace?: string) =>
     invoke<ContainerStatus>("container_status", { workspace }),
-  // Runtime lifecycle controls. Each returns the post-action ContainerStatus and
-  // also emits codehub://lifecycle, so the store updates either way. start is
-  // safe; stop/restart kill every running session (the UI confirms first).
+  // Workspace lifecycle controls. Each returns the post-action ContainerStatus
+  // and also emits codehub://lifecycle, so the store updates either way. start
+  // is safe; stop/restart kill every running session (the UI confirms first).
   containerStart: (workspace?: string) => invoke<ContainerStatus>("container_start", { workspace }),
   containerStop: (workspace?: string) => invoke<ContainerStatus>("container_stop", { workspace }),
   containerRestart: (workspace?: string) =>
@@ -593,9 +592,6 @@ export const ipc = {
   dockerInfo: () => invoke<DockerInfo>("docker_info"),
   // Build + host platform identity for Settings → About.
   appInfo: () => invoke<AppInfo>("app_info"),
-  // Whether per-workspace-container mode is active. Gates whether a new tab
-  // gets its own containerKey (flag OFF → shared runtime → key undefined).
-  perWorkspaceEnabled: () => invoke<boolean>("per_workspace_enabled"),
   // Persisted UI preferences (Settings screen), backed by settings.json in the
   // app-data dir. getConfig returns the current snapshot; setConfig writes the
   // whole object and echoes back what landed.
@@ -608,8 +604,9 @@ export const ipc = {
   // rebuilds the container to apply a changed mount (kills sessions — confirm first).
   pickDirectory: () => invoke<string | null>("pick_directory"),
   setWorkspaceDir: (path: string) => invoke<AppSettings>("set_workspace_dir", { path }),
-  workspaceInfo: () => invoke<WorkspaceInfo>("workspace_info"),
-  recreateRuntime: () => invoke<ContainerStatus>("recreate_runtime"),
+  workspaceInfo: (workspace?: string) => invoke<WorkspaceInfo>("workspace_info", { workspace }),
+  recreateRuntime: (workspace: string) =>
+    invoke<ContainerStatus>("recreate_runtime", { workspace }),
   // Tier-3 label-only account profiles (no secrets). list/add/remove each return
   // the full updated list with live host-env presence per profile.
   listAccountProfiles: () => invoke<AccountProfileStatus[]>("list_account_profiles"),
@@ -626,7 +623,7 @@ export const ipc = {
   agentVersions: () => invoke<Record<AgentCli, AgentVersion>>("agent_versions"),
   containerStats: (workspace?: string) => invoke<ContainerStats>("container_stats", { workspace }),
   // Tail of a container's log; defaults to 200 lines server-side. `workspace`
-  // targets a per-workspace container (omit / undefined → shared runtime).
+  // targets the workspace's container.
   containerLogs: (tail?: number, workspace?: string) =>
     invoke<string[]>("container_logs", { tail, workspace }),
   // Real bind/volume mounts of a container (host paths).
@@ -636,7 +633,7 @@ export const ipc = {
   // Liveness of a container (started-at/restart count/status/OOM).
   containerHealth: (workspace?: string) => invoke<RuntimeHealth>("container_health", { workspace }),
   // Non-recursive listing of a /workspace directory (empty path → root).
-  // `workspace` targets a per-workspace container (omit → shared runtime).
+  // `workspace` targets the workspace's container.
   containerListDir: (path: string, workspace?: string) =>
     invoke<FileEntry[]>("container_list_dir", { path, workspace }),
   // First 256 KiB of a /workspace file, UTF-8-lossy (Files browser preview).
@@ -669,8 +666,8 @@ export const ipc = {
   // rejects with an honest reason (no token/remote/branch, or GitHub's message).
   containerGitOpenPr: (title: string, body: string, workspace?: string) =>
     invoke<string>("container_git_open_pr", { title, body, workspace }),
-  // Processes running inside a container (`docker top`). `workspace` targets a
-  // per-workspace container (omit / undefined → shared runtime).
+  // Processes running inside a container (`docker top`). `workspace` targets
+  // the workspace's container.
   containerTop: (workspace?: string) => invoke<ProcessInfo[]>("container_top", { workspace }),
   // Recent commits on /workspace (`git log`); defaults to 12 server-side.
   containerGitLog: (limit?: number, workspace?: string) =>
@@ -700,11 +697,10 @@ export const ipc = {
   // `account` (Tier-3) is an account-profile id; the backend resolves it to that
   // profile's host env var NAME and remaps the CLI's credential var onto it for
   // this session. Absent → the default (canonical host env).
-  // `workspace` is the per-workspace-container key: when the per-workspace flag
-  // is on, the session is created in that workspace's own container (lazily
-  // ensured), with `workspaceDir` bound at /workspace on first create. Omitted /
-  // flag off → the shared runtime (unchanged). attach/kill/rename must pass the
-  // SAME `workspace` so they target the container the session actually lives in.
+  // `workspace` is the per-workspace-container key: the session is created in
+  // that workspace's own container (lazily ensured), with `workspaceDir` bound
+  // at /workspace on first create. attach/kill/rename must pass the SAME
+  // `workspace` so they target the container the session actually lives in.
   createSession: (
     name: string,
     cli: Cli,

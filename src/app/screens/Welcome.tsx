@@ -93,8 +93,7 @@ export function Welcome() {
               lineHeight: 1.55,
             }}
           >
-            A workspace points the shared runtime at a host folder. Open one to spawn agents inside
-            it.
+            A workspace runs in its own container. Open one to spawn agents inside it.
           </p>
         </div>
         <Button onClick={() => openWizard(true)} title="Create a new workspace (⌘⇧N)">
@@ -331,7 +330,7 @@ function WorkspaceCard({ ws }: { ws: SavedWorkspace }) {
         }}
       >
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-          {Ico.container}shared runtime
+          {Ico.container}container
         </span>
         <span style={{ flex: 1 }} />
         <span>{relTime(ws.lastOpened)}</span>

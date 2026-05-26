@@ -38,8 +38,8 @@ function jsend(method: string, path: string, payload?: unknown): Promise<unknown
 // routes in devserver.rs and the `#[tauri::command]`s in lib.rs.
 async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
   const id = encodeURIComponent(String(args.paneId ?? ""));
-  // `?workspace=<key>` targets a per-workspace container; empty when absent (→
-  // the shared runtime). Mirrors the kill route's query convention.
+  // `?workspace=<key>` targets a per-workspace container; empty when absent.
+  // Mirrors the kill route's query convention.
   const wsq = args.workspace ? `?workspace=${encodeURIComponent(String(args.workspace))}` : "";
   // Same key as `&workspace=…` for routes that already own a `?` (path/limit).
   const wsAmp = args.workspace ? `&workspace=${encodeURIComponent(String(args.workspace))}` : "";
@@ -91,8 +91,6 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       ) as Promise<T>;
     case "app_info":
       return jget("/app-info") as Promise<T>;
-    case "per_workspace_enabled":
-      return jget("/per-workspace-enabled") as Promise<T>;
     case "get_config":
       return jget("/config") as Promise<T>;
     case "set_config":
@@ -104,9 +102,9 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
     case "set_workspace_dir":
       return jsend("PUT", "/workspace-dir", { path: args.path }) as Promise<T>;
     case "workspace_info":
-      return jget("/workspace-info") as Promise<T>;
+      return jget(`/workspace-info${wsq}`) as Promise<T>;
     case "recreate_runtime":
-      return jsend("POST", "/recreate-runtime") as Promise<T>;
+      return jsend("POST", `/recreate-runtime${wsq}`) as Promise<T>;
     // Tier-3 label-only account profiles.
     case "list_account_profiles":
       return jget("/account-profiles") as Promise<T>;

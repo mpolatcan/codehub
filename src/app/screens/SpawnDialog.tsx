@@ -237,7 +237,7 @@ export function SpawnDialog({
             <RepositoryPicker />
           </FormRow>
 
-          {/* Container — single shared runtime today; reuse/sizing is Tier 3. */}
+          {/* Container — per-workspace container. */}
           <FormRow label="Container">
             <SharedRuntimePanel />
           </FormRow>
@@ -329,7 +329,7 @@ export function SpawnDialog({
         >
           {/* Cost estimate is Tier 3 (no usage capture yet). Omitted rather than faked. */}
           <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
-            spawns a fresh tmux window in the shared runtime
+            spawns a fresh tmux session in the workspace container
           </span>
           <span style={{ flex: 1 }} />
           <Button variant="outline" size="sm" onClick={onCancel}>

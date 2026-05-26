@@ -84,10 +84,8 @@ pub fn profile_statuses(profiles: Vec<AccountProfile>) -> Vec<AccountProfileStat
 }
 
 /// A user-saved workspace shown on the Welcome launcher: a named pointer to a
-/// host repo directory. Opening one points the `/workspace` mount at its `dir`
-/// and starts a tab. **There is no per-workspace container** — every workspace
-/// shares the one runtime, and the mounted dir is the only thing that varies, so
-/// there is deliberately no size/cost field here to fabricate.
+/// host repo directory. Opening one creates/ensures a per-workspace container
+/// (`codehub-ws-<key>`) with `/workspace` bound to its `dir` and starts a tab.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedWorkspace {

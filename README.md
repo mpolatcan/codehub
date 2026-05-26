@@ -2,7 +2,7 @@
 
 A home for your AI coding agents.
 
-Tauri desktop app that runs **Claude Code**, **Codex**, and **Antigravity** CLIs in sandboxed Docker containers, multiplexed via tmux. Each pane = one tmux session = one agent; tabs hold one or more split panes. By default each workspace gets its own container (`codehub-ws-<key>`) so its cpu/mem/network/state report as real, isolated data; set `CODEHUB_PER_WORKSPACE_CONTAINER` to an off-value to fall back to a single shared `codehub-runtime` container. CodeHub spawns and manages containers itself — no `docker compose` step.
+Tauri desktop app that runs **Claude Code**, **Codex**, and **Antigravity** CLIs in sandboxed Docker containers, multiplexed via tmux. Each pane = one tmux session = one agent; tabs hold one or more split panes. Each workspace gets its own container (`codehub-ws-<key>`) so its cpu/mem/network/state report as real, isolated data. CodeHub spawns and manages containers itself — no `docker compose` step.
 
 ## Why
 
@@ -24,7 +24,7 @@ flowchart LR
         PR["PtyRegistry<br/>pane_id map"]
     end
 
-    subgraph runtime["per-workspace container · codehub-ws-&lt;key&gt;<br/>(or shared codehub-runtime when flag off)"]
+    subgraph runtime["per-workspace container · codehub-ws-(key)"]
         direction TB
         TMUX["tmux server<br/>idle until first session"]
         CLIS["claude · codex<br/>antigravity"]
@@ -53,17 +53,15 @@ sequenceDiagram
     participant UI as Frontend
     participant LC as Lifecycle
     participant D as Docker
-    participant C as codehub-runtime
+    participant C as codehub-ws-(key)
 
-    UI->>LC: ensure_runtime (spawn bg)
-    LC->>D: pull ghcr.io/mpolatcan/codehub-runtime:VER
-    Note right of D: ~10–20s first run only
-    LC->>D: create container + volume mounts
-    D->>C: start
+    UI->>LC: daemon reachability check (spawn bg)
+    LC->>D: docker version
     LC-->>UI: emit codehub://lifecycle (running)
-    UI->>LC: list_sessions
+    UI->>LC: list_sessions (all workspace containers)
     LC-->>UI: existing tmux sessions
     UI->>UI: restore tabs
+    Note right of LC: containers created on demand by create_session
 ```
 
 ### Per-session lifecycle (new tab, split, or ⌘T)
@@ -97,7 +95,7 @@ sequenceDiagram
 - **New session** — the `+` popover (or ⌘T) picks an agent and a permission mode.
 - **Permission modes** — *Standard* (agent asks first), *Auto* (auto-accepts edits, still sandboxed), *YOLO* (skips all approvals; the container is the boundary). Antigravity is Standard-only until its flags are verified.
 - **Splits** — split any pane (its head controls, or ⌘\) into a binary tree; drag the divider to resize.
-- **Workspaces** — the welcome screen pins and reopens saved workspaces (name + directory, persisted); each runs in its own container with `/workspace` bound to its directory (or re-points the shared container's mount when per-workspace is off). New-workspace wizard via ⌘⇧N.
+- **Workspaces** — the welcome screen pins and reopens saved workspaces (name + directory, persisted); each runs in its own container (`codehub-ws-<key>`) with `/workspace` bound to its directory. New-workspace wizard via ⌘⇧N.
 - **Hub panels** — a Files browser (⌘E), a workspace Diff viewer (⌘D), and a Resume drawer (⌘R) of past Claude/Codex sessions, docked beside the panes.
 - **Command palette** (⌘K) — jump to a view, focus a running session, spawn an agent, or open a recent/connected repo.
 - **Views** — Hub, Dashboard, Workspaces (container inspector), Usage (token/cost rollup read from session transcripts), and Settings (agents · runtime · integrations · appearance). Dark and light themes.
@@ -147,8 +145,6 @@ Override defaults:
 
 | Env var | Purpose | Default |
 |---|---|---|
-| `CODEHUB_PER_WORKSPACE_CONTAINER` | One container per workspace (`codehub-ws-<key>`); off-value (`0`/`false`/`off`/`no`) → single shared runtime | ON |
-| `CODEHUB_CONTAINER` | Shared-runtime container name (per-workspace off) | `codehub-runtime` |
 | `CODEHUB_IMAGE` | Image tag to use (all containers) | `ghcr.io/mpolatcan/codehub-runtime:0.1.3` |
 | `CODEHUB_NETWORK_MODE` | Docker network mode | `bridge` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Skip `/login` in Claude Code | unset |

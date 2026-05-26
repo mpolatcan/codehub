@@ -242,10 +242,10 @@ export function SharedRuntimePanel() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
             <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>
-              Shared runtime
+              Workspace container
             </span>
             <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
-              {status?.name ?? "codehub-runtime"}
+              {status?.name ?? "—"}
             </span>
             <StatusBadge status={live ? "live" : "idle"}>
               {live ? "Running" : "Stopped"}

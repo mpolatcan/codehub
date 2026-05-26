@@ -462,7 +462,7 @@ function SidebarFooter() {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="mono" style={{ fontSize: 12, color: "var(--fg-0)" }}>
-          {status?.name ?? "codehub-runtime"}
+          {status?.name ?? "—"}
         </div>
         <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
           {status?.state ?? "—"}

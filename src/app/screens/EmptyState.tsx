@@ -146,7 +146,7 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
                 lineHeight: 1.55,
               }}
             >
-              Each session spawns a fresh tmux on a shared Docker runtime — your repo is mounted,
+              Each session spawns a fresh tmux in a per-workspace container — your repo is mounted,
               your API keys are forwarded from the host environment, and you can compare agents in
               split panes.
             </p>

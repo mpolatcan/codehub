@@ -603,7 +603,7 @@ export function Dashboard() {
               </div>
               {running && stats ? (
                 <ResourceBar
-                  name={status?.name ?? "codehub-runtime"}
+                  name={status?.name ?? "—"}
                   cpu={Math.min(100, stats.cpuPct)}
                   mem={stats.memLimit > 0 ? (stats.memUsed / stats.memLimit) * 100 : 0}
                 />

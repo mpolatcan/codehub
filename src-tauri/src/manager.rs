@@ -1,16 +1,7 @@
-//! Per-workspace container manager (per-workspace-container architecture).
+//! Per-workspace container manager.
 //!
-//! Historically CodeHub ran ONE shared runtime container (`codehub-runtime`)
-//! with N tmux sessions = N workspaces. That made per-workspace resource data
-//! (cpu/mem/net/disk/state) impossible to report honestly — every workspace
-//! shared one cgroup. The manager moves us toward one container PER workspace
-//! (`codehub-ws-<key>`), so the hub's fleet view becomes REAL data rather than a
-//! fabrication.
-//!
-//! Gated by the `CODEHUB_PER_WORKSPACE_CONTAINER` flag, now **default ON**: the
-//! IPC commands + frontend resolve per-workspace lifecycles and the close/restart
-//! lifecycle scenarios are verified end-to-end. Set the flag to an off-value
-//! (`0`/`false`/`off`/`no`) to fall back to the single shared runtime.
+//! Every workspace gets its own container (`codehub-ws-<key>`) so the hub's
+//! fleet view reports REAL per-workspace cpu/mem/net/disk/state.
 //!
 //! The manager connects to the daemon ONCE and shares that `Docker` handle
 //! across every `Lifecycle` it produces (cheap clones), caching one `Lifecycle`
@@ -18,7 +9,7 @@
 
 use crate::config::ConfigStore;
 use crate::docker::{DockerClient, SessionInfo};
-use crate::lifecycle::{ContainerState, ContainerStatus, Lifecycle, LifecycleError};
+use crate::lifecycle::{ContainerState, ContainerStatus, DockerInfo, Lifecycle, LifecycleError};
 use bollard::container::ListContainersOptions;
 use bollard::Docker;
 use serde::Serialize;
@@ -58,20 +49,6 @@ fn map_list_state(s: Option<&str>) -> ContainerState {
 /// Prefix for per-workspace container names: `codehub-ws-<sanitized-key>`.
 pub const WS_CONTAINER_PREFIX: &str = "codehub-ws-";
 
-/// Reads the `CODEHUB_PER_WORKSPACE_CONTAINER` flag. Default ON now that the full
-/// per-workspace path (commands + frontend + lifecycle scenarios) is wired and
-/// verified; the falsey spellings let users opt back into the single shared
-/// runtime. Unset or empty == default (ON); only an explicit off-value disables.
-pub fn per_workspace_enabled() -> bool {
-    match std::env::var("CODEHUB_PER_WORKSPACE_CONTAINER") {
-        Ok(v) => !matches!(
-            v.trim().to_ascii_lowercase().as_str(),
-            "0" | "false" | "off" | "no"
-        ),
-        Err(_) => true,
-    }
-}
-
 /// FNV-1a 64-bit hash. A FIXED algorithm (implemented inline, no dependency) so
 /// the value is stable across process runs AND Rust/toolchain versions —
 /// container identity must survive app upgrades, which rules out `DefaultHasher`
@@ -104,13 +81,10 @@ pub fn sanitize_key(key: &str) -> String {
             slug.push(ch.to_ascii_lowercase());
             prev_dash = false;
         } else if !prev_dash {
-            // collapse any run of separators / invalid bytes to a single `-`
             slug.push('-');
             prev_dash = true;
         }
     }
-    // Cap the readable part, then trim separators the cap or scan may have left
-    // at either end so the segment still starts/ends on an alphanumeric.
     let slug: String = slug.chars().take(32).collect();
     let slug = slug.trim_matches('-');
     let hash = fnv1a_64(key);
@@ -127,18 +101,11 @@ pub struct LifecycleManager {
     config_dir: PathBuf,
     default_workspace_dir: PathBuf,
     config: Arc<ConfigStore>,
-    /// Shared-runtime container name (`codehub-runtime`), used for the default
-    /// lifecycle and whenever per-workspace mode is off.
-    default_container: String,
-    /// Cache keyed by resolved container name → its `Lifecycle`.
     cache: Mutex<HashMap<String, Arc<Lifecycle>>>,
 }
 
 impl LifecycleManager {
-    /// Connect to the daemon once and build the manager. Mirrors the args the
-    /// old single `Lifecycle::new` took, plus owns the shared `Docker` handle.
     pub fn new(
-        default_container: String,
         image: String,
         config_dir: PathBuf,
         default_workspace_dir: PathBuf,
@@ -151,7 +118,6 @@ impl LifecycleManager {
             config_dir,
             default_workspace_dir,
             config,
-            default_container,
             cache: Mutex::new(HashMap::new()),
         })
     }
@@ -161,42 +127,25 @@ impl LifecycleManager {
         format!("{WS_CONTAINER_PREFIX}{}", sanitize_key(key))
     }
 
-    /// The shared-runtime lifecycle (`codehub-runtime`, config-driven mount). This
-    /// is what every existing IPC command targets today; it is cached under its
-    /// container name so repeated lookups share one `Lifecycle`.
-    pub fn default(&self) -> Arc<Lifecycle> {
-        self.get_or_build(self.default_container.clone(), None, None, false)
-    }
-
-    /// Resolve the lifecycle for a workspace `key`, applying the SESSION-routing
-    /// flag fallback: when per-workspace mode is off this returns the shared
-    /// default (so a session keyed `ws-x` lives in `codehub-runtime` unchanged).
-    /// When on, it returns/caches a dedicated `codehub-ws-<key>` lifecycle.
+    /// Resolve the lifecycle for a workspace `key`. Returns/caches a dedicated
+    /// `codehub-ws-<key>` lifecycle. `workspace_dir` pins the `/workspace` bind
+    /// when explicitly provided; `None` lets the lifecycle resolve it from config.
     pub fn for_workspace(&self, key: &str, workspace_dir: Option<PathBuf>) -> Arc<Lifecycle> {
-        if !per_workspace_enabled() {
-            return self.default();
-        }
         self.build_workspace(key, workspace_dir)
     }
 
-    /// Build/cache a per-workspace container lifecycle BY NAME, with NO flag
-    /// fallback — the shared runtime is never returned. Used by the fleet /
-    /// inspector commands (status/start/stop/restart/stats/.../remove) that act on
-    /// ONE named container: falling back to the shared runtime would, e.g., stop
-    /// `codehub-runtime` when the user clicks Stop on a workspace card, or when a
-    /// stale per-workspace card lingers after the flag is turned off.
+    /// Alias for `for_workspace(key, None)` — resolves the lifecycle for a
+    /// workspace container by key, without overriding the workspace dir.
     pub fn workspace_container(&self, key: &str) -> Arc<Lifecycle> {
         self.build_workspace(key, None)
     }
 
-    /// Shared construction for `for_workspace` / `workspace_container`. With NO
-    /// explicit dir the container mounts the SAME effective workspace dir the
-    /// shared runtime uses (`config.workspace_dir`, else the built-in default) —
-    /// NOT a blank per-key subdir — so flag-on sessions see the user's actual
-    /// repo. `override = None` lets `Lifecycle::workspace_dir()` resolve that
-    /// config-driven path; `enforce = false` so passive resolves never recreate.
-    /// An EXPLICIT per-tab dir (`Some`) is a deliberate mount choice → pinned and
-    /// enforced (recreate a container bound elsewhere).
+    /// Build/cache a per-workspace container lifecycle. With NO explicit dir the
+    /// container mounts the config-driven workspace dir (else the built-in
+    /// default). `override = None` lets `Lifecycle::workspace_dir()` resolve that
+    /// path; `enforce = false` so passive resolves never recreate. An EXPLICIT
+    /// per-tab dir (`Some`) is a deliberate mount choice → pinned and enforced
+    /// (recreate a container bound elsewhere).
     fn build_workspace(&self, key: &str, workspace_dir: Option<PathBuf>) -> Arc<Lifecycle> {
         let name = self.container_name_for(key);
         let (dir, enforce) = match workspace_dir {
@@ -206,26 +155,70 @@ impl LifecycleManager {
         self.get_or_build(name, dir, Some(key.to_string()), enforce)
     }
 
-    /// Resolve by optional key WITH the session-routing flag fallback: `None` →
-    /// shared default; `Some(key)` → `for_workspace`. For session commands
-    /// (create/attach/kill/rename) where a key means the shared runtime when the
-    /// flag is off.
-    pub fn resolve(&self, key: Option<&str>, workspace_dir: Option<PathBuf>) -> Arc<Lifecycle> {
-        match key {
-            Some(k) => self.for_workspace(k, workspace_dir),
-            None => self.default(),
+    /// Resolve by workspace key. The key is required — every session belongs to a
+    /// workspace. `workspace_dir` optionally pins the mount.
+    pub fn resolve(&self, key: &str, workspace_dir: Option<PathBuf>) -> Arc<Lifecycle> {
+        self.for_workspace(key, workspace_dir)
+    }
+
+    /// Resolve by optional key for IPC commands that still pass `Option<String>`.
+    /// `None` is a programming error (all sessions have a workspace key).
+    pub fn resolve_opt(
+        &self,
+        key: Option<&str>,
+        workspace_dir: Option<PathBuf>,
+    ) -> Arc<Lifecycle> {
+        self.for_workspace(
+            key.expect("workspace key required (shared runtime removed)"),
+            workspace_dir,
+        )
+    }
+
+    /// Resolve by optional key for inspection/lifecycle commands.
+    /// `None` is a programming error.
+    pub fn resolve_container(&self, key: Option<&str>) -> Arc<Lifecycle> {
+        self.workspace_container(
+            key.expect("workspace key required (shared runtime removed)"),
+        )
+    }
+
+    /// Raw bollard `Docker` handle — for daemon-level operations (`docker_info`,
+    /// `resize_exec`) that don't need a specific container.
+    pub fn docker_handle(&self) -> Docker {
+        self.docker.clone()
+    }
+
+    /// Daemon reachability + version. Best-effort: an unreachable daemon yields
+    /// `reachable: false` with empty version fields rather than an error.
+    pub async fn docker_info(&self) -> DockerInfo {
+        match self.docker.version().await {
+            Ok(v) => DockerInfo {
+                reachable: true,
+                version: v.version,
+                api_version: v.api_version,
+            },
+            Err(_) => DockerInfo {
+                reachable: false,
+                version: None,
+                api_version: None,
+            },
         }
     }
 
-    /// Resolve by optional key with NO flag fallback: `None` → shared default;
-    /// `Some(key)` → that workspace's container BY NAME (see
-    /// `workspace_container`). For inspector / lifecycle commands that must never
-    /// act on the shared runtime by accident.
-    pub fn resolve_container(&self, key: Option<&str>) -> Arc<Lifecycle> {
-        match key {
-            Some(k) => self.workspace_container(k),
-            None => self.default(),
+    /// Return a `DockerClient` for any running workspace container. Used by
+    /// global commands (agent_versions, claude_usage, etc.) that need a container
+    /// but aren't workspace-specific. Returns `None` when no containers are
+    /// running.
+    pub async fn any_running_docker(&self) -> Option<Arc<DockerClient>> {
+        for wc in self.list_workspace_containers().await.ok()? {
+            if wc.status.state == ContainerState::Running {
+                return Some(Arc::new(DockerClient::from_docker(
+                    self.docker.clone(),
+                    wc.status.name,
+                )));
+            }
         }
+        None
     }
 
     fn get_or_build(
@@ -237,16 +230,6 @@ impl LifecycleManager {
     ) -> Arc<Lifecycle> {
         let mut cache = self.cache.lock().expect("lifecycle cache poisoned");
         if let Some(existing) = cache.get(&container_name) {
-            // A cache hit is only valid when BOTH the requested mount AND the
-            // enforce-mount intent match the cached entry. Mount is part of a
-            // lifecycle's identity (re-pointing at a new dir must rebuild, else
-            // `workspace_dir()`/`recreate()` target the old mount). `enforce_mount`
-            // must ALSO match: an EXPLICIT re-point (`enforce=true`) whose dir
-            // happens to equal a cached entry left non-enforcing by a prior
-            // passive resolve (start/restart, `enforce=false`) would otherwise be
-            // served that entry and silently NOT recreate — dropping the explicit
-            // mount request. Rebuild on either mismatch; identical requests (incl.
-            // the always-`(None,false)` shared default) share the cached entry.
             if existing.workspace_dir_override == dir && existing.enforce_mount == enforce_mount {
                 return existing.clone();
             }
@@ -266,7 +249,7 @@ impl LifecycleManager {
         lifecycle
     }
 
-    /// Enumerate every CodeHub-managed per-workspace container (label
+    /// Enumerate every CodeHub-managed workspace container (label
     /// `codehub.managed=true`) with its workspace key + status. The key is the
     /// `codehub.workspace` label (the ORIGINAL workspace key); the container name
     /// alone can't yield it because `sanitize_key` is one-way. Includes stopped
@@ -277,12 +260,6 @@ impl LifecycleManager {
     pub async fn list_workspace_containers(
         &self,
     ) -> Result<Vec<WorkspaceContainer>, LifecycleError> {
-        // Flag off → no fleet. Returning leftovers would let the inspector show
-        // per-workspace cards whose lifecycle controls fall back to the shared
-        // runtime (for_workspace), so a Stop click could stop `codehub-runtime`.
-        if !per_workspace_enabled() {
-            return Ok(Vec::new());
-        }
         let mut filters = HashMap::new();
         filters.insert("label".to_string(), vec![format!("{LABEL_MANAGED}=true")]);
         let containers = self
@@ -321,50 +298,30 @@ impl LifecycleManager {
         Ok(out)
     }
 
-    /// All tmux sessions across the shared runtime AND every per-workspace
-    /// container, each tagged with the workspace key it belongs to (`None` for
-    /// the shared runtime). When per-workspace mode is OFF, only the shared
-    /// runtime is queried, so cost and behaviour are unchanged. A container that
-    /// is down or has no sessions contributes nothing rather than failing the
-    /// whole listing. This is what lets startup restore reconstruct each
-    /// workspace's tab and re-tie its sessions to the right container.
+    /// All tmux sessions across every workspace container, each tagged with the
+    /// workspace key it belongs to. A container that is down or has no sessions
+    /// contributes nothing rather than failing the whole listing. This is what
+    /// lets startup restore reconstruct each workspace's tab and re-tie its
+    /// sessions to the right container.
     pub async fn list_all_sessions(&self) -> Result<Vec<SessionInfo>, LifecycleError> {
-        let mut all = self
-            .default()
-            .docker_client()
-            .list_tmux_sessions()
-            .await
-            .unwrap_or_default();
-
-        if per_workspace_enabled() {
-            // Resilient like the shared sweep above: a transient listing error
-            // (daemon hiccup) must not throw away the sessions already collected
-            // — restore what we can rather than failing the whole listing.
-            for wc in self.list_workspace_containers().await.unwrap_or_default() {
-                // Only running containers host a live tmux server; skip stopped
-                // ones (they'd just error in require_running).
-                if wc.status.state != ContainerState::Running {
-                    continue;
-                }
-                let dc = DockerClient::from_docker(self.docker.clone(), wc.status.name);
-                let mut sessions = dc.list_tmux_sessions().await.unwrap_or_default();
-                for s in &mut sessions {
-                    s.workspace = Some(wc.key.clone());
-                }
-                all.extend(sessions);
+        let mut all = Vec::new();
+        for wc in self.list_workspace_containers().await.unwrap_or_default() {
+            if wc.status.state != ContainerState::Running {
+                continue;
             }
+            let dc = DockerClient::from_docker(self.docker.clone(), wc.status.name);
+            let mut sessions = dc.list_tmux_sessions().await.unwrap_or_default();
+            for s in &mut sessions {
+                s.workspace = Some(wc.key.clone());
+            }
+            all.extend(sessions);
         }
         Ok(all)
     }
 
-    /// Remove a per-workspace container by key (Prune / explicit delete); a no-op
-    /// when the container is already gone. Builds the lifecycle for the per-ws
-    /// container NAME explicitly rather than via `for_workspace` — that one
-    /// falls back to the SHARED runtime when the flag is off, so removing through
-    /// it could nuke `codehub-runtime`. By name we always target `codehub-ws-…`.
+    /// Remove a workspace container by key (Prune / explicit delete); a no-op
+    /// when the container is already gone.
     pub async fn remove_workspace(&self, key: &str) -> Result<(), LifecycleError> {
-        // By NAME (no flag fallback) so removing never targets `codehub-runtime`.
-        // `remove()` only reads status + force-removes — never ensures/creates.
         self.workspace_container(key).remove().await
     }
 }
@@ -376,13 +333,10 @@ mod tests {
     use std::sync::Arc;
 
     fn manager() -> LifecycleManager {
-        // ConfigStore::load on a non-existent path yields defaults; the daemon
-        // connection is lazy enough that construction succeeds without Docker.
         let config = Arc::new(ConfigStore::load(
             std::env::temp_dir().join("codehub-manager-test-settings.json"),
         ));
         LifecycleManager::new(
-            "codehub-runtime".into(),
             "img:test".into(),
             std::env::temp_dir().join("codehub-test-config"),
             std::env::temp_dir().join("codehub-test-workspace"),
@@ -391,8 +345,6 @@ mod tests {
         .expect("manager builds")
     }
 
-    /// A sanitized key must be a valid Docker name segment: first char
-    /// alphanumeric, rest from `[a-z0-9-]`, length within bounds.
     fn assert_valid_segment(s: &str) {
         assert!(!s.is_empty(), "segment must not be empty");
         assert!(s.len() <= 64, "segment too long: {s} ({})", s.len());
@@ -419,15 +371,10 @@ mod tests {
         ] {
             assert_valid_segment(&sanitize_key(k));
         }
-        // human-readable slug is preserved as a prefix
         assert!(sanitize_key("ws-aurora-lq3k9").starts_with("ws-aurora-lq3k9-"));
-        // deterministic across calls (stable container identity)
         assert_eq!(sanitize_key("aurora"), sanitize_key("aurora"));
     }
 
-    // The slug is lossy, so identity rests on the appended hash of the full key:
-    // distinct keys that slug identically must STILL produce distinct names, or
-    // two workspaces would collide onto one container (shared mount + sessions).
     #[test]
     fn sanitize_key_never_collides_distinct_keys() {
         let colliding = ["hello_world", "hello-world", "hello.world", "Hello World!"];
@@ -438,7 +385,6 @@ mod tests {
             colliding.len(),
             "lossy slugs collided: {names:?}"
         );
-        // empty/separator-only keys must not collide with each other or a real key
         assert_ne!(sanitize_key(""), sanitize_key("///"));
         assert_ne!(sanitize_key(""), sanitize_key("ws"));
     }
@@ -452,58 +398,19 @@ mod tests {
     }
 
     #[test]
-    fn default_lifecycle_is_cached_and_shared() {
+    fn for_workspace_always_returns_per_workspace_container() {
         let m = manager();
-        let a = m.default();
-        let b = m.default();
-        assert!(Arc::ptr_eq(&a, &b), "default lifecycle should be cached");
-        assert_eq!(a.container_name, "codehub-runtime");
-        assert!(a.workspace_dir_override.is_none());
-        // the shared runtime carries no workspace label (no single identity)
-        assert!(a.workspace_label.is_none());
-    }
-
-    // Both flag states are asserted in ONE test: the flag is a process-global
-    // env var, so splitting off/on across two tests would race under the
-    // parallel harness.
-    #[test]
-    fn for_workspace_honours_the_per_workspace_flag() {
-        // flag explicitly OFF → shared default container. (Default is now ON, so
-        // we set an off-value rather than unset to exercise the disabled path.)
-        // SAFETY: process-global env mutation; serialized within this test.
-        unsafe {
-            std::env::set_var("CODEHUB_PER_WORKSPACE_CONTAINER", "off");
-        }
-        let m = manager();
-        assert_eq!(
-            m.for_workspace("aurora", None).container_name,
-            "codehub-runtime",
-            "flag off → shared default container"
-        );
-
-        // flag ON → dedicated codehub-ws-<key> container
-        unsafe {
-            std::env::set_var("CODEHUB_PER_WORKSPACE_CONTAINER", "1");
-        }
         let ws = m.for_workspace("aurora", None);
         assert_eq!(ws.container_name, m.container_name_for("aurora"));
         assert!(ws.container_name.starts_with("codehub-ws-aurora-"));
-        // the ORIGINAL key is preserved as the workspace label (→ container
-        // label → recoverable by restore, unlike the one-way container name)
         assert_eq!(ws.workspace_label.as_deref(), Some("aurora"));
-        // No explicit dir → no override: the container mounts the SAME effective
-        // workspace dir the shared runtime uses (config-driven), NOT a per-key
-        // subdir, so flag-on sessions see the user's actual repo. Not enforced.
         assert!(ws.workspace_dir_override.is_none());
         assert!(!ws.enforce_mount);
-        // cached: a second resolve returns the same Arc
+        // cached
         assert!(Arc::ptr_eq(&ws, &m.for_workspace("aurora", None)));
-        // workspace_container resolves the SAME entry by name (no flag fallback)
         assert!(Arc::ptr_eq(&ws, &m.workspace_container("aurora")));
 
-        // re-pointing the SAME workspace at a different dir must NOT return the
-        // stale lifecycle — the mount is part of identity, so the cache rebuilds
-        // (else workspace_dir()/recreate() would target the old mount).
+        // re-pointing the SAME workspace at a different dir must rebuild
         let a = m.for_workspace("borealis", Some(PathBuf::from("/tmp/a")));
         assert_eq!(
             a.workspace_dir_override.as_deref(),
@@ -518,17 +425,12 @@ mod tests {
             b.workspace_dir_override.as_deref(),
             Some(PathBuf::from("/tmp/b").as_path())
         );
-        // identical re-request shares the (now-current) cached entry
         assert!(Arc::ptr_eq(
             &b,
             &m.for_workspace("borealis", Some(PathBuf::from("/tmp/b")))
         ));
 
-        // An EXPLICIT re-point must not be served a cached NON-enforcing entry.
-        // A passive resolve (None → config-driven dir, override None,
-        // enforce=false) then an explicit resolve (Some dir, enforce=true) must
-        // REBUILD — otherwise the explicit mount request is silently dropped and
-        // ensure_container would skip the recreate.
+        // explicit re-point must not reuse a non-enforcing cache entry
         let passive = m.for_workspace("cobalt", None);
         assert!(!passive.enforce_mount, "defaulted dir → not enforced");
         assert!(passive.workspace_dir_override.is_none());
@@ -537,15 +439,11 @@ mod tests {
         assert!(explicit.enforce_mount, "explicit dir → enforced");
         assert!(
             !Arc::ptr_eq(&passive, &explicit),
-            "explicit re-point must rebuild, not reuse the non-enforcing cache entry"
+            "explicit re-point must rebuild"
         );
         assert_eq!(
             explicit.workspace_dir_override.as_deref(),
             Some(explicit_dir.as_path())
         );
-
-        unsafe {
-            std::env::remove_var("CODEHUB_PER_WORKSPACE_CONTAINER");
-        }
     }
 }

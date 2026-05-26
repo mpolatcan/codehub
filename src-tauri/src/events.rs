@@ -287,9 +287,8 @@ impl EventsTracker {
 /// fire OS notifications.
 ///
 /// Events live in each container's own `/tmp/codehub/events/` (container-local —
-/// only `/config` is a shared mount), so the shared runtime tailer alone would
-/// miss every per-workspace container. The reconciler fans a tailer out to each
-/// live container instead (see [`reconcile_event_tailers_loop`]).
+/// only `/config` is a shared mount). The reconciler fans a tailer out to each
+/// live workspace container (see [`reconcile_event_tailers_loop`]).
 pub fn start_event_tailer(
     manager: Arc<crate::manager::LifecycleManager>,
     tracker: Arc<EventsTracker>,
@@ -319,17 +318,14 @@ pub fn start_event_tailer(
 /// container's events start being tailed. Matches the 5s tail-retry cadence.
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Fan an [`event_tailer_loop`] out across EVERY live CodeHub container so hook
-/// events from per-workspace containers (`codehub-ws-<key>`) reach the same
-/// [`EventsTracker`] / sink as the shared runtime's. Each container keeps its
-/// events in its own container-local `/tmp/codehub/events/`, so one tailer on the
-/// shared runtime would only ever see shared-runtime sessions.
+/// Fan an [`event_tailer_loop`] out across every live workspace container so
+/// hook events from each `codehub-ws-<key>` reach the shared
+/// [`EventsTracker`] / sink. Each container keeps its events in its own
+/// container-local `/tmp/codehub/events/`.
 ///
-/// Reconciles every [`RECONCILE_INTERVAL`]: the target set is the shared runtime
-/// (always — it self-heals while down) plus every *running* workspace container
-/// (`list_workspace_containers`, which returns empty when the per-workspace flag
-/// is off — so this degrades to exactly the old single-tailer behaviour). New
-/// containers get a tailer spawned; vanished/stopped ones get theirs aborted.
+/// Reconciles every [`RECONCILE_INTERVAL`]: the target set is every running
+/// workspace container. New containers get a tailer spawned; vanished/stopped
+/// ones get theirs aborted.
 /// Tailers (and their replay cursors) are keyed by container ID so a recreate —
 /// new ID, fresh /tmp — drops the stale cursor; all share the cloned `on_event`
 /// sink.
@@ -360,45 +356,16 @@ pub async fn reconcile_event_tailers_loop<F>(
     //     id-keyed tailer reads the file from line 1 and captures every event once.
     let mut active: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     let mut cursors: HashMap<String, ReplayCursor> = HashMap::new();
-    // Last id positively read for the shared runtime, remembered across ticks so a
-    // transient `status()` id=None blip (container still up) doesn't drop its live
-    // cursor; only a SUCCESSFUL read of a DIFFERENT id (a genuine recreate) re-keys.
-    let mut shared_id: Option<String> = None;
 
     loop {
-        // Pin the tailer's exec target to the container ID. The resolved
-        // DockerClient otherwise execs by NAME, so an old (soon-to-be-aborted)
-        // tailer whose container was recreated would, on its next `run_tail` retry,
-        // exec into the same-NAME replacement — reading the new container's fresh
-        // /tmp through the OLD stale cursor and suppressing / double-ingesting its
-        // events. Pinned to the old ID, that exec 404s and retries harmlessly until
-        // the reconciler aborts it; only the fresh id-keyed tailer touches the new
-        // container.
         fn pin_to_id(base: DockerClient, id: &str) -> DockerClient {
             DockerClient::from_docker(base.docker.clone(), id.to_string())
         }
 
-        // `running` = id-keyed targets to tail this cycle; `existing` = every
-        // container that still exists (any state) for cursor retention.
         let mut running: Vec<(String, Arc<DockerClient>)> = Vec::new();
         let mut existing: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        // Shared runtime: sticky id across transient inspect blips. Tail it only
-        // once we know its id (never by name); while its id is unknown — down at
-        // boot or a transient failure — skip it this tick and let a later tick
-        // attach the id-keyed tailer (which replays /tmp from line 1, no loss).
-        let shared = manager.default();
-        let shared_status = shared.status().await;
-        if shared_status.id.is_some() {
-            shared_id = shared_status.id.clone();
-        }
-        if let Some(id) = shared_id.clone() {
-            let client = pin_to_id(shared.docker_client(), &id);
-            existing.insert(id.clone());
-            running.push((id, Arc::new(client)));
-        }
-
-        // A transient daemon error must NOT tear down every per-workspace tailer
+        // A transient daemon error must NOT tear down every workspace tailer
         // (churn + dropped events for a cycle): keep the current state and retry.
         let workspaces = match manager.list_workspace_containers().await {
             Ok(list) => list,

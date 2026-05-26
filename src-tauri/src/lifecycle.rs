@@ -187,26 +187,23 @@ pub struct Lifecycle {
     /// UI/config store; the effective workspace dir + account profiles are read
     /// from here at container-create time (Tier-2 / Tier-3).
     pub config: Arc<ConfigStore>,
-    /// Per-workspace container override (per-workspace-container architecture).
-    /// When `Some`, this directory is bound at `/workspace` authoritatively and
-    /// the global config `workspace_dir` is ignored — each workspace owns its own
-    /// mount. `None` is the shared-runtime path, where the config setting selects
-    /// the single mounted dir. Built by `LifecycleManager::for_workspace`.
+    /// Explicit workspace directory override. When `Some`, this directory is
+    /// bound at `/workspace` authoritatively and the global config `workspace_dir`
+    /// is ignored — each workspace owns its own mount. `None` lets the lifecycle
+    /// resolve the dir from config. Built by `LifecycleManager::for_workspace`.
     pub workspace_dir_override: Option<PathBuf>,
-    /// The ORIGINAL workspace key this per-workspace container represents (before
+    /// The ORIGINAL workspace key this container represents (before
     /// `sanitize_key` mangles it into the container name). Stamped onto the
     /// container as the `codehub.workspace` label at create-time so multi-container
     /// listing can recover it and startup restore can re-tie the session to its
-    /// real workspace. `None` for the shared runtime (no label written).
+    /// real workspace.
     pub workspace_label: Option<String>,
     /// Whether to RECREATE an existing container when its live `/workspace` bind
     /// no longer matches `workspace_dir()`. True ONLY when the caller EXPLICITLY
     /// requested a mount (e.g. re-pointing a workspace at a new repo dir) — a
     /// deliberate, destructive mount change. False for passive ops (start /
-    /// restart / status) and the default per-key subdir, so they never silently
-    /// recreate a container onto a different mount and lose its sessions. The
-    /// shared runtime is always false (its mount change is confirm-driven via
-    /// `workspace_info().needs_recreate`).
+    /// restart / status), so they never silently recreate a container onto a
+    /// different mount and lose its sessions.
     pub enforce_mount: bool,
 }
 
@@ -233,9 +230,9 @@ impl Lifecycle {
     }
 
     /// Build a `Lifecycle` reusing an existing daemon connection (the manager
-    /// connects once and shares the `Docker` handle across every per-workspace
-    /// lifecycle). `workspace_dir_override` pins the `/workspace` bind for a
-    /// per-workspace container; pass `None` for the shared-runtime behaviour.
+    /// connects once and shares the `Docker` handle across every workspace
+    /// lifecycle). `workspace_dir_override` pins the `/workspace` bind;
+    /// pass `None` to let the lifecycle resolve the dir from config.
     #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         docker: Docker,
@@ -263,12 +260,11 @@ impl Lifecycle {
 
     /// Host directory to bind at `/workspace`.
     ///
-    /// Per-workspace containers (`workspace_dir_override = Some`) own a dedicated
-    /// dir, returned verbatim — it is created on demand by `ensure_container`, so
-    /// it need not exist yet. The shared-runtime path (`None`) uses the config's
-    /// `workspace_dir` when set and still an existing directory, otherwise the
-    /// built-in default. A configured-but-missing dir falls back rather than
-    /// failing the container create (the dir may live on an unmounted volume).
+    /// When `workspace_dir_override` is `Some`, the override is returned verbatim
+    /// — it is created on demand by `ensure_container`, so it need not exist yet.
+    /// When `None`, uses the config's `workspace_dir` if set and still an existing
+    /// directory, otherwise the built-in default. A configured-but-missing dir
+    /// falls back rather than failing the container create.
     pub fn workspace_dir(&self) -> PathBuf {
         if let Some(dir) = &self.workspace_dir_override {
             return dir.clone();

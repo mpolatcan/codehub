@@ -1,15 +1,13 @@
 /**
- * ContainerInspector — the "Containers" view. Ported from
- * design/screens/container-inspector.jsx, adapted to CodeHub's reality: there is
- * ONE shared runtime container (`codehub-runtime`), not a per-repo fleet. So the
- * left list holds the single runtime and the detail pane describes it.
+ * ContainerInspector — the "Containers" / "Workspaces" view. Each workspace runs
+ * in its own per-workspace container (`codehub-ws-<key>`). The left list shows
+ * one card per workspace container; the detail pane describes the selected one.
  *
  * Real data: container name / state / image / id (container_status), docker
  * version (docker_info), the live attached sessions (sessionMeta), the fixed
  * /workspace mount, and host-env credential forwarding (agent_key_status,
- * presence-only). Resource gauges (cpu/mem/net/disk) and the live log stream
- * have no backend feed yet — rendered as em-dashes / an honest placeholder, with
- * entries in BACKEND_PLAN.md. Nothing is fabricated.
+ * presence-only). Resource gauges (cpu/mem/net/disk) and the live log stream are
+ * polled from real container_stats / container_logs. Nothing is fabricated.
  */
 import { AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { IconBtn } from "@/app/components/primitives/IconBtn";
@@ -66,23 +64,17 @@ function deriveNetRate(history: ContainerStats[]): number | null {
 }
 
 export function ContainerInspector() {
-  const status = useStore((s) => s.status);
   const dockerInfo = useStore((s) => s.dockerInfo);
   const keyStatus = useStore((s) => s.keyStatus);
   const sessionMeta = useStore((s) => s.sessionMeta);
   const workspaces = useStore((s) => s.workspaces);
   const focusSession = useStore((s) => s.focusSession);
   const setView = useStore((s) => s.setView);
-  const startRuntime = useStore((s) => s.startRuntime);
-  const stopRuntime = useStore((s) => s.stopRuntime);
-  const restartRuntime = useStore((s) => s.restartRuntime);
-  const newPlate = useStore((s) => s.newPlate);
   const setNewWorkspace = useOverlay((s) => s.setNewWorkspace);
 
-  // Fleet of per-workspace containers (flag-gated server-side; empty when the
-  // per-workspace flag is off → only the shared runtime exists). Polled ~3s so a
-  // lifecycle action (start/stop/restart/remove) shows up without a manual
-  // refresh. Each entry already carries its container's real state/id/image.
+  // Fleet of per-workspace containers. Polled ~3s so a lifecycle action
+  // (start/stop/restart/remove) shows up without a manual refresh. Each entry
+  // already carries its container's real state/id/image.
   const [fleet, setFleet] = useState<WorkspaceContainer[]>([]);
   useEffect(() => {
     let alive = true;
@@ -100,9 +92,9 @@ export function ContainerInspector() {
     };
   }, []);
 
-  // Selected container: `null` = the shared runtime (default), else a workspace
-  // key. Switching clears the live stats + sparkline window so two containers'
-  // series never splice together.
+  // Selected container key from the fleet. Null when the fleet is empty (no
+  // workspace containers exist yet). Switching clears the live stats + sparkline
+  // window so two containers' series never splice together.
   const [selected, setSelected] = useState<string | null>(null);
   const [wsStats, setWsStats] = useState<ContainerStats | null>(null);
   const [history, setHistory] = useState<ContainerStats[]>([]);
@@ -112,41 +104,36 @@ export function ContainerInspector() {
     setHistory([]);
   };
   const selectedWs = selected ? fleet.find((c) => c.key === selected) : undefined;
-  // A selected workspace that gets pruned (or the flag flipping off) falls back
-  // to the shared runtime so the detail pane never points at a vanished container.
+  // Auto-select the first fleet entry when nothing is selected yet (initial load)
+  // or when the selected workspace was pruned / removed. Falls back to null when
+  // the fleet is empty so the detail pane shows an honest empty state.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selectContainer is stable (only calls setState fns).
   useEffect(() => {
     if (selected && !fleet.some((c) => c.key === selected)) {
-      setSelected(null);
-      setWsStats(null);
-      setHistory([]);
+      selectContainer(fleet[0]?.key ?? null);
+    } else if (!selected && fleet.length > 0) {
+      selectContainer(fleet[0].key);
     }
   }, [selected, fleet]);
 
-  // Resolved identity for the detail pane: the shared runtime's status (app-wide
-  // store poll) when nothing is selected, else the selected workspace container's
-  // status carried in the fleet listing (no extra status poll needed).
-  const vmStatus = selected ? selectedWs?.status : status;
-  const name = vmStatus?.name ?? selected ?? "codehub-runtime";
+  // Resolved identity for the detail pane: the selected workspace container's
+  // status carried in the fleet listing (no extra status poll needed). Null when
+  // the fleet is empty (no workspace containers exist yet).
+  const vmStatus = selectedWs?.status ?? null;
+  const name = vmStatus?.name ?? selected ?? "—";
   const state: ContainerState = vmStatus?.state ?? "missing";
   const dot = STATE_DOT[state];
   const image = vmStatus?.image ?? "—";
   const id = vmStatus?.id ?? null;
   const running = state === "running";
 
-  // Sessions attached to the container in view, routed by containerKey: the
-  // shared runtime (selected === null) shows sessions with no per-workspace key;
-  // a workspace shows the ones created/attached against its key.
+  // Sessions attached to the container in view, filtered by containerKey.
   const sessions = useMemo(
     () =>
-      Object.entries(sessionMeta).filter(([, m]) =>
-        selected ? m.containerKey === selected : !m.containerKey,
-      ),
+      selected ? Object.entries(sessionMeta).filter(([, m]) => m.containerKey === selected) : [],
     [sessionMeta, selected],
   );
 
-  // Live stats: the shared runtime reads the app-wide store poll; a selected
-  // workspace polls its own container_stats (~2s) by key. `null` → em-dash gauges.
-  const sharedStats = useStore((s) => s.containerStats);
   useEffect(() => {
     if (!selected || !running) {
       setWsStats(null);
@@ -166,7 +153,7 @@ export function ContainerInspector() {
       clearInterval(h);
     };
   }, [selected, running]);
-  const stats = selected ? wsStats : sharedStats;
+  const stats = wsStats;
 
   // Rolling window of the last N samples (newest last) so the gauges draw a real
   // sparkline of where each metric has actually been — not a fabricated series.
@@ -303,54 +290,42 @@ export function ContainerInspector() {
     setView("hub");
   };
 
-  // Exec shell — spawn a plain bash pane in the shared runtime and jump to it,
-  // the same path the Hub's "+ shell" control uses (newPlate("shell")). Offered
-  // only for the shared runtime: newPlate opens a fresh workspace, not a shell in
-  // an arbitrary existing per-workspace container, so wiring it to a selected
-  // workspace would land the shell in the wrong container.
-  const execShell = () => {
-    void newPlate("shell", "standard");
-    setView("hub");
-  };
-
-  // Lifecycle routing: the shared runtime uses the store actions (which also keep
-  // store.status fresh); a selected workspace hits its own container by key (the
-  // ~3s fleet poll reflects the new state). Remove (prune) only applies to a
-  // per-workspace container, never the shared runtime.
-  // Per-workspace lifecycle ops don't emit codehub://lifecycle (that event tracks
-  // the shared runtime), so refetch the fleet immediately for snappy feedback
-  // instead of waiting for the ~3s poll.
+  // Lifecycle routing: hits the selected workspace's container by key (the ~3s
+  // fleet poll reflects the new state). Refetch the fleet immediately for snappy
+  // feedback instead of waiting for the ~3s poll.
   const loadFleet = () =>
     ipc
       .listWorkspaceContainers()
       .then(setFleet)
       .catch(() => setFleet([]));
-  const doStart = () =>
-    selected ? void ipc.containerStart(selected).then(loadFleet) : void startRuntime();
-  const doStop = () =>
-    selected ? void ipc.containerStop(selected).then(loadFleet) : void stopRuntime();
-  const doRestart = () =>
-    selected ? void ipc.containerRestart(selected).then(loadFleet) : void restartRuntime();
+  const doStart = () => {
+    if (!selected) return;
+    void ipc.containerStart(selected).then(loadFleet);
+  };
+  const doStop = () => {
+    if (!selected) return;
+    void ipc.containerStop(selected).then(loadFleet);
+  };
+  const doRestart = () => {
+    if (!selected) return;
+    void ipc.containerRestart(selected).then(loadFleet);
+  };
   const doRemove = () => {
     if (!selected) return;
     void ipc.removeWorkspaceContainer(selected).then(() => {
-      selectContainer(null);
+      selectContainer(fleet.find((c) => c.key !== selected)?.key ?? null);
       void loadFleet();
     });
   };
 
-  // Fleet counts for the header line: the shared runtime always counts as one
-  // real container; per-workspace containers add to it.
-  const runningCount =
-    (status?.state === "running" ? 1 : 0) +
-    fleet.filter((c) => c.status.state === "running").length;
-  const totalCount = 1 + fleet.length;
-  const hasFleet = fleet.length > 0;
+  // Fleet counts for the header line.
+  const runningCount = fleet.filter((c) => c.status.state === "running").length;
+  const totalCount = fleet.length;
 
   // Per-card session groupings for the left list (each card shows ITS container's
   // attached agents, independent of which card is selected).
-  const sessionsFor = (key: string | null) =>
-    Object.entries(sessionMeta).filter(([, m]) => (key ? m.containerKey === key : !m.containerKey));
+  const sessionsFor = (key: string) =>
+    Object.entries(sessionMeta).filter(([, m]) => m.containerKey === key);
 
   return (
     <main
@@ -381,14 +356,12 @@ export function ContainerInspector() {
           </Button>
         </div>
         <p className="mono" style={{ margin: "6px 0 0", fontSize: 11, color: "var(--fg-3)" }}>
-          {hasFleet
-            ? "Each workspace runs in its own container; the shared runtime hosts unscoped sessions."
-            : "CodeHub runs every session on one shared runtime container."}
+          Each workspace runs in its own container.
         </p>
       </div>
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        {/* list — the shared runtime + one card per per-workspace container */}
+        {/* list — one card per per-workspace container */}
         <div
           className="scroll"
           style={{
@@ -401,15 +374,19 @@ export function ContainerInspector() {
             padding: 8,
           }}
         >
-          <ContainerCard
-            active={selected === null}
-            onSelect={() => selectContainer(null)}
-            state={status?.state ?? "missing"}
-            name={status?.name ?? "codehub-runtime"}
-            image={status?.image ?? "—"}
-            agents={sessionsFor(null).map(([, m]) => m.cli)}
-            stats={selected === null ? sharedStats : null}
-          />
+          {fleet.length === 0 && (
+            <div
+              className="mono"
+              style={{
+                padding: "28px 14px",
+                textAlign: "center",
+                fontSize: 11.5,
+                color: "var(--fg-3)",
+              }}
+            >
+              No workspace containers yet. Create one from the hub.
+            </div>
+          )}
           {fleet.map((c) => (
             <ContainerCard
               key={c.key}
@@ -469,12 +446,11 @@ export function ContainerInspector() {
             <RuntimeControls
               state={state}
               sessionCount={sessions.length}
-              kind={selected ? "workspace" : "runtime"}
+              kind="workspace"
               onStart={doStart}
               onStop={doStop}
               onRestart={doRestart}
-              onExec={selected ? undefined : execShell}
-              onRemove={selected ? doRemove : undefined}
+              onRemove={doRemove}
             />
           </div>
 
@@ -1080,24 +1056,20 @@ function CredRow({
 function RuntimeControls({
   state,
   sessionCount,
-  kind = "runtime",
+  kind = "workspace",
   onStart,
   onStop,
   onRestart,
-  onExec,
   onRemove,
 }: {
   state: ContainerState;
   sessionCount: number;
-  // The container kind, for the confirm copy ("runtime" vs "workspace").
+  // The container kind, for the confirm copy.
   kind?: string;
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
-  // Exec is only offered for the shared runtime (undefined → hidden).
-  onExec?: () => void;
-  // Remove (prune) is only offered for a per-workspace container (undefined →
-  // hidden), and only while it is stopped.
+  // Remove (prune) — offered while stopped.
   onRemove?: () => void;
 }) {
   const sessionsClause =
@@ -1144,11 +1116,6 @@ function RuntimeControls({
   if (state === "running") {
     return (
       <div style={{ display: "flex", gap: 8 }}>
-        {onExec && (
-          <Button size="sm" variant="outline" onClick={onExec}>
-            Exec shell
-          </Button>
-        )}
         <Button size="sm" variant="outline" onClick={confirmRestart}>
           Restart
         </Button>
@@ -1161,10 +1128,10 @@ function RuntimeControls({
   return null;
 }
 
-// One row in the left fleet list — the shared runtime or a per-workspace
-// container. A button (selectable); the active one gets an accent border. Stats
-// are passed in (null → em-dash) rather than fetched here so each card stays a
-// pure render of data the parent already owns.
+// One row in the left fleet list — a per-workspace container. A button
+// (selectable); the active one gets an accent border. Stats are passed in
+// (null → em-dash) rather than fetched here so each card stays a pure render
+// of data the parent already owns.
 function ContainerCard({
   active,
   onSelect,

@@ -21,7 +21,7 @@ const WIDTH = 352;
 
 export function DiffViewer({ path, onClose }: { path: string; onClose: () => void }) {
   const [diff, setDiff] = useState<string | null>(null);
-  // The diff is for the active workspace's container; undefined → shared runtime.
+  // The diff is for the active workspace's container.
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
 
   useEffect(() => {

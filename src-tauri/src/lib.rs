@@ -27,7 +27,7 @@ use docker::{
     ProcessInfo, RuntimeHealth, SessionUsage,
 };
 use events::EventsTracker;
-use lifecycle::{AppInfo, ContainerStatus, DockerInfo, KeyStatus, Lifecycle, WorkspaceInfo};
+use lifecycle::{AppInfo, ContainerStatus, KeyStatus, Lifecycle, WorkspaceInfo};
 use manager::LifecycleManager;
 use pty::{PaneEmitter, PtyRegistry, SessionInfo};
 // Re-export Phase-0 contract types so devserver.rs can import them from `crate::`.
@@ -55,107 +55,78 @@ impl PaneEmitter for TauriEmitter {
 }
 
 pub struct AppState {
-    /// Shared-runtime lifecycle (`codehub-runtime`). Today every IPC command
-    /// targets this; it is `manager.default()`. Per-workspace lifecycles are
-    /// resolved through `manager` (per-workspace-container migration, Phase 1).
-    pub lifecycle: Arc<Lifecycle>,
-    /// Resolves a `Lifecycle` per workspace (`codehub-ws-<key>`) when the
-    /// `CODEHUB_PER_WORKSPACE_CONTAINER` flag is on, else the shared default.
+    /// Resolves a `Lifecycle` per workspace (`codehub-ws-<key>`). Owns the
+    /// single daemon connection shared across all per-workspace lifecycles.
     pub manager: Arc<LifecycleManager>,
-    pub docker: Arc<DockerClient>,
     pub registry: Arc<PtyRegistry>,
     pub config: Arc<ConfigStore>,
     /// Agent-event hook state: pending prompts + activity ring buffer.
     pub events: Arc<EventsTracker>,
 }
 
-const DEFAULT_CONTAINER: &str = "codehub-runtime";
 const DEFAULT_IMAGE: &str = "ghcr.io/mpolatcan/codehub-runtime:0.1.3";
 
 /// DockerClient for a session command's target container. `workspace` is the
-/// per-workspace key the frontend tracks; `None` (or the per-workspace flag off)
-/// resolves to the shared runtime — identical to the pre-per-workspace behaviour.
-/// Used by the session lifecycle commands so a tmux session is created/attached/
-/// killed in the container that actually hosts it.
-fn docker_for(state: &AppState, workspace: Option<&str>) -> Arc<DockerClient> {
+/// per-workspace key identifying the container (`codehub-ws-<key>`).
+fn docker_for(state: &AppState, workspace: &str) -> Arc<DockerClient> {
     Arc::new(state.manager.resolve(workspace, None).docker_client())
 }
 
-/// DockerClient for an inspection command's target container, BY NAME with no
-/// flag fallback (mirrors `lifecycle_for`). Unlike `docker_for` (used by session
-/// create/attach/kill, where a key means the shared runtime when the flag is
-/// off), an explicit `workspace` here ALWAYS targets that per-workspace
-/// container — reading its OWN stats/logs/procs, never the shared runtime's.
-fn docker_container_for(state: &AppState, workspace: Option<&str>) -> Arc<DockerClient> {
-    Arc::new(state.manager.resolve_container(workspace).docker_client())
+/// DockerClient for an inspection command's target container.
+fn docker_container_for(state: &AppState, workspace: &str) -> Arc<DockerClient> {
+    Arc::new(state.manager.workspace_container(workspace).docker_client())
 }
 
-/// The lifecycle for an optional workspace key, BY NAME with no flag fallback:
-/// `None` → the shared runtime, `Some(key)` → that workspace's container
-/// (`codehub-ws-<key>`), even when the per-workspace flag is off. Backs the
-/// inspector / lifecycle commands so Start/Stop/Restart on a workspace card
-/// always act on THAT container and never on `codehub-runtime`. (Session
-/// commands use `manager.resolve`, which DOES fall back to shared when off.)
-fn lifecycle_for(state: &AppState, workspace: Option<&str>) -> Arc<Lifecycle> {
-    state.manager.resolve_container(workspace)
+/// The lifecycle for a workspace key. Backs Start/Stop/Restart on workspace cards.
+fn lifecycle_for(state: &AppState, workspace: &str) -> Arc<Lifecycle> {
+    state.manager.workspace_container(workspace)
 }
 
 #[tauri::command]
 async fn container_status(
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<ContainerStatus, String> {
-    Ok(lifecycle_for(&state, workspace.as_deref()).status().await)
+    Ok(lifecycle_for(&state, &workspace).status().await)
 }
 
-/// Run a lifecycle mutation (start/stop/restart/recreate), then read the fresh
-/// status and return it. Broadcasts on `codehub://lifecycle` ONLY for the shared
-/// runtime (`workspace` is None) — the store's single `status` tracks the shared
-/// runtime, so a per-workspace event would clobber its identity/state. Per-
-/// workspace state is surfaced by the fleet poll (`list_workspace_containers`),
-/// not this event.
 async fn lifecycle_op(
     lc: &Lifecycle,
-    app: &tauri::AppHandle,
-    workspace: Option<&str>,
+    _app: &tauri::AppHandle,
     op: impl std::future::Future<Output = Result<(), lifecycle::LifecycleError>>,
 ) -> Result<ContainerStatus, String> {
     op.await.map_err(|e| e.to_string())?;
-    let status = lc.status().await;
-    if workspace.is_none() {
-        let _ = app.emit("codehub://lifecycle", &status);
-    }
-    Ok(status)
+    Ok(lc.status().await)
 }
 
 #[tauri::command]
 async fn container_start(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<ContainerStatus, String> {
-    let lc = lifecycle_for(&state, workspace.as_deref());
-    lifecycle_op(&lc, &app, workspace.as_deref(), lc.start()).await
+    let lc = lifecycle_for(&state, &workspace);
+    lifecycle_op(&lc, &app, lc.start()).await
 }
 
 #[tauri::command]
 async fn container_stop(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<ContainerStatus, String> {
-    let lc = lifecycle_for(&state, workspace.as_deref());
-    lifecycle_op(&lc, &app, workspace.as_deref(), lc.stop()).await
+    let lc = lifecycle_for(&state, &workspace);
+    lifecycle_op(&lc, &app, lc.stop()).await
 }
 
 #[tauri::command]
 async fn container_restart(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<ContainerStatus, String> {
-    let lc = lifecycle_for(&state, workspace.as_deref());
-    lifecycle_op(&lc, &app, workspace.as_deref(), lc.restart()).await
+    let lc = lifecycle_for(&state, &workspace);
+    lifecycle_op(&lc, &app, lc.restart()).await
 }
 
 /// Enumerate the CodeHub-managed per-workspace containers (key + status), for the
@@ -189,8 +160,8 @@ async fn remove_workspace_container(
 
 /// Daemon reachability + version for the empty-state pill / Settings.
 #[tauri::command]
-async fn docker_info(state: tauri::State<'_, AppState>) -> Result<DockerInfo, String> {
-    Ok(state.lifecycle.docker_info().await)
+async fn docker_info(state: tauri::State<'_, AppState>) -> Result<lifecycle::DockerInfo, String> {
+    Ok(state.manager.docker_info().await)
 }
 
 /// Presence-only auth status per CLI. Reports booleans + env var names; never
@@ -205,15 +176,6 @@ fn agent_key_status() -> Result<HashMap<String, KeyStatus>, String> {
 #[tauri::command]
 fn app_info() -> Result<AppInfo, String> {
     Ok(lifecycle::app_info())
-}
-
-/// Whether the per-workspace-container runtime mode is active (the
-/// `CODEHUB_PER_WORKSPACE_CONTAINER` flag). The frontend uses this to decide
-/// whether a new tab gets its own container key — flag OFF, sessions live in
-/// the shared runtime and must carry `containerKey: undefined`.
-#[tauri::command]
-fn per_workspace_enabled() -> Result<bool, String> {
-    Ok(manager::per_workspace_enabled())
 }
 
 /// Current persisted UI preferences (Settings screen). In-memory snapshot —
@@ -260,22 +222,39 @@ fn set_workspace_dir(path: String, state: tauri::State<'_, AppState>) -> Result<
 }
 
 /// Configured-vs-mounted workspace dir + whether a recreate is needed to apply a
-/// change. Backs the "restart runtime to apply" banner.
+/// change. Backs the "restart runtime to apply" banner. Operates on the given
+/// workspace's container.
 #[tauri::command]
-async fn workspace_info(state: tauri::State<'_, AppState>) -> Result<WorkspaceInfo, String> {
-    Ok(state.lifecycle.workspace_info().await)
+async fn workspace_info(
+    state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
+) -> Result<WorkspaceInfo, String> {
+    match workspace {
+        Some(key) => Ok(lifecycle_for(&state, &key).workspace_info().await),
+        None => {
+            // No workspace context — return a placeholder with the config-driven
+            // effective dir and no mounted path (no container to inspect).
+            let effective = state.config.get().workspace_dir.unwrap_or_default();
+            Ok(WorkspaceInfo {
+                effective,
+                mounted: None,
+                needs_recreate: false,
+            })
+        },
+    }
 }
 
-/// Remove + recreate the runtime container so a changed workspace mount (or a
+/// Remove + recreate a workspace container so a changed workspace mount (or a
 /// newly-added account-profile env var) takes effect. Destructive to running
-/// sessions — the UI confirms first. Emits codehub://lifecycle like the other
-/// lifecycle controls.
+/// sessions — the UI confirms first.
 #[tauri::command]
 async fn recreate_runtime(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
+    workspace: String,
 ) -> Result<ContainerStatus, String> {
-    lifecycle_op(&state.lifecycle, &app, None, state.lifecycle.recreate()).await
+    let lc = lifecycle_for(&state, &workspace);
+    lifecycle_op(&lc, &app, lc.recreate()).await
 }
 
 // — Tier-3: label-only account profiles (no secrets stored) —
@@ -356,119 +335,119 @@ fn remove_account_profile(
     Ok(profile_statuses(next.account_profiles))
 }
 
-/// `<cli> --version` for each agent inside the runtime container.
+/// `<cli> --version` for each agent inside a running workspace container.
 #[tauri::command]
 async fn agent_versions(
     state: tauri::State<'_, AppState>,
 ) -> Result<HashMap<String, AgentVersion>, String> {
-    Ok(state.docker.agent_versions().await)
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    Ok(docker.agent_versions().await)
 }
 
-/// One-shot CPU/mem/net/disk for the runtime container (Containers view gauges).
-/// Errs when the container is down so the UI keeps the gauges blank.
+/// One-shot CPU/mem/net/disk for a workspace container (Containers view gauges).
+/// When workspace is omitted, uses any running container (app-wide stats poll).
 #[tauri::command]
 async fn container_stats(
     state: tauri::State<'_, AppState>,
     workspace: Option<String>,
 ) -> Result<ContainerStats, String> {
-    docker_container_for(&state, workspace.as_deref())
-        .stats()
-        .await
-        .map_err(|e| e.to_string())
+    let docker = match workspace {
+        Some(ref key) => Arc::new(state.manager.workspace_container(key).docker_client()),
+        None => state.manager.any_running_docker().await
+            .ok_or_else(|| "no running workspace container".to_string())?,
+    };
+    docker.stats().await.map_err(|e| e.to_string())
 }
 
-/// Tail of the runtime container's log (Containers view log panel). `tail`
-/// defaults to 200 lines. Errs when the container is down.
+/// Tail of a workspace container's log (Containers view log panel).
 #[tauri::command]
 async fn container_logs(
     state: tauri::State<'_, AppState>,
     tail: Option<u32>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<Vec<String>, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .logs(tail.unwrap_or(200))
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Real bind/volume mounts of the runtime container (Containers view Mounts
-/// card). Reports the actual host paths behind `/workspace` and `/config`.
+/// Real bind/volume mounts of a workspace container (Containers view Mounts card).
 #[tauri::command]
 async fn container_mounts(
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<Vec<MountInfo>, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .mounts()
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Identity of the runtime container's image (Containers view Image card):
-/// tag/digest/created/size/arch/os. Errs only when the container/image can't be
-/// inspected.
+/// Identity of a workspace container's image (Containers view Image card).
+/// When workspace is omitted (Settings/About), uses any running container.
 #[tauri::command]
 async fn container_image(
     state: tauri::State<'_, AppState>,
     workspace: Option<String>,
 ) -> Result<ImageInfo, String> {
-    docker_container_for(&state, workspace.as_deref())
-        .image_info()
-        .await
-        .map_err(|e| e.to_string())
+    let docker = match workspace {
+        Some(ref key) => Arc::new(state.manager.workspace_container(key).docker_client()),
+        None => state.manager.any_running_docker().await
+            .ok_or_else(|| "no running workspace container".to_string())?,
+    };
+    docker.image_info().await.map_err(|e| e.to_string())
 }
 
-/// Liveness of the runtime container (Containers view hero): started-at, restart
-/// count, status and OOM flag. Errs only when the container can't be inspected.
+/// Liveness of a workspace container (Containers view hero).
+/// When workspace is omitted, uses any running container.
 #[tauri::command]
 async fn container_health(
     state: tauri::State<'_, AppState>,
     workspace: Option<String>,
 ) -> Result<RuntimeHealth, String> {
-    docker_container_for(&state, workspace.as_deref())
-        .health()
-        .await
-        .map_err(|e| e.to_string())
+    let docker = match workspace {
+        Some(ref key) => Arc::new(state.manager.workspace_container(key).docker_client()),
+        None => state.manager.any_running_docker().await
+            .ok_or_else(|| "no running workspace container".to_string())?,
+    };
+    docker.health().await.map_err(|e| e.to_string())
 }
 
-/// Non-recursive listing of a `/workspace` directory (Files browser). `path` is
-/// confined to `/workspace`; empty → the workspace root. Errs when down or the
-/// path escapes the workspace.
+/// Non-recursive listing of a `/workspace` directory (Files browser).
 #[tauri::command]
 async fn container_list_dir(
     state: tauri::State<'_, AppState>,
     path: String,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<Vec<FileEntry>, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .list_dir(&path)
         .await
         .map_err(|e| e.to_string())
 }
 
-/// First 256 KiB of a `/workspace` file (Files browser preview). `path` is
-/// confined to `/workspace`. Errs when down or the path escapes.
+/// First 256 KiB of a `/workspace` file (Files browser preview).
 #[tauri::command]
 async fn container_read_file(
     state: tauri::State<'_, AppState>,
     path: String,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<String, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .read_file(&path)
         .await
         .map_err(|e| e.to_string())
 }
 
 /// Working-tree status of the `/workspace` mount (Hub activity rail "Changes").
-/// Reports branch + ahead/behind + changed files; `is_repo: false` when
-/// /workspace is not a git repo. Errs only when the container is down.
 #[tauri::command]
 async fn container_git_status(
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<GitStatus, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .git_status()
         .await
         .map_err(|e| e.to_string())
@@ -479,141 +458,128 @@ async fn container_git_status(
 async fn container_git_diff(
     path: String,
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<String, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .git_diff(&path)
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Combined diff of all tracked `/workspace` changes (rail "Review all" → diff
-/// viewer). Empty string when the tree is clean.
+/// Combined diff of all tracked `/workspace` changes.
 #[tauri::command]
 async fn container_git_diff_all(
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<String, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .git_diff_all()
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Staged-only diff of `/workspace` (`git diff --cached`) — the session-detail
-/// inspector's "Staged" filter. Empty string when nothing is staged.
+/// Staged-only diff of `/workspace` (`git diff --cached`).
 #[tauri::command]
 async fn container_git_diff_staged(
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<String, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .git_diff_staged()
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Unstaged diff of tracked `/workspace` files (`git diff`) — the "Unstaged"
-/// filter. Empty string when the tracked tree matches the index.
+/// Unstaged diff of tracked `/workspace` files (`git diff`).
 #[tauri::command]
 async fn container_git_diff_unstaged(
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<String, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .git_diff_unstaged()
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Stage every `/workspace` change (`git add -A`) — session-detail "Stage all".
+/// Stage every `/workspace` change (`git add -A`).
 #[tauri::command]
 async fn container_git_stage_all(
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<(), String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .git_stage_all()
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Commit the staged `/workspace` changes (`git commit -m <message>`) — returns
-/// git's summary line on success, or its verbatim message as the error.
+/// Commit the staged `/workspace` changes (`git commit -m <message>`).
 #[tauri::command]
 async fn container_git_commit(
     message: String,
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<String, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .git_commit(&message)
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Push the current `/workspace` branch and open a GitHub PR for it — returns the
-/// new PR's URL. Honest descriptive error when a precondition is missing (no
-/// token / remote / branch) or GitHub rejects it.
+/// Push the current `/workspace` branch and open a GitHub PR for it.
 #[tauri::command]
 async fn container_git_open_pr(
     title: String,
     body: String,
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<String, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .git_open_pr(&title, &body)
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Processes running inside the runtime container (Containers view "Processes"
-/// card), from `docker top`. Errs only when the container is down.
+/// Processes running inside a workspace container (Containers view "Processes" card).
 #[tauri::command]
 async fn container_top(
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<Vec<ProcessInfo>, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .top()
         .await
         .map_err(|e| e.to_string())
 }
 
 /// Aggregate token-usage analytics (Usage view) from Claude Code's on-disk
-/// session transcripts. Token + turn + session counts are factual; cost is an
-/// estimate from a published rate table. Errs only when the container is down.
+/// session transcripts. Reads from `/config` (shared mount) via any running
+/// workspace container. Errs when no containers are running.
 #[tauri::command]
 async fn claude_usage(state: tauri::State<'_, AppState>) -> Result<ClaudeUsage, String> {
-    state.docker.claude_usage().await.map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.claude_usage().await.map_err(|e| e.to_string())
 }
 
-/// Past Claude conversations from on-disk transcripts (Resume screen), newest
-/// first, so one can be reopened with `--resume`. Errs only when the container
-/// is down.
+/// Past Claude conversations from on-disk transcripts (Resume screen).
 #[tauri::command]
 async fn claude_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<ClaudeSession>, String> {
-    state
-        .docker
-        .claude_sessions()
-        .await
-        .map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.claude_sessions().await.map_err(|e| e.to_string())
 }
 
-/// Live token tally for one Claude session (its `--session-id` transcript), for
-/// the Hub pane header. `None` when there is no usable data yet. Errs only when
-/// the container is down.
+/// Live token tally for one Claude session (its `--session-id` transcript).
 #[tauri::command]
 async fn claude_session_usage(
     id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<SessionUsage>, String> {
-    state
-        .docker
-        .claude_session_usage(&id)
-        .await
-        .map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.claude_session_usage(&id).await.map_err(|e| e.to_string())
 }
 
 /// Build the native island's honest one-line Claude metric (e.g.
@@ -638,42 +604,34 @@ fn island_metric(u: &SessionUsage) -> Option<String> {
     }
 }
 
-/// What the runtime's Claude is connected to (Integrations screen): the signed-in
-/// account + configured MCP servers, from on-disk config. Identity only, no
-/// credential. Errs only when the container is down.
+/// What Claude is connected to (Integrations screen): the signed-in account +
+/// configured MCP servers. Reads from `/config` via any running container.
 #[tauri::command]
 async fn claude_integrations(
     state: tauri::State<'_, AppState>,
 ) -> Result<ClaudeIntegrations, String> {
-    state
-        .docker
-        .claude_integrations()
-        .await
-        .map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.claude_integrations().await.map_err(|e| e.to_string())
 }
 
-/// The runtime Claude's configurable surface (Agent settings detail): active
-/// model, default permission mode, sub-agents, skills, plugins and installed
-/// marketplaces, all read from on-disk config. Factual only; empty collections
-/// are honest, not sample data. Errs only when the container is down.
+/// Claude's configurable surface (Agent settings detail): active model, default
+/// permission mode, sub-agents, skills, plugins. Reads from `/config`.
 #[tauri::command]
 async fn claude_agent_config(state: tauri::State<'_, AppState>) -> Result<AgentConfig, String> {
-    state
-        .docker
-        .claude_agent_config()
-        .await
-        .map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.claude_agent_config().await.map_err(|e| e.to_string())
 }
 
-/// Recent commits on `/workspace` (Dashboard "Recent commits"). `limit` defaults
-/// to 12 server-side and is clamped. Errs only when the container is down.
+/// Recent commits on `/workspace` (Dashboard "Recent commits").
 #[tauri::command]
 async fn container_git_log(
     limit: Option<u32>,
     state: tauri::State<'_, AppState>,
-    workspace: Option<String>,
+    workspace: String,
 ) -> Result<Vec<CommitInfo>, String> {
-    docker_container_for(&state, workspace.as_deref())
+    docker_container_for(&state, &workspace)
         .git_log(limit.unwrap_or(12))
         .await
         .map_err(|e| e.to_string())
@@ -681,9 +639,6 @@ async fn container_git_log(
 
 #[tauri::command]
 async fn list_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<SessionInfo>, String> {
-    // Multi-container: the shared runtime PLUS every per-workspace container,
-    // each session tagged with its workspace key so restore re-ties it to the
-    // right container. Flag-off → shared runtime only (unchanged).
     state
         .manager
         .list_all_sessions()
@@ -700,23 +655,14 @@ async fn create_session(
     alias: Option<String>,
     resume: Option<String>,
     session_id: Option<String>,
-    // Account profile id (Tier-3). Resolves to that profile's host env var NAME,
-    // which the session shell remaps the CLI's canonical credential var onto.
-    // Absent / unknown → the default (canonical host env), unchanged behavior.
     account: Option<String>,
-    // Per-workspace-container target. `workspace` is the workspace key; when the
-    // per-workspace flag is on this session is created in that workspace's own
-    // container (`codehub-ws-<key>`), lazily ensured here. `workspace_dir` is the
-    // host dir to bind at `/workspace` for a first-time create (None → a built-in
-    // per-key dir). Both absent / flag off → the shared runtime (unchanged).
-    workspace: Option<String>,
+    workspace: String,
     workspace_dir: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let cli = Cli::parse(&cli).map_err(|e| e.to_string())?;
     let mode = mode.as_deref().map(LaunchMode::parse).unwrap_or_default();
     let alias = alias.unwrap_or_default();
-    // Look up the chosen account profile's env var NAME (never a value).
     let account_var = account.and_then(|id| {
         state
             .config
@@ -726,21 +672,14 @@ async fn create_session(
             .find(|p| p.id == id)
             .map(|p| p.var_name)
     });
-    // Resolve the target container. A per-workspace container is created lazily
-    // here on first spawn; the shared runtime (no workspace label) is already up
-    // from app launch, so it is not re-ensured. Gating on the label — not on
-    // `workspace_dir_override` — because a per-ws container with no explicit dir
-    // now mounts the config-driven dir (override None) yet STILL needs ensuring.
     let lifecycle = state.manager.resolve(
-        workspace.as_deref(),
+        &workspace,
         workspace_dir.map(std::path::PathBuf::from),
     );
-    if lifecycle.workspace_label.is_some() {
-        lifecycle
-            .ensure_runtime()
-            .await
-            .map_err(|e| e.to_string())?;
-    }
+    lifecycle
+        .ensure_runtime()
+        .await
+        .map_err(|e| e.to_string())?;
     lifecycle
         .docker_client()
         .create_tmux_session(
@@ -754,10 +693,6 @@ async fn create_session(
         )
         .await
         .map_err(|e| e.to_string())?;
-    // Record the agent identity so the activity snapshot (and the companion
-    // window built on it) can show who each session is, not just its tmux name.
-    // For Claude, the transcript id it launched with (resumed id, else the fresh
-    // --session-id) rides along so satellite views can read a live token tally.
     let claude_id = resume.as_deref().or(session_id.as_deref());
     state
         .registry
@@ -769,18 +704,12 @@ async fn create_session(
 #[tauri::command]
 async fn kill_session(
     name: String,
-    // Per-workspace target (see `create_session`) — the container the session
-    // lives in, so tmux is killed there.
-    workspace: Option<String>,
+    workspace: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    // Drop local pane bookkeeping first so resize / write attempts mid-kill
-    // cannot resurrect a half-dead pane.
     state.registry.detach_by_session(&name).await;
-    // Purge event state so stale pending entries don't outlive the session and
-    // the HashMap key is eventually reclaimed.
     state.events.remove_session(&name);
-    docker_for(&state, workspace.as_deref())
+    docker_for(&state, &workspace)
         .kill_tmux_session(&name)
         .await
         .map_err(|e| e.to_string())
@@ -790,11 +719,10 @@ async fn kill_session(
 async fn rename_session(
     name: String,
     alias: String,
-    // Per-workspace target (see `create_session`).
-    workspace: Option<String>,
+    workspace: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    docker_for(&state, workspace.as_deref())
+    docker_for(&state, &workspace)
         .rename_tmux_window(&name, &alias)
         .await
         .map_err(|e| e.to_string())
@@ -805,13 +733,11 @@ async fn attach_session(
     name: String,
     cols: u16,
     rows: u16,
-    // Per-workspace target (see `create_session`). Must match the workspace the
-    // session was created in so the exec opens against the right container.
-    workspace: Option<String>,
+    workspace: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
-    let docker = docker_for(&state, workspace.as_deref());
+    let docker = docker_for(&state, &workspace);
     state
         .registry
         .attach(&docker, &name, cols, rows, Arc::new(TauriEmitter(app)))
@@ -839,9 +765,14 @@ async fn pty_resize(
     rows: u16,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    // resize_exec only needs the raw Docker handle (exec ids are globally unique).
+    let docker = Arc::new(DockerClient::from_docker(
+        state.manager.docker_handle(),
+        String::new(),
+    ));
     state
         .registry
-        .resize(&state.docker, &pane_id, cols, rows)
+        .resize(&docker, &pane_id, cols, rows)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1042,73 +973,58 @@ async fn session_activity_history(
     Ok(state.events.activity_history(session.as_deref()))
 }
 
-/// Codex usage analytics from rollout files — mirrors the claude* usage surface.
-/// Token + turn + session counts are factual from the on-disk rollout files;
-/// cost is an estimate from a published rate table. Errs only when the container
-/// is down.
+/// Codex usage analytics from rollout files.
 #[tauri::command]
 async fn codex_usage(state: tauri::State<'_, AppState>) -> Result<CodexUsage, String> {
-    state.docker.codex_usage().await.map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.codex_usage().await.map_err(|e| e.to_string())
 }
 
-/// Past Codex conversations from rollout files (Resume view), newest first.
-/// Errs only when the container is down.
+/// Past Codex conversations from rollout files (Resume view).
 #[tauri::command]
 async fn codex_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<CodexSession>, String> {
-    state
-        .docker
-        .codex_sessions()
-        .await
-        .map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.codex_sessions().await.map_err(|e| e.to_string())
 }
 
-/// Live per-session Codex tally from its rollout file; `None` when there is no
-/// usable data yet. `id` is the session directory path segment under
-/// `/root/.codex/sessions/` (e.g. "2026/05/24"). Errs only when the container
-/// is down.
+/// Live per-session Codex tally from its rollout file.
 #[tauri::command]
 async fn codex_session_usage(
     id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<CodexSessionUsage>, String> {
-    state
-        .docker
-        .codex_session_usage(&id)
-        .await
-        .map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.codex_session_usage(&id).await.map_err(|e| e.to_string())
 }
 
-/// Codex rate-limit / plan meters from the most recent rollout file; `None`
-/// when no data is on disk. The only on-disk quota source — no billing API.
-/// Errs only when the container is down.
+/// Codex rate-limit / plan meters from the most recent rollout file.
 #[tauri::command]
 async fn codex_rate_limits(
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<CodexRateLimits>, String> {
-    state
-        .docker
-        .codex_rate_limits()
-        .await
-        .map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.codex_rate_limits().await.map_err(|e| e.to_string())
 }
 
 /// GitHub connection status (Integrations). Reads GITHUB_TOKEN presence on the
-/// host — presence-only, the value is NEVER returned. When present, calls the
-/// GitHub API via the already-forwarded token in the container for identity.
+/// host — presence-only, the value is NEVER returned.
 #[tauri::command]
 async fn github_status(state: tauri::State<'_, AppState>) -> Result<GithubStatus, String> {
-    state
-        .docker
-        .github_status()
-        .await
-        .map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.github_status().await.map_err(|e| e.to_string())
 }
 
-/// Repos visible to the connected GitHub account (up to 30, sorted by push
-/// date). Empty when the token is absent or the container is down.
+/// Repos visible to the connected GitHub account (up to 30, sorted by push date).
 #[tauri::command]
 async fn github_repos(state: tauri::State<'_, AppState>) -> Result<Vec<GithubRepo>, String> {
-    state.docker.github_repos().await.map_err(|e| e.to_string())
+    let docker = state.manager.any_running_docker().await
+        .ok_or_else(|| "no running workspace container".to_string())?;
+    docker.github_repos().await.map_err(|e| e.to_string())
 }
 
 /// App update check (Settings → About). Honest-thin: returns the current
@@ -1170,11 +1086,6 @@ pub fn run() {
         )
         .init();
 
-    // CODEHUB_* is canonical; AVIARY_* kept as a fallback so existing user
-    // environments keep working after the rebrand.
-    let container_name = std::env::var("CODEHUB_CONTAINER")
-        .or_else(|_| std::env::var("AVIARY_CONTAINER"))
-        .unwrap_or_else(|_| DEFAULT_CONTAINER.into());
     let image = std::env::var("CODEHUB_IMAGE")
         .or_else(|_| std::env::var("AVIARY_IMAGE"))
         .unwrap_or_else(|_| DEFAULT_IMAGE.into());
@@ -1231,23 +1142,15 @@ pub fn run() {
             // profile env vars are read from it at container-create time.
             let config = Arc::new(ConfigStore::load(app_data.join("settings.json")));
 
-            // The manager owns the single daemon connection and produces a
-            // `Lifecycle` per workspace; the shared-runtime lifecycle every
-            // existing command uses today is `manager.default()`.
             let manager = Arc::new(LifecycleManager::new(
-                container_name.clone(),
                 image.clone(),
                 config_dir,
                 workspace_dir,
                 config.clone(),
             )?);
-            let lifecycle = manager.default();
-            let docker = Arc::new(lifecycle.docker_client());
             let registry = Arc::new(PtyRegistry::new());
             let events = Arc::new(EventsTracker::new());
 
-            // Read at notification time by the event tailer so a just-changed
-            // toggle applies immediately (config is moved into AppState below).
             let notify_config = config.clone();
 
             #[cfg(target_os = "macos")]
@@ -1255,12 +1158,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             let island_events = events.clone();
             #[cfg(target_os = "macos")]
-            let island_docker = docker.clone();
+            let island_manager = manager.clone();
 
             app.manage(AppState {
-                lifecycle: lifecycle.clone(),
                 manager: manager.clone(),
-                docker: docker.clone(),
                 registry,
                 config,
                 events: events.clone(),
@@ -1305,24 +1206,25 @@ pub fn run() {
                             .map(|p| p.session)
                             .collect();
 
-                        // Refresh the Claude metric line on the slow cadence, then
-                        // prune cache entries for sessions that no longer exist.
                         if ticks % METRIC_EVERY == 0 {
-                            for a in &activity {
-                                let Some(id) = a.claude_id.as_deref() else {
-                                    continue;
-                                };
-                                match island_docker.claude_session_usage(id).await {
-                                    Ok(Some(u)) => {
-                                        if let Some(m) = island_metric(&u) {
-                                            metric_cache.insert(a.session.clone(), m);
-                                        } else {
+                            let island_docker = island_manager.any_running_docker().await;
+                            if let Some(docker) = island_docker {
+                                for a in &activity {
+                                    let Some(id) = a.claude_id.as_deref() else {
+                                        continue;
+                                    };
+                                    match docker.claude_session_usage(id).await {
+                                        Ok(Some(u)) => {
+                                            if let Some(m) = island_metric(&u) {
+                                                metric_cache.insert(a.session.clone(), m);
+                                            } else {
+                                                metric_cache.remove(&a.session);
+                                            }
+                                        },
+                                        _ => {
                                             metric_cache.remove(&a.session);
-                                        }
-                                    },
-                                    _ => {
-                                        metric_cache.remove(&a.session);
-                                    },
+                                        },
+                                    }
                                 }
                             }
                             let live: HashSet<&str> =
@@ -1356,24 +1258,28 @@ pub fn run() {
                 });
             }
 
-            // Kick off runtime provisioning in background; frontend listens for status events.
+            // Daemon reachability check — containers are created on demand by
+            // create_session, so we just verify Docker is up and emit a synthetic
+            // "running" status to trigger the frontend bootstrap (session restore).
             let handle = app.handle().clone();
+            let startup_manager = manager.clone();
             tauri::async_runtime::spawn(async move {
-                match lifecycle.ensure_runtime().await {
-                    Ok(status) => {
-                        let _ = handle.emit("codehub://lifecycle", &status);
-                    },
-                    Err(e) => {
-                        tracing::error!("ensure_runtime failed: {e}");
-                        let _ = handle.emit("codehub://lifecycle-error", e.to_string());
-                    },
+                let info = startup_manager.docker_info().await;
+                if info.reachable {
+                    let status = ContainerStatus {
+                        state: lifecycle::ContainerState::Running,
+                        id: None,
+                        image: image.clone(),
+                        name: "daemon".to_string(),
+                    };
+                    let _ = handle.emit("codehub://lifecycle", &status);
+                } else {
+                    let _ = handle.emit("codehub://lifecycle-error", "Docker daemon unreachable — is Docker Desktop running?".to_string());
                 }
             });
 
-            // Start the agent-event hook tail (§7). A reconciler fans a tail out
-            // to the shared runtime AND every live per-workspace container (each
-            // keeps its events in its own container-local /tmp/codehub/events),
-            // feeding the EventsTracker. Retries on disconnect.
+            // Start the agent-event hook tail — reconciler fans a tail out to
+            // every live workspace container, feeding the EventsTracker.
             events::start_event_tailer(
                 manager.clone(),
                 events,
@@ -1390,7 +1296,6 @@ pub fn run() {
             container_restart,
             docker_info,
             app_info,
-            per_workspace_enabled,
             get_config,
             set_config,
             pick_directory,

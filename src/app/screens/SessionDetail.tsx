@@ -7,10 +7,9 @@
  * (container_git_stage_all / _commit / _open_pr).
  *
  * Honesty notes:
- *  • CodeHub runs every session on ONE shared runtime, so the diff + staging +
- *    commit + PR all act on the runtime's single /workspace — they are
- *    workspace-wide, not per-session. Labelled accordingly (the design assumes a
- *    per-agent worktree CodeHub doesn't have).
+ *  • Each workspace runs in its own per-workspace container, so the diff +
+ *    staging + commit + PR all act on that workspace's /workspace — they are
+ *    workspace-wide, not per-session.
  *  • The header metric strip (ctx / turn / tokens / edits) IS per-session and
  *    REAL for Claude — read from this session's transcript via useSessionUsage.
  *    Omitted for non-Claude CLIs / before the first response. ctx is a bare count
@@ -58,8 +57,8 @@ export function SessionDetail({ session }: { session: string }) {
   const claudeId = activity?.claudeId ?? (meta?.cli === "claude" ? meta.claudeId : undefined);
   const usage = useSessionUsage(claudeId);
 
-  // This session's container (per-workspace mode); undefined → shared runtime.
-  // Every git/fs call below routes to it so the diff reflects THIS workspace.
+  // This session's container. Every git/fs call below routes to it so the diff
+  // reflects THIS workspace.
   const containerKey = meta?.containerKey;
 
   // Branch (+ commits ahead of upstream) for this session's /workspace.
@@ -537,7 +536,7 @@ export function SessionDetail({ session }: { session: string }) {
         </div>
       </div>
 
-      {/* status bar — workspace-wide live runtime facts (one shared container) */}
+      {/* status bar — workspace-wide live runtime facts (per-workspace container) */}
       <div
         className="mono"
         style={{
@@ -555,13 +554,13 @@ export function SessionDetail({ session }: { session: string }) {
       >
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <StatusDot status={running ? "live" : "off"} pulse={running} />
-          {status?.name ?? "codehub-runtime"}
+          {status?.name ?? "—"}
         </span>
         <span className="tnum">
           cpu {stats ? `${stats.cpuPct.toFixed(0)}%` : "—"} · mem{" "}
           {stats ? fmtMem(stats.memUsed, stats.memLimit) : "—"}
         </span>
-        <span style={{ color: "var(--fg-3)" }}>workspace-wide — one shared /workspace</span>
+        <span style={{ color: "var(--fg-3)" }}>workspace-wide</span>
         <span style={{ flex: 1 }} />
         <span>⌘A stage · ⌘⏎ commit · Esc back</span>
       </div>

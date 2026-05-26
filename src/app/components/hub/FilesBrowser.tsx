@@ -32,7 +32,7 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
   const [file, setFile] = useState<string | null>(null);
   const [body, setBody] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  // Browse the active workspace's container; undefined → shared runtime.
+  // Browse the active workspace's container.
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
 
   // Load the listing whenever the directory (or active container) changes.

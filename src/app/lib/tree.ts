@@ -41,14 +41,14 @@ export interface Workspace {
   groups: Group[];
   activeGroupId: string;
   // Per-workspace-container ROUTING key — the container every pane of this
-  // workspace lives in (`codehub-ws-<key>` under the flag). Owned by the
-  // workspace, NOT derived from `id`: a RESTORED workspace gets a fresh `id` but
-  // keeps the original container key (recovered from the `codehub.workspace`
-  // label). `undefined` means the shared runtime (flag off, or a shared-adopted
-  // restore). New panes (split / add-to-group) route by THIS so they join the
-  // workspace's container even when it currently has no panes — deriving the key
-  // from an existing pane breaks once the workspace is emptied.
-  containerKey?: string;
+  // workspace lives in (`codehub-ws-<key>`). Owned by the workspace, NOT derived
+  // from `id`: a RESTORED workspace gets a fresh `id` but keeps the original
+  // container key (recovered from the `codehub.workspace` label). New panes
+  // (split / add-to-group) route by THIS so they join the workspace's container
+  // even when it currently has no panes — deriving the key from an existing pane
+  // breaks once the workspace is emptied. Always defined: every workspace has
+  // its own container.
+  containerKey: string;
 }
 
 export interface SessionMeta {
@@ -61,12 +61,11 @@ export interface SessionMeta {
   groupId: string;
   // Per-workspace-container ROUTING key — the workspace key this session was
   // created/attached with, so kill/rename target the same container as attach.
-  // Normally equals `workspaceId`; `undefined` means the shared runtime, which
-  // is the case for sessions ADOPTED at startup (restore lists the shared
-  // container, so they live there, NOT in a per-workspace container keyed by the
-  // fresh `workspaceId` the restore loop assigns). Decoupling the routing key
-  // from the UI workspace id is what stops restored sessions mis-routing.
-  containerKey?: string;
+  // Normally equals the workspace's containerKey; decoupling the routing key from
+  // the UI workspace id is what stops restored sessions mis-routing (a restored
+  // workspace gets a fresh `workspaceId` but keeps the original container key).
+  // Always defined: every session lives in a per-workspace container.
+  containerKey: string;
   // Claude conversation id this session was launched with (`--session-id`, or
   // the id it resumed). Lets the Hub read this session's own transcript for a
   // live token tally. Only set for Claude sessions.

@@ -37,9 +37,8 @@ pub struct SessionInfo {
     /// 0 when tmux didn't report it — the UI then omits the uptime rather than
     /// showing a bogus age.
     pub created: i64,
-    /// Workspace key of the per-workspace container this session lives in, read
-    /// from the container's `codehub.workspace` label by multi-container listing
-    /// (`LifecycleManager::list_all_sessions`). `None` for the shared runtime.
+    /// Workspace key of the container this session lives in, read from the
+    /// container's `codehub.workspace` label by `LifecycleManager::list_all_sessions`.
     /// Startup restore uses it to re-tie a session to its original workspace —
     /// it becomes the session's routing `containerKey` so kill/rename target the
     /// container the session actually lives in.
