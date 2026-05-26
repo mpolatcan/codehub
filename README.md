@@ -2,11 +2,11 @@
 
 A home for your AI coding agents.
 
-Tauri desktop app that runs **Claude Code**, **Codex**, and **Antigravity** CLIs inside a single sandboxed Docker container, multiplexed via tmux. Each pane = one tmux session = one agent; tabs hold one or more split panes. CodeHub spawns and manages the container itself — no `docker compose` step.
+Tauri desktop app that runs **Claude Code**, **Codex**, and **Antigravity** CLIs in sandboxed Docker containers, multiplexed via tmux. Each pane = one tmux session = one agent; tabs hold one or more split panes. By default each workspace gets its own container (`codehub-ws-<key>`) so its cpu/mem/network/state report as real, isolated data; set `CODEHUB_PER_WORKSPACE_CONTAINER` to an off-value to fall back to a single shared `codehub-runtime` container. CodeHub spawns and manages containers itself — no `docker compose` step.
 
 ## Why
 
-Running multiple agent CLIs locally is messy: separate terminals, separate auth, no unified view, no isolation. CodeHub isolates each agent in its own tmux session inside one container, and gives you a single window to switch between them.
+Running multiple agent CLIs locally is messy: separate terminals, separate auth, no unified view, no isolation. CodeHub isolates each agent in a tmux session inside a container — one container per workspace by default — and gives you a single window to switch between them.
 
 ## Architecture
 
@@ -24,7 +24,7 @@ flowchart LR
         PR["PtyRegistry<br/>pane_id map"]
     end
 
-    subgraph runtime["codehub-runtime container"]
+    subgraph runtime["per-workspace container · codehub-ws-&lt;key&gt;<br/>(or shared codehub-runtime when flag off)"]
         direction TB
         TMUX["tmux server<br/>idle until first session"]
         CLIS["claude · codex<br/>antigravity"]
@@ -73,10 +73,11 @@ sequenceDiagram
     autonumber
     participant UI as Frontend
     participant B as Backend
-    participant T as tmux (in container)
+    participant T as tmux (in workspace container)
 
     UI->>UI: launcher — agent (claude/codex/antigravity) × mode (standard/auto/yolo)
-    UI->>B: create_session(name, cli, mode)
+    UI->>B: create_session(name, cli, mode, workspace)
+    Note right of B: resolve + ensure codehub-ws-&lt;key&gt;<br/>(shared runtime when flag off)
     B->>T: docker exec — tmux new-session -d -s NAME CLI
     UI->>B: attach_session(name, cols, rows)
     B->>T: bollard exec tty=true — tmux attach -t NAME
@@ -96,7 +97,7 @@ sequenceDiagram
 - **New session** — the `+` popover (or ⌘T) picks an agent and a permission mode.
 - **Permission modes** — *Standard* (agent asks first), *Auto* (auto-accepts edits, still sandboxed), *YOLO* (skips all approvals; the container is the boundary). Antigravity is Standard-only until its flags are verified.
 - **Splits** — split any pane (its head controls, or ⌘\) into a binary tree; drag the divider to resize.
-- **Workspaces** — the welcome screen pins and reopens saved workspaces (name + directory, persisted); opening one re-points the shared container's `/workspace` mount. New-workspace wizard via ⌘⇧N.
+- **Workspaces** — the welcome screen pins and reopens saved workspaces (name + directory, persisted); each runs in its own container with `/workspace` bound to its directory (or re-points the shared container's mount when per-workspace is off). New-workspace wizard via ⌘⇧N.
 - **Hub panels** — a Files browser (⌘E), a workspace Diff viewer (⌘D), and a Resume drawer (⌘R) of past Claude/Codex sessions, docked beside the panes.
 - **Command palette** (⌘K) — jump to a view, focus a running session, spawn an agent, or open a recent/connected repo.
 - **Views** — Hub, Dashboard, Workspaces (container inspector), Usage (token/cost rollup read from session transcripts), and Settings (agents · runtime · integrations · appearance). Dark and light themes.
@@ -146,8 +147,9 @@ Override defaults:
 
 | Env var | Purpose | Default |
 |---|---|---|
-| `CODEHUB_CONTAINER` | Container name | `codehub-runtime` |
-| `CODEHUB_IMAGE` | Image tag to use | `ghcr.io/mpolatcan/codehub-runtime:0.1.3` |
+| `CODEHUB_PER_WORKSPACE_CONTAINER` | One container per workspace (`codehub-ws-<key>`); off-value (`0`/`false`/`off`/`no`) → single shared runtime | ON |
+| `CODEHUB_CONTAINER` | Shared-runtime container name (per-workspace off) | `codehub-runtime` |
+| `CODEHUB_IMAGE` | Image tag to use (all containers) | `ghcr.io/mpolatcan/codehub-runtime:0.1.3` |
 | `CODEHUB_NETWORK_MODE` | Docker network mode | `bridge` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Skip `/login` in Claude Code | unset |
 

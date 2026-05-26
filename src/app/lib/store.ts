@@ -21,6 +21,7 @@ import type {
   PendingPrompt,
   SavedWorkspace,
   SessionActivity,
+  SessionInfo,
   UpdateStatus,
   WorkspaceInfo,
 } from "./ipc";
@@ -61,6 +62,10 @@ interface CodeHubState {
   activeWorkspaceId: string | null;
   sessionMeta: Record<string, SessionMeta>;
   status: ContainerStatus | null;
+  // Whether per-workspace-container mode is active (CODEHUB_PER_WORKSPACE_CONTAINER).
+  // Loaded once at bootstrap. Gates whether a new tab gets its own containerKey;
+  // flag OFF, sessions live in the shared runtime and carry containerKey undefined.
+  perWorkspace: boolean;
   error: string | null;
   view: HubView;
   // Selected Settings sub-pane (NAV_GROUPS key in Settings.tsx). Lifted to the
@@ -285,6 +290,10 @@ export const useStore = create<CodeHubState>((set, get) => {
     workspaceId: string,
     groupId: string,
     claudeId?: string,
+    // Routing key for the session's container (see SessionMeta.containerKey).
+    // Pass the same key used for createSession/attach: the workspace id for a
+    // freshly-spawned session, or undefined for a shared-container adoption.
+    containerKey?: string,
   ) => {
     const num = get().sessionCounter;
     const meta: SessionMeta = {
@@ -295,6 +304,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       workspaceId,
       groupId,
       claudeId,
+      containerKey,
     };
     set((s) => ({ sessionMeta: { ...s.sessionMeta, [name]: meta } }));
   };
@@ -310,6 +320,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     activeWorkspaceId: null,
     sessionMeta: {},
     status: null,
+    perWorkspace: false,
     error: null,
     view: "hub",
     settingsSection: "general",
@@ -402,6 +413,15 @@ export const useStore = create<CodeHubState>((set, get) => {
       // A resume carries its id via --resume; a fresh Claude session pins a new
       // one via --session-id (same value, so we can read its transcript back).
       const sessionId = resume ? undefined : claudeId;
+      // The workspace id is computed up front so it can be passed as the
+      // per-workspace-container key to createSession/attach: every session in
+      // this tab lives in one container (`codehub-ws-<id>`) when the flag is on.
+      const plate = get().plateCounter + 1;
+      const wsId = `ws-${plate}-${Date.now().toString(36)}`;
+      // Container key only when per-workspace mode is on. Flag OFF, the session
+      // physically lives in the shared runtime (backend resolve() falls back),
+      // so it must carry `undefined` — the documented "shared runtime" marker.
+      const containerKey = get().perWorkspace ? wsId : undefined;
       await ipc.createSession(
         name,
         cli,
@@ -410,19 +430,22 @@ export const useStore = create<CodeHubState>((set, get) => {
         resume,
         sessionId,
         account,
+        containerKey,
       );
-      await registry.spawnPane(name);
+      await registry.spawnPane(name, containerKey);
       prefillPrompt(name, initialPrompt);
 
-      const plate = get().plateCounter + 1;
       const group = makeGroup("Group 1", leafNode(name), name);
       const ws: Workspace = {
-        id: `ws-${plate}-${Date.now().toString(36)}`,
+        id: wsId,
         plate,
         groups: [group],
         activeGroupId: group.id,
+        // Per-workspace mode: container keyed by id (= what we created/attached
+        // with). Splits + later panes route by this. Shared mode: undefined.
+        containerKey,
       };
-      registerMeta(name, cli, mode, ws.id, group.id, claudeId);
+      registerMeta(name, cli, mode, ws.id, group.id, claudeId, containerKey);
       // New tab becomes active — clear focus mode / drag from the old workspace.
       resetGridOverlays();
       set((s) => ({
@@ -439,6 +462,10 @@ export const useStore = create<CodeHubState>((set, get) => {
       if (!ws || !grp || !grp.root) return;
       const name = uniqueName(cli);
       const claudeId = claudeIdFor(cli);
+      // Route to the workspace's container, not `ws.id` — they differ for a
+      // restored workspace (fresh `ws.id`, original key kept on the workspace).
+      // Splitting must land the new pane in the same container as its siblings.
+      const containerKey = ws.containerKey;
       await ipc.createSession(
         name,
         cli,
@@ -447,10 +474,11 @@ export const useStore = create<CodeHubState>((set, get) => {
         undefined,
         claudeId,
         account,
+        containerKey,
       );
-      await registry.spawnPane(name);
+      await registry.spawnPane(name, containerKey);
       prefillPrompt(name, initialPrompt);
-      registerMeta(name, cli, mode, ws.id, grp.id, claudeId);
+      registerMeta(name, cli, mode, ws.id, grp.id, claudeId, containerKey);
 
       set((s) => ({
         workspaces: updateWs(s.workspaces, ws.id, (w) =>
@@ -478,7 +506,9 @@ export const useStore = create<CodeHubState>((set, get) => {
     closeSession: async (name) => {
       const meta = get().sessionMeta[name];
       try {
-        await ipc.killSession(name);
+        // Kill in the session's own container (its routing key — undefined for a
+        // shared-container adoption, so it can't mis-route to a per-workspace one).
+        await ipc.killSession(name, meta?.containerKey);
       } catch (e) {
         console.warn(`kill_session(${name}) failed:`, e);
       }
@@ -541,7 +571,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       }
       for (const session of workspaceLeaves(ws)) {
         try {
-          await ipc.killSession(session);
+          await ipc.killSession(session, get().sessionMeta[session]?.containerKey);
         } catch (e) {
           console.warn(`kill_session(${session}) failed:`, e);
         }
@@ -618,9 +648,10 @@ export const useStore = create<CodeHubState>((set, get) => {
       });
       // Mirror the alias onto the tmux window name so the in-pane status bar
       // (#W) updates too. Best-effort: a backend failure must not roll back the
-      // UI rename the user just made.
+      // UI rename the user just made. Target the session's per-workspace container.
       if (changed) {
-        void ipc.renameSession(name, next).catch((e) => {
+        const workspace = get().sessionMeta[name]?.containerKey;
+        void ipc.renameSession(name, next, workspace).catch((e) => {
           console.warn(`rename_session(${name}) failed:`, e);
         });
       }
@@ -687,7 +718,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       if (!ws || !grp) return;
       for (const session of leavesList(grp.root)) {
         try {
-          await ipc.killSession(session);
+          await ipc.killSession(session, get().sessionMeta[session]?.containerKey);
         } catch (e) {
           console.warn(`kill_session(${session}) failed:`, e);
         }
@@ -764,6 +795,11 @@ export const useStore = create<CodeHubState>((set, get) => {
       if (!ws || !grp) return;
       const name = uniqueName(cli);
       const claudeId = claudeIdFor(cli);
+      // Route to the workspace's container (owned by the workspace), not `ws.id`
+      // — they diverge for a restored workspace. The new pane joins the
+      // workspace's container even when this group, or the whole workspace, is
+      // currently empty.
+      const containerKey = ws.containerKey;
       await ipc.createSession(
         name,
         cli,
@@ -772,10 +808,11 @@ export const useStore = create<CodeHubState>((set, get) => {
         undefined,
         claudeId,
         account,
+        containerKey,
       );
-      await registry.spawnPane(name);
+      await registry.spawnPane(name, containerKey);
       prefillPrompt(name, initialPrompt);
-      registerMeta(name, cli, mode, ws.id, grp.id, claudeId);
+      registerMeta(name, cli, mode, ws.id, grp.id, claudeId, containerKey);
       set((s) => ({
         workspaces: updateWs(s.workspaces, wsId, (w) =>
           updateGroup(w, groupId, (g) => ({
@@ -1053,6 +1090,7 @@ async function bootstrap(
     workspaceId: string,
     groupId: string,
     claudeId?: string,
+    containerKey?: string,
   ) => void,
 ) {
   // Tier-1 reads (BACKEND_PLAN.md): daemon info, per-CLI version + key presence.
@@ -1086,26 +1124,63 @@ async function bootstrap(
 
   try {
     const sessions = await ipc.listSessions();
+    // Group adopted sessions by the workspace they belong to. Per-workspace
+    // sessions (s.workspace set, from the container's `codehub.workspace` label)
+    // sharing a key reconstruct INTO ONE workspace tab — that re-creates the
+    // workspace the container represents, and ties every pane to the right
+    // container via `containerKey`. Shared-runtime sessions (s.workspace
+    // undefined, e.g. flag off) have no recoverable workspace identity, so each
+    // becomes its own tab as before — keyed uniquely so they never merge.
+    const byWorkspace = new Map<string, SessionInfo[]>();
+    let soloSeq = 0;
     for (const s of sessions) {
-      const cli =
-        (["claude", "codex", "antigravity"] as Cli[]).find((c) => s.name.startsWith(c)) ?? "claude";
-      await registry.spawnPane(s.name);
+      const key = s.workspace ?? `__solo-${soloSeq++}`;
+      const members = byWorkspace.get(key) ?? [];
+      members.push(s);
+      byWorkspace.set(key, members);
+    }
+
+    for (const members of byWorkspace.values()) {
+      const containerKey = members[0].workspace; // undefined for solo/shared
+      for (const s of members) await registry.spawnPane(s.name, containerKey);
+      // Build a default split tree: the saved layout (ratios/dirs) isn't
+      // persisted, so stack the members alternating row/col at even ratios.
+      const root = members.slice(1).reduce<LayoutNode>(
+        (acc, s, i) => ({
+          kind: "split",
+          id: nid(),
+          dir: i % 2 === 0 ? "row" : "col",
+          ratio: 0.5,
+          a: acc,
+          b: leafNode(s.name),
+        }),
+        leafNode(members[0].name),
+      );
       const plate = get().plateCounter + 1;
-      const group = makeGroup("Group 1", leafNode(s.name), s.name);
+      const group = makeGroup("Group 1", root, members[0].name);
       const ws: Workspace = {
         id: `ws-${plate}-${Date.now().toString(36)}`,
         plate,
         groups: [group],
         activeGroupId: group.id,
+        // Restored: keep the ORIGINAL container key (from the label) so splits +
+        // later panes rejoin this workspace's container — surviving even after
+        // every pane is closed. Undefined for shared-adopted sessions.
+        containerKey,
       };
       set((st) => ({
         plateCounter: plate,
-        sessionCounter: st.sessionCounter + 1,
+        sessionCounter: st.sessionCounter + members.length,
         workspaces: [...st.workspaces, ws],
         activeWorkspaceId: st.activeWorkspaceId ?? ws.id,
       }));
       // Mode of a pre-existing tmux session is unknown; show it as Standard.
-      registerMeta(s.name, cli, "standard", ws.id, group.id);
+      for (const s of members) {
+        const cli =
+          (["claude", "codex", "antigravity"] as Cli[]).find((c) => s.name.startsWith(c)) ??
+          "claude";
+        registerMeta(s.name, cli, "standard", ws.id, group.id, undefined, containerKey);
+      }
     }
     // "Reopen last workspace" (default on): re-select the tab whose session was
     // focused at quit, if it's among the adopted ones. Otherwise the first
@@ -1133,6 +1208,18 @@ export async function initLifecycle(): Promise<void> {
   const { setStatus, setError, loadConfig } = useStore.getState();
   // UI prefs don't depend on the container, so load them eagerly at app start.
   void loadConfig();
+  // Runtime mode flag — drives whether a new tab gets a per-workspace
+  // containerKey. This MUST be resolved before the first spawn so a flag-ON
+  // session isn't mis-keyed as shared. A spawn is only reachable once status is
+  // "running" (newPlate guards on isRunning), and both the event subscription
+  // and the initial status read below can flip that — so we AWAIT the flag here,
+  // strictly ordering it before either. It's an instant env read; failure leaves
+  // the OFF default (shared).
+  try {
+    useStore.setState({ perWorkspace: await ipc.perWorkspaceEnabled() });
+  } catch {
+    // Keep the OFF default — shared runtime, containerKey undefined.
+  }
   void onLifecycle(setStatus);
   void onLifecycleError(setError);
   try {

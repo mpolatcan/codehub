@@ -28,6 +28,7 @@ import {
   type MountInfo,
   type ProcessInfo,
   type RuntimeHealth,
+  type WorkspaceContainer,
   ipc,
 } from "@/app/lib/ipc";
 import { useOverlay } from "@/app/lib/overlay";
@@ -78,21 +79,98 @@ export function ContainerInspector() {
   const newPlate = useStore((s) => s.newPlate);
   const setNewWorkspace = useOverlay((s) => s.setNewWorkspace);
 
-  const name = status?.name ?? "codehub-runtime";
-  const state = status?.state ?? "missing";
-  const dot = STATE_DOT[state];
-  const image = status?.image ?? "—";
-  const id = status?.id ?? null;
-  const sessions = Object.entries(sessionMeta);
+  // Fleet of per-workspace containers (flag-gated server-side; empty when the
+  // per-workspace flag is off → only the shared runtime exists). Polled ~3s so a
+  // lifecycle action (start/stop/restart/remove) shows up without a manual
+  // refresh. Each entry already carries its container's real state/id/image.
+  const [fleet, setFleet] = useState<WorkspaceContainer[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const tick = () => {
+      ipc
+        .listWorkspaceContainers()
+        .then((c) => alive && setFleet(c))
+        .catch(() => alive && setFleet([]));
+    };
+    tick();
+    const h = setInterval(tick, 3000);
+    return () => {
+      alive = false;
+      clearInterval(h);
+    };
+  }, []);
 
-  // Live container_stats come from the single app-wide poll (useContainerStatsPoll)
-  // via the store — the gauges READ it rather than firing their own poll.
-  const stats = useStore((s) => s.containerStats);
-  // Rolling window of the last N samples (newest last) so the gauges can draw a
-  // real sparkline of where each metric has actually been — not a fabricated
-  // series. Cleared whenever the runtime goes down so a restart starts fresh.
+  // Selected container: `null` = the shared runtime (default), else a workspace
+  // key. Switching clears the live stats + sparkline window so two containers'
+  // series never splice together.
+  const [selected, setSelected] = useState<string | null>(null);
+  const [wsStats, setWsStats] = useState<ContainerStats | null>(null);
   const [history, setHistory] = useState<ContainerStats[]>([]);
+  const selectContainer = (key: string | null) => {
+    setSelected(key);
+    setWsStats(null);
+    setHistory([]);
+  };
+  const selectedWs = selected ? fleet.find((c) => c.key === selected) : undefined;
+  // A selected workspace that gets pruned (or the flag flipping off) falls back
+  // to the shared runtime so the detail pane never points at a vanished container.
+  useEffect(() => {
+    if (selected && !fleet.some((c) => c.key === selected)) {
+      setSelected(null);
+      setWsStats(null);
+      setHistory([]);
+    }
+  }, [selected, fleet]);
+
+  // Resolved identity for the detail pane: the shared runtime's status (app-wide
+  // store poll) when nothing is selected, else the selected workspace container's
+  // status carried in the fleet listing (no extra status poll needed).
+  const vmStatus = selected ? selectedWs?.status : status;
+  const name = vmStatus?.name ?? selected ?? "codehub-runtime";
+  const state: ContainerState = vmStatus?.state ?? "missing";
+  const dot = STATE_DOT[state];
+  const image = vmStatus?.image ?? "—";
+  const id = vmStatus?.id ?? null;
   const running = state === "running";
+
+  // Sessions attached to the container in view, routed by containerKey: the
+  // shared runtime (selected === null) shows sessions with no per-workspace key;
+  // a workspace shows the ones created/attached against its key.
+  const sessions = useMemo(
+    () =>
+      Object.entries(sessionMeta).filter(([, m]) =>
+        selected ? m.containerKey === selected : !m.containerKey,
+      ),
+    [sessionMeta, selected],
+  );
+
+  // Live stats: the shared runtime reads the app-wide store poll; a selected
+  // workspace polls its own container_stats (~2s) by key. `null` → em-dash gauges.
+  const sharedStats = useStore((s) => s.containerStats);
+  useEffect(() => {
+    if (!selected || !running) {
+      setWsStats(null);
+      return;
+    }
+    let alive = true;
+    const tick = () => {
+      ipc
+        .containerStats(selected)
+        .then((s) => alive && setWsStats(s))
+        .catch(() => alive && setWsStats(null));
+    };
+    tick();
+    const h = setInterval(tick, STATS_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(h);
+    };
+  }, [selected, running]);
+  const stats = selected ? wsStats : sharedStats;
+
+  // Rolling window of the last N samples (newest last) so the gauges draw a real
+  // sparkline of where each metric has actually been — not a fabricated series.
+  // Cleared whenever the container goes down so a restart starts fresh.
   useEffect(() => {
     if (!running || !stats) {
       setHistory([]);
@@ -119,7 +197,7 @@ export function ContainerInspector() {
     let alive = true;
     const tick = () => {
       ipc
-        .containerLogs(200)
+        .containerLogs(200, selected ?? undefined)
         .then((l) => alive && setLogs(l))
         .catch(() => alive && setLogs(null));
     };
@@ -129,7 +207,7 @@ export function ContainerInspector() {
       alive = false;
       clearInterval(h);
     };
-  }, [running]);
+  }, [running, selected]);
 
   // Mounts are fixed for the container's lifetime — fetch once when it comes up,
   // no polling. `null` while down / before the read → fall back to the known
@@ -142,13 +220,13 @@ export function ContainerInspector() {
     }
     let alive = true;
     ipc
-      .containerMounts()
+      .containerMounts(selected ?? undefined)
       .then((m) => alive && setMounts(m))
       .catch(() => alive && setMounts(null));
     return () => {
       alive = false;
     };
-  }, [running]);
+  }, [running, selected]);
 
   // Image identity (tag/digest/created/size) is fixed for the container's
   // lifetime — fetch once like mounts; `null` while down / pre-read → em-dash.
@@ -160,13 +238,13 @@ export function ContainerInspector() {
     }
     let alive = true;
     ipc
-      .containerImage()
+      .containerImage(selected ?? undefined)
       .then((i) => alive && setImageInfo(i))
       .catch(() => alive && setImageInfo(null));
     return () => {
       alive = false;
     };
-  }, [running]);
+  }, [running, selected]);
 
   // Liveness — uptime, restart count, OOM flag. Polled ~5s (one cheap `docker
   // inspect`) rather than fetched once: an auto-restart bumps restartCount,
@@ -184,7 +262,7 @@ export function ContainerInspector() {
     let alive = true;
     const tick = () => {
       ipc
-        .containerHealth()
+        .containerHealth(selected ?? undefined)
         .then((h) => alive && setHealth(h))
         .catch(() => alive && setHealth(null));
     };
@@ -194,7 +272,7 @@ export function ContainerInspector() {
       alive = false;
       clearInterval(h);
     };
-  }, [running]);
+  }, [running, selected]);
 
   // Processes via `docker top`, polled while running + mounted (~3s). Same
   // one-shot contract as stats/logs; `null` while down / pre-first-read → honest
@@ -208,7 +286,7 @@ export function ContainerInspector() {
     let alive = true;
     const tick = () => {
       ipc
-        .containerTop()
+        .containerTop(selected ?? undefined)
         .then((p) => alive && setProcs(p))
         .catch(() => alive && setProcs(null));
     };
@@ -218,7 +296,7 @@ export function ContainerInspector() {
       alive = false;
       clearInterval(h);
     };
-  }, [running]);
+  }, [running, selected]);
 
   const open = (session: string) => {
     focusSession(session);
@@ -226,11 +304,53 @@ export function ContainerInspector() {
   };
 
   // Exec shell — spawn a plain bash pane in the shared runtime and jump to it,
-  // the same path the Hub's "+ shell" control uses (newPlate("shell")).
+  // the same path the Hub's "+ shell" control uses (newPlate("shell")). Offered
+  // only for the shared runtime: newPlate opens a fresh workspace, not a shell in
+  // an arbitrary existing per-workspace container, so wiring it to a selected
+  // workspace would land the shell in the wrong container.
   const execShell = () => {
     void newPlate("shell", "standard");
     setView("hub");
   };
+
+  // Lifecycle routing: the shared runtime uses the store actions (which also keep
+  // store.status fresh); a selected workspace hits its own container by key (the
+  // ~3s fleet poll reflects the new state). Remove (prune) only applies to a
+  // per-workspace container, never the shared runtime.
+  // Per-workspace lifecycle ops don't emit codehub://lifecycle (that event tracks
+  // the shared runtime), so refetch the fleet immediately for snappy feedback
+  // instead of waiting for the ~3s poll.
+  const loadFleet = () =>
+    ipc
+      .listWorkspaceContainers()
+      .then(setFleet)
+      .catch(() => setFleet([]));
+  const doStart = () =>
+    selected ? void ipc.containerStart(selected).then(loadFleet) : void startRuntime();
+  const doStop = () =>
+    selected ? void ipc.containerStop(selected).then(loadFleet) : void stopRuntime();
+  const doRestart = () =>
+    selected ? void ipc.containerRestart(selected).then(loadFleet) : void restartRuntime();
+  const doRemove = () => {
+    if (!selected) return;
+    void ipc.removeWorkspaceContainer(selected).then(() => {
+      selectContainer(null);
+      void loadFleet();
+    });
+  };
+
+  // Fleet counts for the header line: the shared runtime always counts as one
+  // real container; per-workspace containers add to it.
+  const runningCount =
+    (status?.state === "running" ? 1 : 0) +
+    fleet.filter((c) => c.status.state === "running").length;
+  const totalCount = 1 + fleet.length;
+  const hasFleet = fleet.length > 0;
+
+  // Per-card session groupings for the left list (each card shows ITS container's
+  // attached agents, independent of which card is selected).
+  const sessionsFor = (key: string | null) =>
+    Object.entries(sessionMeta).filter(([, m]) => (key ? m.containerKey === key : !m.containerKey));
 
   return (
     <main
@@ -250,7 +370,7 @@ export function ContainerInspector() {
             Workspaces
           </h1>
           <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
-            {state === "running" ? "1 running" : `0 running · ${state}`}
+            {`${runningCount}/${totalCount} running`}
             {dockerInfo?.version && ` · docker ${dockerInfo.version}`}
           </span>
           <span style={{ flex: 1 }} />
@@ -261,73 +381,49 @@ export function ContainerInspector() {
           </Button>
         </div>
         <p className="mono" style={{ margin: "6px 0 0", fontSize: 11, color: "var(--fg-3)" }}>
-          CodeHub runs every session on one shared runtime container.
+          {hasFleet
+            ? "Each workspace runs in its own container; the shared runtime hosts unscoped sessions."
+            : "CodeHub runs every session on one shared runtime container."}
         </p>
       </div>
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        {/* list — the single shared runtime */}
+        {/* list — the shared runtime + one card per per-workspace container */}
         <div
+          className="scroll"
           style={{
             flex: "0 0 320px",
             borderRight: "1px solid var(--bd-soft)",
             display: "flex",
             flexDirection: "column",
+            gap: 6,
+            overflow: "auto",
             padding: 8,
           }}
         >
-          <div
-            style={{
-              padding: "10px 12px",
-              borderRadius: 7,
-              background: "var(--bg-3)",
-              border: "1px solid var(--bd-strong)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-              <StatusDot status={dot} pulse={dot === "live"} />
-              <span
-                className="mono"
-                style={{ fontSize: 11.5, color: "var(--fg-0)", fontWeight: 500, flex: 1 }}
-              >
-                {name}
-              </span>
-              <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-                {/* split only the final :tag so a registry port (host:443/img) is safe */}
-                {image.replace(/:([^:/]+)$/, " $1")}
-              </span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginTop: 6,
-              }}
-            >
-              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                {sessions.length === 0 ? (
-                  <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                    no sessions
-                  </span>
-                ) : (
-                  sessions.map(([session, meta]) => (
-                    <AgentGlyph
-                      key={session}
-                      agent={meta.cli}
-                      size={11}
-                      color={`var(--a-${meta.cli})`}
-                    />
-                  ))
-                )}
-              </div>
-              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                {stats
-                  ? `cpu ${stats.cpuPct.toFixed(0)}% · mem ${fmtBytes(stats.memUsed)}`
-                  : "cpu — · mem —"}
-              </span>
-            </div>
-          </div>
+          <ContainerCard
+            active={selected === null}
+            onSelect={() => selectContainer(null)}
+            state={status?.state ?? "missing"}
+            name={status?.name ?? "codehub-runtime"}
+            image={status?.image ?? "—"}
+            agents={sessionsFor(null).map(([, m]) => m.cli)}
+            stats={selected === null ? sharedStats : null}
+          />
+          {fleet.map((c) => (
+            <ContainerCard
+              key={c.key}
+              active={selected === c.key}
+              onSelect={() => selectContainer(c.key)}
+              state={c.status.state}
+              name={c.status.name}
+              image={c.status.image}
+              agents={sessionsFor(c.key).map(([, m]) => m.cli)}
+              // Only the selected workspace polls live stats; others show em-dash
+              // rather than a fabricated number.
+              stats={selected === c.key ? wsStats : null}
+            />
+          ))}
         </div>
 
         {/* detail */}
@@ -372,11 +468,13 @@ export function ContainerInspector() {
             </div>
             <RuntimeControls
               state={state}
-              sessionCount={Object.keys(sessionMeta).length}
-              onStart={() => void startRuntime()}
-              onStop={() => void stopRuntime()}
-              onRestart={() => void restartRuntime()}
-              onExec={execShell}
+              sessionCount={sessions.length}
+              kind={selected ? "workspace" : "runtime"}
+              onStart={doStart}
+              onStop={doStop}
+              onRestart={doRestart}
+              onExec={selected ? undefined : execShell}
+              onRemove={selected ? doRemove : undefined}
             />
           </div>
 
@@ -982,27 +1080,44 @@ function CredRow({
 function RuntimeControls({
   state,
   sessionCount,
+  kind = "runtime",
   onStart,
   onStop,
   onRestart,
   onExec,
+  onRemove,
 }: {
   state: ContainerState;
   sessionCount: number;
+  // The container kind, for the confirm copy ("runtime" vs "workspace").
+  kind?: string;
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
-  onExec: () => void;
+  // Exec is only offered for the shared runtime (undefined → hidden).
+  onExec?: () => void;
+  // Remove (prune) is only offered for a per-workspace container (undefined →
+  // hidden), and only while it is stopped.
+  onRemove?: () => void;
 }) {
   const sessionsClause =
     sessionCount > 0
       ? ` This kills ${sessionCount} attached session${sessionCount === 1 ? "" : "s"}.`
       : "";
   const confirmStop = () => {
-    if (window.confirm(`Stop the runtime?${sessionsClause}`)) onStop();
+    if (window.confirm(`Stop the ${kind}?${sessionsClause}`)) onStop();
   };
   const confirmRestart = () => {
-    if (window.confirm(`Restart the runtime?${sessionsClause}`)) onRestart();
+    if (window.confirm(`Restart the ${kind}?${sessionsClause}`)) onRestart();
+  };
+  const confirmRemove = () => {
+    if (
+      onRemove &&
+      window.confirm(
+        `Remove this ${kind} container? Bind-mounted /workspace files are preserved; container-local state is lost.`,
+      )
+    )
+      onRemove();
   };
 
   if (state === "starting") {
@@ -1014,17 +1129,26 @@ function RuntimeControls({
   }
   if (state === "stopped" || state === "missing") {
     return (
-      <Button size="sm" onClick={onStart}>
-        {state === "missing" ? "Create & start" : "Start"}
-      </Button>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button size="sm" onClick={onStart}>
+          {state === "missing" ? "Create & start" : "Start"}
+        </Button>
+        {onRemove && state === "stopped" && (
+          <Button size="sm" variant="destructive" onClick={confirmRemove}>
+            Remove
+          </Button>
+        )}
+      </div>
     );
   }
   if (state === "running") {
     return (
       <div style={{ display: "flex", gap: 8 }}>
-        <Button size="sm" variant="outline" onClick={onExec}>
-          Exec shell
-        </Button>
+        {onExec && (
+          <Button size="sm" variant="outline" onClick={onExec}>
+            Exec shell
+          </Button>
+        )}
         <Button size="sm" variant="outline" onClick={confirmRestart}>
           Restart
         </Button>
@@ -1035,4 +1159,88 @@ function RuntimeControls({
     );
   }
   return null;
+}
+
+// One row in the left fleet list — the shared runtime or a per-workspace
+// container. A button (selectable); the active one gets an accent border. Stats
+// are passed in (null → em-dash) rather than fetched here so each card stays a
+// pure render of data the parent already owns.
+function ContainerCard({
+  active,
+  onSelect,
+  state,
+  name,
+  image,
+  agents,
+  stats,
+}: {
+  active: boolean;
+  onSelect: () => void;
+  state: ContainerState;
+  name: string;
+  image: string;
+  agents: Cli[];
+  stats: ContainerStats | null;
+}) {
+  const dot = STATE_DOT[state];
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      style={{
+        all: "unset",
+        cursor: "pointer",
+        display: "block",
+        padding: "10px 12px",
+        borderRadius: 7,
+        background: active ? "var(--bg-4, var(--bg-3))" : "var(--bg-3)",
+        border: `1px solid ${active ? "var(--accent)" : "var(--bd-strong)"}`,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+        <StatusDot status={dot} pulse={dot === "live"} />
+        <span
+          className="mono"
+          style={{ fontSize: 11.5, color: "var(--fg-0)", fontWeight: 500, flex: 1, minWidth: 0 }}
+        >
+          {name}
+        </span>
+        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+          {/* split only the final :tag so a registry port (host:443/img) is safe */}
+          {image.replace(/:([^:/]+)$/, " $1")}
+        </span>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginTop: 6,
+        }}
+      >
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          {agents.length === 0 ? (
+            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+              no sessions
+            </span>
+          ) : (
+            agents.map((cli, i) => (
+              <AgentGlyph
+                // biome-ignore lint/suspicious/noArrayIndexKey: glyphs are a positional count, no stable id.
+                key={i}
+                agent={cli}
+                size={11}
+                color={`var(--a-${cli})`}
+              />
+            ))
+          )}
+        </div>
+        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+          {stats
+            ? `cpu ${stats.cpuPct.toFixed(0)}% · mem ${fmtBytes(stats.memUsed)}`
+            : "cpu — · mem —"}
+        </span>
+      </div>
+    </button>
+  );
 }

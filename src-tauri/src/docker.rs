@@ -37,6 +37,14 @@ pub struct SessionInfo {
     /// 0 when tmux didn't report it — the UI then omits the uptime rather than
     /// showing a bogus age.
     pub created: i64,
+    /// Workspace key of the per-workspace container this session lives in, read
+    /// from the container's `codehub.workspace` label by multi-container listing
+    /// (`LifecycleManager::list_all_sessions`). `None` for the shared runtime.
+    /// Startup restore uses it to re-tie a session to its original workspace —
+    /// it becomes the session's routing `containerKey` so kill/rename target the
+    /// container the session actually lives in.
+    #[serde(default)]
+    pub workspace: Option<String>,
 }
 
 /// Installed version of a CLI inside the runtime container, as reported by
@@ -692,6 +700,9 @@ impl DockerClient {
                     attached: parts[2] != "0",
                     // `session_created` is epoch seconds; absent on older tmux → 0.
                     created: parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0),
+                    // The shared listing has no workspace identity; the
+                    // per-workspace lister stamps it from the container label.
+                    workspace: None,
                 });
             }
         }

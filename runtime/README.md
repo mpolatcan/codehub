@@ -10,7 +10,7 @@ Container image bundling AI coding CLIs that CodeHub multiplexes via tmux.
 
 ## How it runs
 
-The container does not run any CLI as PID 1. It idles on `tail -f /dev/null`. CodeHub spawns tmux sessions inside it on demand via `docker exec -it codehub-runtime tmux ...`. The tmux server persists across exec invocations because they all attach to the same `TMUX_TMPDIR=/tmp/codehub` socket.
+This one image backs every CodeHub container, whether the single shared runtime (`codehub-runtime`) or a per-workspace container (`codehub-ws-<key>`, the default). The container does not run any CLI as PID 1 — it idles on `tail -f /dev/null`, and CodeHub spawns tmux sessions inside it on demand via `docker exec -it <container> tmux ...`. Each container runs its own tmux server; the server persists across exec invocations because they all attach to the same `TMUX_TMPDIR=/tmp/codehub` socket.
 
 ## Volume layout
 

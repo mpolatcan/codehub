@@ -28,9 +28,11 @@ let currentFontSize = 13;
 
 // Create + attach a pane's terminal to the backend. Awaited by store actions
 // before the layout references the session, so PaneMount always finds it.
-export async function spawnPane(name: string): Promise<void> {
+// `workspace` is the per-workspace-container key (the session's workspace id) so
+// the attach targets the container that workspace's session lives in.
+export async function spawnPane(name: string, workspace?: string): Promise<void> {
   if (panes.has(name)) return;
-  const pane = await createPane(stash, name, currentFontSize);
+  const pane = await createPane(stash, name, currentFontSize, workspace);
   panes.set(name, pane);
 }
 
