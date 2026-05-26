@@ -23,14 +23,31 @@ codehub/
       main.tsx              # StrictMode render; imports theme.css then panes.css
       App.tsx               # Layout shell; wires lifecycle + keyboard shortcuts
       theme.css             # Tailwind @import + @theme token bridge
+      tokens.css            # Design tokens: 3 themes (dark/gray/light), status
+                            #   colors, agent accents, shadcn bridge, helper classes
       panes.css             # Structural CSS (splits, panes, rail, tabs, launcher)
-      components/           # Masthead, TabBar, Rail, Grid, PaneHead, PaneMount,
-                            #   LauncherDialog, NewTabPopover, LauncherBody, ui/
-      hooks/                # useKeyboard (global shortcuts), useContainerStatus
-      lib/                  # store.ts (Zustand), panes.ts (registry), tree.ts
-                            #   (split layout), catalog.ts (CLIS/MODES), launcher.ts,
+      screens/              # Full-page views (14 screens):
+                            #   Dashboard, Settings, Usage, Welcome, NewWorkspace,
+                            #   SessionDetail, ContainerInspector, AgentDetail,
+                            #   Integrations, Companion, EmptyState, Resume,
+                            #   SpawnDialog, States
+      components/           # Three subdirectories:
+                            #   hub/ — HubSidebar, HubTabs, HubStatusBar, Grid,
+                            #     PaneHead, PaneMount, ActivityRail, DiffViewer,
+                            #     DiffBody, FilesBrowser, ActionBar, CommandPalette,
+                            #     Shortcuts, GroupsBar, WorkspaceBar, RuntimeBanner
+                            #   primitives/ — AgentGlyph, StatusDot, StatusBadge,
+                            #     CompanionAvatar, Character, Logo, Tag, Segmented,
+                            #     icons, IconBtn, Spark, MetricStat, ContextGauge
+                            #   ui/ — shadcn primitives (Button, Dialog, Popover, etc.)
+      hooks/                # useKeyboard, useContainerStatus, useSessionUsage,
+                            #   useBurnRate, useActivityPoll, useGitStatusPoll
+      lib/                  # store.ts (Zustand main), overlay.ts (Zustand panels/
+                            #   modals/grid), panes.ts (registry), tree.ts (split
+                            #   layout), catalog.ts (CLIS/MODES), launcher.ts,
                             #   ipc.ts (typed Tauri boundary), bridge.ts (browser-mode
-                            #   transport: Tauri IPC vs dev-server REST/WS)
+                            #   transport: Tauri IPC vs dev-server REST/WS),
+                            #   theme.ts (dark/gray/light toggle + persistence)
   src-tauri/                # Rust backend (workspace ROOT = the app crate)
     Cargo.toml              # [workspace] root + app package `codehub`
     tauri.conf.json
@@ -56,6 +73,7 @@ codehub/
   runtime/
     Dockerfile              # Runtime image (CLIs + tmux)
     README.md               # Build + publish instructions
+  design/                   # Design canvas (JSX reference screens, not imported)
   .claude/skills/           # Workflow skills (see below)
   TEST_SCENARIOS.md         # Manual verification matrix
 ```
@@ -101,10 +119,11 @@ Environment knobs:
 ## Conventions
 
 - **Don't add dependencies casually.** Each Rust crate or npm package counts as a cold-start cost.
-- **Frontend state is a single Zustand store** in `src/app/lib/store.ts` (workspaces, session metadata, container status). The launcher has its own small store (`lib/launcher.ts`). Don't reach for Redux/Context — extend the store.
+- **Frontend state is a single Zustand store** in `src/app/lib/store.ts` (workspaces, session metadata, container status). Two satellite stores exist: `lib/overlay.ts` (docked panels, modals, grid drag state) and `lib/launcher.ts` (spawn modal context). Don't reach for Redux/Context — extend the existing stores.
 - **xterm panes are never disposed except by `closeSession`.** They live in the `lib/panes.ts` registry and get reparented by `<PaneMount>`; disposing on unmount would wipe scrollback on every split/tab-switch.
 - **Tauri commands return `Result<T, String>`.** Coerce backend errors with `.map_err(|e| e.to_string())`. Don't leak typed errors across the IPC boundary.
-- **Design tokens live in the `@theme` block of `theme.css`** (exposed as `--color-*` / `--font-*`). Never inline raw hex values; use the tokens (Tailwind utilities like `text-accent` or `var(--color-...)` in `panes.css`).
+- **Three themes: dark (default), gray, light.** Tokens live in `tokens.css` (`--bg-*`, `--fg-*`, `--live`, `--wait`, etc.), bridged to Tailwind in `theme.css`. Theme is toggled via `lib/theme.ts` (localStorage-persisted, `<html>` class swap). Never inline raw hex values; use tokens.
+- **Full-page views live in `screens/`** (14 files). For the frontend map, start at `store.ts` (state) + `App.tsx` (routing). The screens directory is the equivalent of a router — `App.tsx` conditionally renders each based on `view` state.
 - **Bird silhouettes go in the SVG sprite** in `index.html`. Reference via `<use href="#bird-foo"/>`. Don't inline new SVGs per-tab.
 - **CLIs are enumerated in four places** (kept deliberately in sync): `Cli` enum in `docker.rs`, `Cli` type in `src/app/lib/ipc.ts`, `CLIS` + `MODE_SUPPORT` in `src/app/lib/catalog.ts`, and the `RUN` line in `runtime/Dockerfile`. The `add-cli` skill walks the full update.
 - **Never commit `Cargo.lock`** — wait, scratch that: do commit `Cargo.lock`. CodeHub is an application binary, not a library, so the lock is part of the build contract.
