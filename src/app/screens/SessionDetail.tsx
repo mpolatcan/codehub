@@ -58,7 +58,11 @@ export function SessionDetail({ session }: { session: string }) {
   const claudeId = activity?.claudeId ?? (meta?.cli === "claude" ? meta.claudeId : undefined);
   const usage = useSessionUsage(claudeId);
 
-  // Branch (+ commits ahead of upstream) is workspace-wide (single runtime).
+  // This session's container (per-workspace mode); undefined → shared runtime.
+  // Every git/fs call below routes to it so the diff reflects THIS workspace.
+  const containerKey = meta?.containerKey;
+
+  // Branch (+ commits ahead of upstream) for this session's /workspace.
   const [branch, setBranch] = useState<string | null>(null);
   const [ahead, setAhead] = useState(0);
 
@@ -90,10 +94,10 @@ export function SessionDetail({ session }: { session: string }) {
     }
     try {
       const [all, staged, unstaged, git] = await Promise.all([
-        ipc.containerGitDiffAll(),
-        ipc.containerGitDiffStaged(),
-        ipc.containerGitDiffUnstaged(),
-        ipc.containerGitStatus(),
+        ipc.containerGitDiffAll(containerKey),
+        ipc.containerGitDiffStaged(containerKey),
+        ipc.containerGitDiffUnstaged(containerKey),
+        ipc.containerGitStatus(containerKey),
       ]);
       setDiffs({ all, staged, unstaged });
       setBranch(git.branch);
@@ -103,7 +107,7 @@ export function SessionDetail({ session }: { session: string }) {
     } finally {
       setLoaded(true);
     }
-  }, [running]);
+  }, [running, containerKey]);
 
   useEffect(() => {
     let alive = true;
@@ -124,7 +128,7 @@ export function SessionDetail({ session }: { session: string }) {
     setBusy(true);
     setNote(null);
     try {
-      await ipc.containerGitStageAll();
+      await ipc.containerGitStageAll(containerKey);
       setNote({ kind: "ok", text: "Staged all changes." });
       await refresh();
       setFilter("staged");
@@ -133,7 +137,7 @@ export function SessionDetail({ session }: { session: string }) {
     } finally {
       setBusy(false);
     }
-  }, [busy, running, refresh]);
+  }, [busy, running, refresh, containerKey]);
 
   const doCommit = useCallback(async () => {
     const msg = commitMsg.trim();
@@ -141,7 +145,7 @@ export function SessionDetail({ session }: { session: string }) {
     setBusy(true);
     setNote(null);
     try {
-      const summary = await ipc.containerGitCommit(msg);
+      const summary = await ipc.containerGitCommit(msg, containerKey);
       setNote({ kind: "ok", text: summary.split("\n")[0] || "Committed." });
       setCommitMsg("");
       setCommitOpen(false);
@@ -151,7 +155,7 @@ export function SessionDetail({ session }: { session: string }) {
     } finally {
       setBusy(false);
     }
-  }, [busy, running, commitMsg, refresh]);
+  }, [busy, running, commitMsg, refresh, containerKey]);
 
   const doOpenPr = useCallback(async () => {
     const title = prTitle.trim();
@@ -159,7 +163,7 @@ export function SessionDetail({ session }: { session: string }) {
     setBusy(true);
     setNote(null);
     try {
-      const url = await ipc.containerGitOpenPr(title, prBody.trim());
+      const url = await ipc.containerGitOpenPr(title, prBody.trim(), containerKey);
       setNote({ kind: "ok", text: `PR opened — ${url}` });
       setPrOpen(false);
       setPrTitle("");
@@ -170,7 +174,7 @@ export function SessionDetail({ session }: { session: string }) {
     } finally {
       setBusy(false);
     }
-  }, [busy, running, prTitle, prBody]);
+  }, [busy, running, prTitle, prBody, containerKey]);
 
   // Keyboard: ⌘⏎ commit · ⌘⇧P open PR · ⌘A stage all. Bound at the window while
   // this view is mounted (it only mounts for a focused session), gated so ⌘A

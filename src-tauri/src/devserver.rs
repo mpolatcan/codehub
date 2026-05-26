@@ -16,6 +16,7 @@ use crate::config::{ConfigStore, Settings};
 use crate::docker::{Cli, DockerClient, LaunchMode};
 use crate::events::EventsTracker;
 use crate::lifecycle::Lifecycle;
+use crate::manager::LifecycleManager;
 use crate::pty::{PaneEmitter, PtyRegistry};
 use crate::types::UpdateStatus;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -38,12 +39,38 @@ const ADDR: &str = "127.0.0.1:4555";
 #[derive(Clone)]
 struct AppState {
     lifecycle: Arc<Lifecycle>,
+    // Resolves a per-workspace `Lifecycle`/container (mirrors the Tauri AppState)
+    // so the session handlers can target the right container under the
+    // per-workspace flag; `lifecycle` above is `manager.default()`.
+    manager: Arc<LifecycleManager>,
     docker: Arc<DockerClient>,
     registry: Arc<PtyRegistry>,
     config: Arc<ConfigStore>,
     events: Arc<EventsTracker>,
     // Pre-serialized `{event, payload}` frames fanned out to every WS client.
     tx: broadcast::Sender<String>,
+}
+
+/// DockerClient for a SESSION command's target container (mirrors lib.rs
+/// `docker_for`): `workspace` is the per-workspace key; `None` / flag off → the
+/// shared runtime (a session keyed `ws-x` lives in `codehub-runtime` when off).
+fn docker_for(st: &AppState, workspace: Option<&str>) -> Arc<DockerClient> {
+    Arc::new(st.manager.resolve(workspace, None).docker_client())
+}
+
+/// DockerClient for an INSPECTION command, BY NAME with no flag fallback
+/// (mirrors lib.rs `docker_container_for`): an explicit `workspace` ALWAYS
+/// targets that per-workspace container, reading its OWN stats/logs/procs.
+fn docker_container_for(st: &AppState, workspace: Option<&str>) -> Arc<DockerClient> {
+    Arc::new(st.manager.resolve_container(workspace).docker_client())
+}
+
+/// Lifecycle for an optional workspace key, BY NAME with no flag fallback
+/// (mirrors lib.rs `lifecycle_for`): `None` → the shared runtime, `Some(key)` →
+/// `codehub-ws-<key>` even when the flag is off, so a workspace card's
+/// Start/Stop/Restart never acts on `codehub-runtime`.
+fn lifecycle_for(st: &AppState, workspace: Option<&str>) -> Arc<crate::lifecycle::Lifecycle> {
+    st.manager.resolve_container(workspace)
 }
 
 /// Pushes pane output onto the WS broadcast as the same event strings the Tauri
@@ -101,8 +128,10 @@ pub async fn serve() {
     // Config loads first: the lifecycle reads the effective workspace dir +
     // account-profile env vars from it at container-create time (mirrors lib.rs).
     let config = Arc::new(ConfigStore::load(data_dir.join("settings.json")));
-    let lifecycle = Arc::new(
-        Lifecycle::new(
+    // Mirror lib.rs: the manager owns the daemon connection and the per-workspace
+    // resolution; the shared-runtime lifecycle is `manager.default()`.
+    let manager = Arc::new(
+        LifecycleManager::new(
             container,
             image,
             data_dir.join("config"),
@@ -111,6 +140,7 @@ pub async fn serve() {
         )
         .expect("docker daemon unreachable — is Docker running?"),
     );
+    let lifecycle = manager.default();
     let docker = Arc::new(lifecycle.docker_client());
     let registry = Arc::new(PtyRegistry::new());
     let events = Arc::new(EventsTracker::new());
@@ -132,16 +162,17 @@ pub async fn serve() {
         });
     }
 
-    // Start the event tailer for the dev bridge (mirrors lib.rs setup). Reuses the
-    // shared tail in `events` — same attach/parse loop the Tauri app runs — with a
+    // Start the event tailer for the dev bridge (mirrors lib.rs setup). The
+    // reconciler fans a tail out across the shared runtime AND every live
+    // per-workspace container — same attach/parse loop the Tauri app runs — with a
     // WS-frame sink instead of a window emit. The WsEmitter handles pty output;
     // this handles hook events.
     {
         let tx_for_events = tx.clone();
-        // Runs under `#[tokio::main]`, so spawn the shared loop with tokio directly
-        // (the Tauri app uses tauri::async_runtime — see events::start_event_tailer).
-        tokio::spawn(crate::events::event_tailer_loop(
-            docker.clone(),
+        // Runs under `#[tokio::main]`, so spawn the loop with tokio directly (the
+        // Tauri app uses tauri::async_runtime — see events::start_event_tailer).
+        tokio::spawn(crate::events::reconcile_event_tailers_loop(
+            manager.clone(),
             events.clone(),
             move |event| {
                 if let Ok(frame) = serde_json::to_string(&serde_json::json!({
@@ -156,6 +187,7 @@ pub async fn serve() {
 
     let state = AppState {
         lifecycle,
+        manager,
         docker,
         registry,
         config,
@@ -170,11 +202,16 @@ pub async fn serve() {
         .route("/container-restart", post(container_restart))
         .route("/docker-info", get(docker_info))
         .route("/app-info", get(app_info))
+        .route("/per-workspace-enabled", get(per_workspace_enabled))
         .route("/config", get(get_config).put(set_config))
         .route("/pick-directory", post(pick_directory))
         .route("/workspace-dir", put(set_workspace_dir))
         .route("/workspace-info", get(workspace_info))
         .route("/recreate-runtime", post(recreate_runtime))
+        .route(
+            "/workspace-containers",
+            get(list_workspace_containers).delete(remove_workspace_container),
+        )
         .route(
             "/account-profiles",
             get(list_account_profiles).post(add_account_profile),
@@ -234,36 +271,58 @@ pub async fn serve() {
     axum::serve(listener, app).await.expect("serve");
 }
 
-async fn status(State(st): State<AppState>) -> impl IntoResponse {
-    Json(st.lifecycle.status().await)
+async fn status(State(st): State<AppState>, Query(q): Query<WorkspaceQuery>) -> impl IntoResponse {
+    Json(lifecycle_for(&st, q.workspace.as_deref()).status().await)
 }
 
 // Broadcast the post-action status as a codehub://lifecycle frame (same shape
 // the Tauri build emits) so every connected WS subscriber updates, then return
 // it for the immediate caller. Mirrors lib.rs's container_start/stop/restart.
-fn broadcast_lifecycle(st: &AppState, status: &crate::lifecycle::ContainerStatus) {
+// ONLY for the shared runtime (`workspace` None) — that event tracks the store's
+// single shared `status`, so a per-workspace frame would clobber it. Per-
+// workspace state rides the fleet poll instead.
+fn broadcast_lifecycle(
+    st: &AppState,
+    workspace: Option<&str>,
+    status: &crate::lifecycle::ContainerStatus,
+) {
+    if workspace.is_some() {
+        return;
+    }
     let frame = json!({ "event": "codehub://lifecycle", "payload": status });
     let _ = st.tx.send(frame.to_string());
 }
 
-async fn container_start(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.lifecycle.start().await.map_err(err)?;
-    let status = st.lifecycle.status().await;
-    broadcast_lifecycle(&st, &status);
+async fn container_start(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let lc = lifecycle_for(&st, q.workspace.as_deref());
+    lc.start().await.map_err(err)?;
+    let status = lc.status().await;
+    broadcast_lifecycle(&st, q.workspace.as_deref(), &status);
     Ok(Json(status))
 }
 
-async fn container_stop(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.lifecycle.stop().await.map_err(err)?;
-    let status = st.lifecycle.status().await;
-    broadcast_lifecycle(&st, &status);
+async fn container_stop(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let lc = lifecycle_for(&st, q.workspace.as_deref());
+    lc.stop().await.map_err(err)?;
+    let status = lc.status().await;
+    broadcast_lifecycle(&st, q.workspace.as_deref(), &status);
     Ok(Json(status))
 }
 
-async fn container_restart(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.lifecycle.restart().await.map_err(err)?;
-    let status = st.lifecycle.status().await;
-    broadcast_lifecycle(&st, &status);
+async fn container_restart(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let lc = lifecycle_for(&st, q.workspace.as_deref());
+    lc.restart().await.map_err(err)?;
+    let status = lc.status().await;
+    broadcast_lifecycle(&st, q.workspace.as_deref(), &status);
     Ok(Json(status))
 }
 
@@ -273,6 +332,10 @@ async fn docker_info(State(st): State<AppState>) -> impl IntoResponse {
 
 async fn app_info() -> impl IntoResponse {
     Json(crate::lifecycle::app_info())
+}
+
+async fn per_workspace_enabled() -> impl IntoResponse {
+    Json(crate::manager::per_workspace_enabled())
 }
 
 async fn get_config(State(st): State<AppState>) -> impl IntoResponse {
@@ -324,7 +387,7 @@ async fn workspace_info(State(st): State<AppState>) -> impl IntoResponse {
 async fn recreate_runtime(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
     st.lifecycle.recreate().await.map_err(err)?;
     let status = st.lifecycle.status().await;
-    broadcast_lifecycle(&st, &status);
+    broadcast_lifecycle(&st, None, &status);
     Ok(Json(status))
 }
 
@@ -365,49 +428,103 @@ async fn agent_versions(State(st): State<AppState>) -> impl IntoResponse {
     Json(st.docker.agent_versions().await)
 }
 
-async fn container_stats(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.stats().await.map(Json).map_err(err)
+async fn container_stats(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    docker_container_for(&st, q.workspace.as_deref())
+        .stats()
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+async fn list_workspace_containers(
+    State(st): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    st.manager
+        .list_workspace_containers()
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+async fn remove_workspace_container(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<StatusCode, ApiError> {
+    let key = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    st.manager.remove_workspace(&key).await.map_err(err)?;
+    // No codehub://lifecycle broadcast — that event tracks the shared runtime;
+    // the fleet poll reflects the removal (mirrors lib.rs remove_workspace_container).
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
 struct LogsQuery {
     tail: Option<u32>,
+    workspace: Option<String>,
 }
 
 async fn container_logs(
     State(st): State<AppState>,
     Query(q): Query<LogsQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .logs(q.tail.unwrap_or(200))
         .await
         .map(Json)
         .map_err(err)
 }
 
-async fn container_mounts(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.mounts().await.map(Json).map_err(err)
+async fn container_mounts(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    docker_container_for(&st, q.workspace.as_deref())
+        .mounts()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
-async fn container_image(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.image_info().await.map(Json).map_err(err)
+async fn container_image(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    docker_container_for(&st, q.workspace.as_deref())
+        .image_info()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
-async fn container_health(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.health().await.map(Json).map_err(err)
+async fn container_health(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    docker_container_for(&st, q.workspace.as_deref())
+        .health()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 #[derive(Deserialize)]
 struct PathQuery {
     /// Empty / absent → the workspace root.
     path: Option<String>,
+    /// Per-workspace container key (absent → shared runtime).
+    workspace: Option<String>,
 }
 
 async fn container_list_dir(
     State(st): State<AppState>,
     Query(q): Query<PathQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .list_dir(&q.path.unwrap_or_default())
         .await
         .map(Json)
@@ -418,49 +535,79 @@ async fn container_read_file(
     State(st): State<AppState>,
     Query(q): Query<PathQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .read_file(&q.path.unwrap_or_default())
         .await
         .map(Json)
         .map_err(err)
 }
 
-async fn container_git_status(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_status().await.map(Json).map_err(err)
+async fn container_git_status(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_status()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 #[derive(Deserialize)]
 struct DiffQuery {
     path: String,
+    workspace: Option<String>,
 }
 
 async fn container_git_diff(
     State(st): State<AppState>,
     Query(q): Query<DiffQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_diff(&q.path).await.map(Json).map_err(err)
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_diff(&q.path)
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
-async fn container_git_diff_all(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_diff_all().await.map(Json).map_err(err)
+async fn container_git_diff_all(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_diff_all()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 async fn container_git_diff_staged(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_diff_staged().await.map(Json).map_err(err)
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_diff_staged()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 async fn container_git_diff_unstaged(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_diff_unstaged().await.map(Json).map_err(err)
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_diff_unstaged()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 async fn container_git_stage_all(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .git_stage_all()
         .await
         .map(|()| StatusCode::NO_CONTENT)
@@ -474,9 +621,10 @@ struct CommitBody {
 
 async fn container_git_commit(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
     Json(body): Json<CommitBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .git_commit(&body.message)
         .await
         .map(Json)
@@ -491,17 +639,25 @@ struct OpenPrBody {
 
 async fn container_git_open_pr(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
     Json(body): Json<OpenPrBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .git_open_pr(&body.title, &body.body)
         .await
         .map(Json)
         .map_err(err)
 }
 
-async fn container_top(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.top().await.map(Json).map_err(err)
+async fn container_top(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    docker_container_for(&st, q.workspace.as_deref())
+        .top()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 async fn claude_usage(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
@@ -539,13 +695,14 @@ async fn claude_session_usage(
 #[derive(Deserialize)]
 struct LogQuery {
     limit: Option<u32>,
+    workspace: Option<String>,
 }
 
 async fn container_git_log(
     State(st): State<AppState>,
     Query(q): Query<LogQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .git_log(q.limit.unwrap_or(12))
         .await
         .map(Json)
@@ -553,7 +710,7 @@ async fn container_git_log(
 }
 
 async fn list_sessions(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.list_tmux_sessions().await.map(Json).map_err(err)
+    st.manager.list_all_sessions().await.map(Json).map_err(err)
 }
 
 async fn session_activity(State(st): State<AppState>) -> impl IntoResponse {
@@ -570,6 +727,9 @@ struct CreateBody {
     session_id: Option<String>,
     /// Account profile id (Tier-3) → resolves to that profile's host env var NAME.
     account: Option<String>,
+    /// Per-workspace-container target + first-create mount dir (see lib.rs).
+    workspace: Option<String>,
+    workspace_dir: Option<String>,
 }
 
 async fn create_session(
@@ -592,7 +752,19 @@ async fn create_session(
             .find(|p| p.id == id)
             .map(|p| p.var_name)
     });
-    st.docker
+    // Resolve the target container; lazily ensure a per-workspace one (mirror
+    // lib.rs). Gate on the workspace label, not the dir override — a per-ws
+    // container with no explicit dir mounts the config-driven dir (override
+    // None) yet still needs ensuring.
+    let lifecycle = st.manager.resolve(
+        body.workspace.as_deref(),
+        body.workspace_dir.map(std::path::PathBuf::from),
+    );
+    if lifecycle.workspace_label.is_some() {
+        lifecycle.ensure_runtime().await.map_err(err)?;
+    }
+    lifecycle
+        .docker_client()
         .create_tmux_session(
             &body.name,
             cli,
@@ -613,20 +785,31 @@ async fn create_session(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Per-workspace target carried as a query param on the DELETE kill route.
+#[derive(Deserialize)]
+struct WorkspaceQuery {
+    workspace: Option<String>,
+}
+
 async fn kill_session(
     State(st): State<AppState>,
     Path(name): Path<String>,
+    Query(q): Query<WorkspaceQuery>,
 ) -> Result<StatusCode, ApiError> {
     // Same ordering as lib.rs: drop pane bookkeeping before killing tmux.
     st.registry.detach_by_session(&name).await;
     st.events.remove_session(&name);
-    st.docker.kill_tmux_session(&name).await.map_err(err)?;
+    docker_for(&st, q.workspace.as_deref())
+        .kill_tmux_session(&name)
+        .await
+        .map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
 struct RenameBody {
     alias: String,
+    workspace: Option<String>,
 }
 
 async fn rename_session(
@@ -634,7 +817,7 @@ async fn rename_session(
     Path(name): Path<String>,
     Json(body): Json<RenameBody>,
 ) -> Result<StatusCode, ApiError> {
-    st.docker
+    docker_for(&st, body.workspace.as_deref())
         .rename_tmux_window(&name, &body.alias)
         .await
         .map_err(err)?;
@@ -646,6 +829,7 @@ struct AttachBody {
     name: String,
     cols: u16,
     rows: u16,
+    workspace: Option<String>,
 }
 
 async fn attach(
@@ -653,8 +837,9 @@ async fn attach(
     Json(body): Json<AttachBody>,
 ) -> Result<Json<String>, ApiError> {
     let emitter = Arc::new(WsEmitter { tx: st.tx.clone() });
+    let docker = docker_for(&st, body.workspace.as_deref());
     st.registry
-        .attach(&st.docker, &body.name, body.cols, body.rows, emitter)
+        .attach(&docker, &body.name, body.cols, body.rows, emitter)
         .await
         .map(Json)
         .map_err(err)

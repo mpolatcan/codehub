@@ -38,15 +38,20 @@ function jsend(method: string, path: string, payload?: unknown): Promise<unknown
 // routes in devserver.rs and the `#[tauri::command]`s in lib.rs.
 async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
   const id = encodeURIComponent(String(args.paneId ?? ""));
+  // `?workspace=<key>` targets a per-workspace container; empty when absent (→
+  // the shared runtime). Mirrors the kill route's query convention.
+  const wsq = args.workspace ? `?workspace=${encodeURIComponent(String(args.workspace))}` : "";
+  // Same key as `&workspace=…` for routes that already own a `?` (path/limit).
+  const wsAmp = args.workspace ? `&workspace=${encodeURIComponent(String(args.workspace))}` : "";
   switch (cmd) {
     case "container_status":
-      return jget("/status") as Promise<T>;
+      return jget(`/status${wsq}`) as Promise<T>;
     case "container_start":
-      return jsend("POST", "/container-start") as Promise<T>;
+      return jsend("POST", `/container-start${wsq}`) as Promise<T>;
     case "container_stop":
-      return jsend("POST", "/container-stop") as Promise<T>;
+      return jsend("POST", `/container-stop${wsq}`) as Promise<T>;
     case "container_restart":
-      return jsend("POST", "/container-restart") as Promise<T>;
+      return jsend("POST", `/container-restart${wsq}`) as Promise<T>;
     case "docker_info":
       return jget("/docker-info") as Promise<T>;
     case "agent_key_status":
@@ -54,31 +59,40 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
     case "agent_versions":
       return jget("/agent-versions") as Promise<T>;
     case "container_stats":
-      return jget("/container-stats") as Promise<T>;
-    case "container_logs":
-      return jget(`/container-logs?tail=${args.tail ?? 200}`) as Promise<T>;
+      return jget(`/container-stats${wsq}`) as Promise<T>;
+    case "list_workspace_containers":
+      return jget("/workspace-containers") as Promise<T>;
+    case "remove_workspace_container":
+      return jsend("DELETE", `/workspace-containers${wsq}`) as Promise<T>;
+    case "container_logs": {
+      // `tail` already occupies the `?` slot, so workspace joins with `&`.
+      const ws = args.workspace ? `&workspace=${encodeURIComponent(String(args.workspace))}` : "";
+      return jget(`/container-logs?tail=${args.tail ?? 200}${ws}`) as Promise<T>;
+    }
     case "container_mounts":
-      return jget("/container-mounts") as Promise<T>;
+      return jget(`/container-mounts${wsq}`) as Promise<T>;
     case "container_image":
-      return jget("/container-image") as Promise<T>;
+      return jget(`/container-image${wsq}`) as Promise<T>;
     case "container_health":
-      return jget("/container-health") as Promise<T>;
+      return jget(`/container-health${wsq}`) as Promise<T>;
     case "container_list_dir":
       return jget(
-        `/container-list-dir?path=${encodeURIComponent(String(args.path ?? ""))}`,
+        `/container-list-dir?path=${encodeURIComponent(String(args.path ?? ""))}${wsAmp}`,
       ) as Promise<T>;
     case "container_read_file":
       return jget(
-        `/container-read-file?path=${encodeURIComponent(String(args.path ?? ""))}`,
+        `/container-read-file?path=${encodeURIComponent(String(args.path ?? ""))}${wsAmp}`,
       ) as Promise<T>;
     case "container_git_status":
-      return jget("/container-git-status") as Promise<T>;
+      return jget(`/container-git-status${wsq}`) as Promise<T>;
     case "container_git_diff":
       return jget(
-        `/container-git-diff?path=${encodeURIComponent(String(args.path))}`,
+        `/container-git-diff?path=${encodeURIComponent(String(args.path))}${wsAmp}`,
       ) as Promise<T>;
     case "app_info":
       return jget("/app-info") as Promise<T>;
+    case "per_workspace_enabled":
+      return jget("/per-workspace-enabled") as Promise<T>;
     case "get_config":
       return jget("/config") as Promise<T>;
     case "set_config":
@@ -108,24 +122,24 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
         `/account-profiles/${encodeURIComponent(String(args.id))}`,
       ) as Promise<T>;
     case "container_git_diff_all":
-      return jget("/container-git-diff-all") as Promise<T>;
+      return jget(`/container-git-diff-all${wsq}`) as Promise<T>;
     case "container_git_diff_staged":
-      return jget("/container-git-diff-staged") as Promise<T>;
+      return jget(`/container-git-diff-staged${wsq}`) as Promise<T>;
     case "container_git_diff_unstaged":
-      return jget("/container-git-diff-unstaged") as Promise<T>;
+      return jget(`/container-git-diff-unstaged${wsq}`) as Promise<T>;
     case "container_git_stage_all":
-      return jsend("POST", "/container-git-stage-all") as Promise<T>;
+      return jsend("POST", `/container-git-stage-all${wsq}`) as Promise<T>;
     case "container_git_commit":
-      return jsend("POST", "/container-git-commit", { message: args.message }) as Promise<T>;
+      return jsend("POST", `/container-git-commit${wsq}`, { message: args.message }) as Promise<T>;
     case "container_git_open_pr":
-      return jsend("POST", "/container-git-open-pr", {
+      return jsend("POST", `/container-git-open-pr${wsq}`, {
         title: args.title,
         body: args.body,
       }) as Promise<T>;
     case "container_top":
-      return jget("/container-top") as Promise<T>;
+      return jget(`/container-top${wsq}`) as Promise<T>;
     case "container_git_log":
-      return jget(`/container-git-log?limit=${args.limit ?? 12}`) as Promise<T>;
+      return jget(`/container-git-log?limit=${args.limit ?? 12}${wsAmp}`) as Promise<T>;
     case "session_activity":
       return jget("/session-activity") as Promise<T>;
     // Phase-0 completion contract (stub backend; mirrors devserver.rs routes).
@@ -175,18 +189,27 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
         resume: args.resume,
         session_id: args.sessionId,
         account: args.account,
+        workspace: args.workspace,
+        workspace_dir: args.workspaceDir,
       }) as Promise<T>;
-    case "kill_session":
-      return jsend("DELETE", `/sessions/${encodeURIComponent(String(args.name))}`) as Promise<T>;
+    case "kill_session": {
+      const ws = args.workspace ? `?workspace=${encodeURIComponent(String(args.workspace))}` : "";
+      return jsend(
+        "DELETE",
+        `/sessions/${encodeURIComponent(String(args.name))}${ws}`,
+      ) as Promise<T>;
+    }
     case "rename_session":
       return jsend("POST", `/sessions/${encodeURIComponent(String(args.name))}/rename`, {
         alias: args.alias,
+        workspace: args.workspace,
       }) as Promise<T>;
     case "attach_session":
       return jsend("POST", "/attach", {
         name: args.name,
         cols: args.cols,
         rows: args.rows,
+        workspace: args.workspace,
       }) as Promise<T>;
     case "pty_write":
       return jsend("POST", `/panes/${id}/write`, { data: args.data }) as Promise<T>;

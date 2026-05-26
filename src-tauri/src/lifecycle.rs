@@ -187,6 +187,27 @@ pub struct Lifecycle {
     /// UI/config store; the effective workspace dir + account profiles are read
     /// from here at container-create time (Tier-2 / Tier-3).
     pub config: Arc<ConfigStore>,
+    /// Per-workspace container override (per-workspace-container architecture).
+    /// When `Some`, this directory is bound at `/workspace` authoritatively and
+    /// the global config `workspace_dir` is ignored — each workspace owns its own
+    /// mount. `None` is the shared-runtime path, where the config setting selects
+    /// the single mounted dir. Built by `LifecycleManager::for_workspace`.
+    pub workspace_dir_override: Option<PathBuf>,
+    /// The ORIGINAL workspace key this per-workspace container represents (before
+    /// `sanitize_key` mangles it into the container name). Stamped onto the
+    /// container as the `codehub.workspace` label at create-time so multi-container
+    /// listing can recover it and startup restore can re-tie the session to its
+    /// real workspace. `None` for the shared runtime (no label written).
+    pub workspace_label: Option<String>,
+    /// Whether to RECREATE an existing container when its live `/workspace` bind
+    /// no longer matches `workspace_dir()`. True ONLY when the caller EXPLICITLY
+    /// requested a mount (e.g. re-pointing a workspace at a new repo dir) — a
+    /// deliberate, destructive mount change. False for passive ops (start /
+    /// restart / status) and the default per-key subdir, so they never silently
+    /// recreate a container onto a different mount and lose its sessions. The
+    /// shared runtime is always false (its mount change is confirm-driven via
+    /// `workspace_info().needs_recreate`).
+    pub enforce_mount: bool,
 }
 
 impl Lifecycle {
@@ -198,21 +219,60 @@ impl Lifecycle {
         config: Arc<ConfigStore>,
     ) -> Result<Self, LifecycleError> {
         let docker = Docker::connect_with_local_defaults()?;
-        Ok(Self {
+        Ok(Self::from_parts(
             docker,
             container_name,
             image,
             config_dir,
             default_workspace_dir,
             config,
-        })
+            None,
+            None,
+            false,
+        ))
     }
 
-    /// Host directory to bind at `/workspace`: the config's `workspace_dir` when
-    /// set and still an existing directory, otherwise the built-in default. A
-    /// configured-but-missing dir falls back rather than failing the container
-    /// create (the dir may live on an unmounted volume).
+    /// Build a `Lifecycle` reusing an existing daemon connection (the manager
+    /// connects once and shares the `Docker` handle across every per-workspace
+    /// lifecycle). `workspace_dir_override` pins the `/workspace` bind for a
+    /// per-workspace container; pass `None` for the shared-runtime behaviour.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        docker: Docker,
+        container_name: String,
+        image: String,
+        config_dir: PathBuf,
+        default_workspace_dir: PathBuf,
+        config: Arc<ConfigStore>,
+        workspace_dir_override: Option<PathBuf>,
+        workspace_label: Option<String>,
+        enforce_mount: bool,
+    ) -> Self {
+        Self {
+            docker,
+            container_name,
+            image,
+            config_dir,
+            default_workspace_dir,
+            config,
+            workspace_dir_override,
+            workspace_label,
+            enforce_mount,
+        }
+    }
+
+    /// Host directory to bind at `/workspace`.
+    ///
+    /// Per-workspace containers (`workspace_dir_override = Some`) own a dedicated
+    /// dir, returned verbatim — it is created on demand by `ensure_container`, so
+    /// it need not exist yet. The shared-runtime path (`None`) uses the config's
+    /// `workspace_dir` when set and still an existing directory, otherwise the
+    /// built-in default. A configured-but-missing dir falls back rather than
+    /// failing the container create (the dir may live on an unmounted volume).
     pub fn workspace_dir(&self) -> PathBuf {
+        if let Some(dir) = &self.workspace_dir_override {
+            return dir.clone();
+        }
         match self.config.get().workspace_dir {
             Some(d) if std::path::Path::new(&d).is_dir() => PathBuf::from(d),
             _ => self.default_workspace_dir.clone(),
@@ -305,14 +365,44 @@ impl Lifecycle {
         let status = self.status().await;
 
         if let Some(id) = status.id {
-            if status.state == ContainerState::Running {
+            // A container EXPLICITLY re-pointed at a different dir is stranded on
+            // its old bind mount — a bind mount is fixed at creation, so the only
+            // way to honour the new dir is to recreate. This fires ONLY when the
+            // caller deliberately requested a mount (`enforce_mount`): re-pointing
+            // a workspace at a new repo dir. Passive ops (start / restart /
+            // status) and the default per-key subdir leave `enforce_mount` false,
+            // so they NEVER silently recreate a container onto a different mount
+            // (which would destroy its running sessions). The shared runtime is
+            // also never enforced here — its mount change is confirm-driven
+            // (`workspace_info().needs_recreate` → UI confirm → `recreate()`).
+            let want = self.workspace_dir().to_string_lossy().to_string();
+            let mounted = self.mounted_workspace_source().await;
+            if mount_needs_recreate(self.enforce_mount, mounted.as_deref(), &want) {
+                tracing::info!(
+                    container = %self.container_name,
+                    %want,
+                    "per-workspace mount changed; recreating container to apply it"
+                );
+                self.docker
+                    .remove_container(
+                        &id,
+                        Some(RemoveContainerOptions {
+                            force: true,
+                            v: false,
+                            link: false,
+                        }),
+                    )
+                    .await?;
+                // fall through to create with the current mount
+            } else if status.state == ContainerState::Running {
+                return Ok(id);
+            } else {
+                // exists but stopped — start it
+                self.docker
+                    .start_container(&id, None::<StartContainerOptions<String>>)
+                    .await?;
                 return Ok(id);
             }
-            // exists but stopped — start it
-            self.docker
-                .start_container(&id, None::<StartContainerOptions<String>>)
-                .await?;
-            return Ok(id);
         }
 
         // create new
@@ -353,6 +443,19 @@ impl Lifecycle {
         let mut env = vec!["TMUX_TMPDIR=/tmp/codehub".to_string()];
         env.extend(auth_env_with(&self.profile_env_vars()));
 
+        // Per-workspace containers self-describe via labels: `codehub.managed`
+        // lets multi-container listing enumerate exactly the containers we own,
+        // and `codehub.workspace` records the ORIGINAL workspace key so startup
+        // restore can recover it (the container NAME is a one-way `sanitize_key`
+        // hash, so the key cannot be derived from the name). The shared runtime
+        // gets no labels — it has no single workspace identity.
+        let labels = self.workspace_label.as_ref().map(|key| {
+            HashMap::from([
+                ("codehub.managed".to_string(), "true".to_string()),
+                ("codehub.workspace".to_string(), key.clone()),
+            ])
+        });
+
         let config = Config {
             image: Some(self.image.clone()),
             env: Some(env),
@@ -360,6 +463,7 @@ impl Lifecycle {
             working_dir: Some("/workspace".into()),
             tty: Some(true),
             open_stdin: Some(true),
+            labels,
             ..Default::default()
         };
 
@@ -490,6 +594,16 @@ impl Lifecycle {
     }
 }
 
+/// Whether an existing container must be recreated to pick up a changed
+/// `/workspace` bind mount. Recreates ONLY when the caller explicitly requested
+/// a mount (`enforce_mount == true`) — a deliberate re-point. Passive ops and the
+/// shared runtime pass `false`, so they never destructively recreate. A
+/// missing/unknown live mount also returns `false` — we only recreate on a
+/// *confirmed* mismatch, never speculatively.
+fn mount_needs_recreate(enforce_mount: bool, mounted: Option<&str>, want: &str) -> bool {
+    enforce_mount && matches!(mounted, Some(m) if m != want)
+}
+
 fn host_network_mode() -> String {
     // macOS Docker Desktop supports host network behind a feature flag.
     // Default to `bridge` to maximize compatibility; users can override.
@@ -501,6 +615,19 @@ fn host_network_mode() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mount_recreate_only_when_enforced_and_confirmed_mismatch() {
+        // not enforced (passive start/restart/status, default per-key dir, shared
+        // runtime) → never recreate, even on a live-mount mismatch
+        assert!(!mount_needs_recreate(false, Some("/old"), "/new"));
+        assert!(!mount_needs_recreate(false, Some("/old"), "/old"));
+        // enforced (explicit re-point): recreate only on a confirmed mismatch
+        assert!(mount_needs_recreate(true, Some("/old"), "/new"));
+        assert!(!mount_needs_recreate(true, Some("/same"), "/same"));
+        // unknown/absent live mount → never recreate speculatively
+        assert!(!mount_needs_recreate(true, None, "/new"));
+    }
 
     // The single most important property of `agent_key_status`: it must report
     // presence only and never let a secret value reach the serialized payload.

@@ -172,9 +172,9 @@ export function HubTabs() {
 
       <div style={{ flex: 1 }} />
 
-      {/* trailing actions — overflow menu (when tabs exceed the strip) + the
-          awaiting-input bell. Files / Diff / split / spawn live in the bottom
-          ActionBar (design: main-hub-a), not here. */}
+      {/* trailing actions — persistent ⌘K search (design: main-hub-a tab bar)
+          + overflow menu (when tabs exceed the strip) + the awaiting-input bell.
+          Files / Diff / split / spawn live in the bottom ActionBar, not here. */}
       <div
         style={{
           display: "flex",
@@ -184,6 +184,26 @@ export function HubTabs() {
           position: "relative",
         }}
       >
+        <button
+          type="button"
+          title="Search workspaces (⌘K)"
+          onClick={() => setPalette(true)}
+          style={{
+            alignSelf: "center",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "4px 7px",
+            background: "transparent",
+            border: "none",
+            color: "var(--fg-2)",
+            cursor: "pointer",
+            borderRadius: 6,
+          }}
+        >
+          {Ico.search}
+          <span className="kbd">⌘K</span>
+        </button>
         {overflowing && (
           <IconBtn
             title="All workspaces"

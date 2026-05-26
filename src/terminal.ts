@@ -52,6 +52,10 @@ export async function createPane(
   stash: HTMLElement,
   sessionName: string,
   fontSize = 13,
+  // Per-workspace-container key. Must match the workspace the session was
+  // created in so the attach exec opens against the right container (undefined /
+  // flag off → the shared runtime). See lib.rs `docker_for`.
+  workspace?: string,
 ): Promise<Pane> {
   const el = document.createElement("div");
   el.className = "term-surface";
@@ -93,6 +97,7 @@ export async function createPane(
     name: sessionName,
     cols: term.cols,
     rows: term.rows,
+    workspace,
   });
 
   const pane: Pane = { sessionName, paneId, el, term, fit };

@@ -12,12 +12,23 @@ export interface ContainerStatus {
   name: string;
 }
 
+// One CodeHub-managed per-workspace container: its workspace key + status.
+// Backs the fleet / Workspaces inspector (list_workspace_containers).
+export interface WorkspaceContainer {
+  key: string;
+  status: ContainerStatus;
+}
+
 export interface SessionInfo {
   name: string;
   windows: number;
   attached: boolean;
   // Unix epoch seconds the tmux session was created; 0 when unreported.
   created: number;
+  // Workspace key of the per-workspace container this session lives in (from the
+  // container's `codehub.workspace` label). Undefined for the shared runtime.
+  // Restore uses it as the session's routing `containerKey`.
+  workspace?: string;
 }
 
 // The AI coding agents (version/key-probed, mode-aware). Distinct from `Cli`,
@@ -563,16 +574,28 @@ export interface UpdateStatus {
 }
 
 export const ipc = {
-  containerStatus: () => invoke<ContainerStatus>("container_status"),
+  // `workspace` (per-workspace-container key) targets a specific workspace's
+  // container; omitted / flag off → the shared runtime (unchanged behaviour).
+  containerStatus: (workspace?: string) =>
+    invoke<ContainerStatus>("container_status", { workspace }),
   // Runtime lifecycle controls. Each returns the post-action ContainerStatus and
   // also emits codehub://lifecycle, so the store updates either way. start is
   // safe; stop/restart kill every running session (the UI confirms first).
-  containerStart: () => invoke<ContainerStatus>("container_start"),
-  containerStop: () => invoke<ContainerStatus>("container_stop"),
-  containerRestart: () => invoke<ContainerStatus>("container_restart"),
+  containerStart: (workspace?: string) => invoke<ContainerStatus>("container_start", { workspace }),
+  containerStop: (workspace?: string) => invoke<ContainerStatus>("container_stop", { workspace }),
+  containerRestart: (workspace?: string) =>
+    invoke<ContainerStatus>("container_restart", { workspace }),
+  // Per-workspace-container fleet: enumerate managed containers (key + status)
+  // and remove one by key (Prune / explicit delete — kills its sessions).
+  listWorkspaceContainers: () => invoke<WorkspaceContainer[]>("list_workspace_containers"),
+  removeWorkspaceContainer: (workspace: string) =>
+    invoke<void>("remove_workspace_container", { workspace }),
   dockerInfo: () => invoke<DockerInfo>("docker_info"),
   // Build + host platform identity for Settings → About.
   appInfo: () => invoke<AppInfo>("app_info"),
+  // Whether per-workspace-container mode is active. Gates whether a new tab
+  // gets its own containerKey (flag OFF → shared runtime → key undefined).
+  perWorkspaceEnabled: () => invoke<boolean>("per_workspace_enabled"),
   // Persisted UI preferences (Settings screen), backed by settings.json in the
   // app-data dir. getConfig returns the current snapshot; setConfig writes the
   // whole object and echoes back what landed.
@@ -601,43 +624,57 @@ export const ipc = {
   // contract — keep it in sync if a fourth CLI is ever added (Cli-enum 4-point).
   agentKeyStatus: () => invoke<Record<AgentCli, KeyStatus>>("agent_key_status"),
   agentVersions: () => invoke<Record<AgentCli, AgentVersion>>("agent_versions"),
-  containerStats: () => invoke<ContainerStats>("container_stats"),
-  // Tail of the runtime container log; defaults to 200 lines server-side.
-  containerLogs: (tail?: number) => invoke<string[]>("container_logs", { tail }),
-  // Real bind/volume mounts of the runtime container (host paths).
-  containerMounts: () => invoke<MountInfo[]>("container_mounts"),
-  // Identity of the runtime container's image (tag/digest/created/size/arch/os).
-  containerImage: () => invoke<ImageInfo>("container_image"),
-  // Liveness of the runtime container (started-at/restart count/status/OOM).
-  containerHealth: () => invoke<RuntimeHealth>("container_health"),
+  containerStats: (workspace?: string) => invoke<ContainerStats>("container_stats", { workspace }),
+  // Tail of a container's log; defaults to 200 lines server-side. `workspace`
+  // targets a per-workspace container (omit / undefined → shared runtime).
+  containerLogs: (tail?: number, workspace?: string) =>
+    invoke<string[]>("container_logs", { tail, workspace }),
+  // Real bind/volume mounts of a container (host paths).
+  containerMounts: (workspace?: string) => invoke<MountInfo[]>("container_mounts", { workspace }),
+  // Identity of a container's image (tag/digest/created/size/arch/os).
+  containerImage: (workspace?: string) => invoke<ImageInfo>("container_image", { workspace }),
+  // Liveness of a container (started-at/restart count/status/OOM).
+  containerHealth: (workspace?: string) => invoke<RuntimeHealth>("container_health", { workspace }),
   // Non-recursive listing of a /workspace directory (empty path → root).
-  containerListDir: (path: string) => invoke<FileEntry[]>("container_list_dir", { path }),
+  // `workspace` targets a per-workspace container (omit → shared runtime).
+  containerListDir: (path: string, workspace?: string) =>
+    invoke<FileEntry[]>("container_list_dir", { path, workspace }),
   // First 256 KiB of a /workspace file, UTF-8-lossy (Files browser preview).
-  containerReadFile: (path: string) => invoke<string>("container_read_file", { path }),
+  containerReadFile: (path: string, workspace?: string) =>
+    invoke<string>("container_read_file", { path, workspace }),
   // Working-tree status of /workspace (branch + changed files).
-  containerGitStatus: () => invoke<GitStatus>("container_git_status"),
+  containerGitStatus: (workspace?: string) =>
+    invoke<GitStatus>("container_git_status", { workspace }),
   // Unified diff for one /workspace path (raw `git diff` text).
-  containerGitDiff: (path: string) => invoke<string>("container_git_diff", { path }),
+  containerGitDiff: (path: string, workspace?: string) =>
+    invoke<string>("container_git_diff", { path, workspace }),
   // Combined diff of every tracked /workspace change (`git diff HEAD`); the
   // "review all" view. Empty string when the tree is clean.
-  containerGitDiffAll: () => invoke<string>("container_git_diff_all"),
+  containerGitDiffAll: (workspace?: string) =>
+    invoke<string>("container_git_diff_all", { workspace }),
   // Staged-only diff (`git diff --cached`) — session-detail "Staged" filter.
-  containerGitDiffStaged: () => invoke<string>("container_git_diff_staged"),
+  containerGitDiffStaged: (workspace?: string) =>
+    invoke<string>("container_git_diff_staged", { workspace }),
   // Unstaged diff of tracked files (`git diff`) — "Unstaged" filter.
-  containerGitDiffUnstaged: () => invoke<string>("container_git_diff_unstaged"),
+  containerGitDiffUnstaged: (workspace?: string) =>
+    invoke<string>("container_git_diff_unstaged", { workspace }),
   // Stage every /workspace change (`git add -A`). Throws git's message on failure.
-  containerGitStageAll: () => invoke<void>("container_git_stage_all"),
+  containerGitStageAll: (workspace?: string) =>
+    invoke<void>("container_git_stage_all", { workspace }),
   // Commit staged changes (`git commit -m`); resolves to git's summary line, or
   // rejects with git's verbatim message (nothing staged / no identity / not a repo).
-  containerGitCommit: (message: string) => invoke<string>("container_git_commit", { message }),
+  containerGitCommit: (message: string, workspace?: string) =>
+    invoke<string>("container_git_commit", { message, workspace }),
   // Push the current branch + open a GitHub PR; resolves to the PR URL, or
   // rejects with an honest reason (no token/remote/branch, or GitHub's message).
-  containerGitOpenPr: (title: string, body: string) =>
-    invoke<string>("container_git_open_pr", { title, body }),
-  // Processes running inside the runtime container (`docker top`).
-  containerTop: () => invoke<ProcessInfo[]>("container_top"),
+  containerGitOpenPr: (title: string, body: string, workspace?: string) =>
+    invoke<string>("container_git_open_pr", { title, body, workspace }),
+  // Processes running inside a container (`docker top`). `workspace` targets a
+  // per-workspace container (omit / undefined → shared runtime).
+  containerTop: (workspace?: string) => invoke<ProcessInfo[]>("container_top", { workspace }),
   // Recent commits on /workspace (`git log`); defaults to 12 server-side.
-  containerGitLog: (limit?: number) => invoke<CommitInfo[]>("container_git_log", { limit }),
+  containerGitLog: (limit?: number, workspace?: string) =>
+    invoke<CommitInfo[]>("container_git_log", { limit, workspace }),
   // Per-session working/idle activity from output flow (polled by the Hub).
   sessionActivity: () => invoke<SessionActivity[]>("session_activity"),
   // Token analytics from Claude Code session transcripts (Usage view): real
@@ -663,6 +700,11 @@ export const ipc = {
   // `account` (Tier-3) is an account-profile id; the backend resolves it to that
   // profile's host env var NAME and remaps the CLI's credential var onto it for
   // this session. Absent → the default (canonical host env).
+  // `workspace` is the per-workspace-container key: when the per-workspace flag
+  // is on, the session is created in that workspace's own container (lazily
+  // ensured), with `workspaceDir` bound at /workspace on first create. Omitted /
+  // flag off → the shared runtime (unchanged). attach/kill/rename must pass the
+  // SAME `workspace` so they target the container the session actually lives in.
   createSession: (
     name: string,
     cli: Cli,
@@ -671,11 +713,26 @@ export const ipc = {
     resume?: string,
     sessionId?: string,
     account?: string,
-  ) => invoke<void>("create_session", { name, cli, mode, alias, resume, sessionId, account }),
-  killSession: (name: string) => invoke<void>("kill_session", { name }),
-  renameSession: (name: string, alias: string) => invoke<void>("rename_session", { name, alias }),
-  attachSession: (name: string, cols: number, rows: number) =>
-    invoke<string>("attach_session", { name, cols, rows }),
+    workspace?: string,
+    workspaceDir?: string,
+  ) =>
+    invoke<void>("create_session", {
+      name,
+      cli,
+      mode,
+      alias,
+      resume,
+      sessionId,
+      account,
+      workspace,
+      workspaceDir,
+    }),
+  killSession: (name: string, workspace?: string) =>
+    invoke<void>("kill_session", { name, workspace }),
+  renameSession: (name: string, alias: string, workspace?: string) =>
+    invoke<void>("rename_session", { name, alias, workspace }),
+  attachSession: (name: string, cols: number, rows: number, workspace?: string) =>
+    invoke<string>("attach_session", { name, cols, rows, workspace }),
   ptyWrite: (paneId: string, data: string) => invoke<void>("pty_write", { paneId, data }),
   ptyResize: (paneId: string, cols: number, rows: number) =>
     invoke<void>("pty_resize", { paneId, cols, rows }),

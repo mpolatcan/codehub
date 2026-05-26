@@ -4,6 +4,7 @@ import { IconBtn } from "../../components/primitives/IconBtn";
 import { Ico } from "../../components/primitives/icons";
 import { fmtBytes, joinPath as join, orderEntries as order } from "../../lib/fs";
 import { type FileEntry, ipc } from "../../lib/ipc";
+import { activeWorkspace, useStore } from "../../lib/store";
 
 // Browses the runtime container's /workspace, one directory at a time
 // (container_list_dir → `find -maxdepth 1`), with a read-only preview of a
@@ -31,14 +32,16 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
   const [file, setFile] = useState<string | null>(null);
   const [body, setBody] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Browse the active workspace's container; undefined → shared runtime.
+  const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
 
-  // Load the listing whenever the directory changes.
+  // Load the listing whenever the directory (or active container) changes.
   useEffect(() => {
     let alive = true;
     setEntries(null);
     setErr(null);
     ipc
-      .containerListDir(cwd)
+      .containerListDir(cwd, containerKey)
       .then((e) => alive && setEntries(e))
       .catch((e) => {
         if (alive) {
@@ -49,7 +52,7 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
     return () => {
       alive = false;
     };
-  }, [cwd]);
+  }, [cwd, containerKey]);
 
   // Load a file's preview when one is selected.
   useEffect(() => {
@@ -57,13 +60,13 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
     let alive = true;
     setBody(null);
     ipc
-      .containerReadFile(file)
+      .containerReadFile(file, containerKey)
       .then((b) => alive && setBody(b))
       .catch((e) => alive && setBody(`(could not read file: ${e})`));
     return () => {
       alive = false;
     };
-  }, [file]);
+  }, [file, containerKey]);
 
   const enter = (e: FileEntry) => {
     if (e.kind === "dir") {
