@@ -178,7 +178,6 @@ configured in `src-tauri/tauri.conf.json`.
 - macOS Keychain for OAuth token storage (`security-framework` crate).
 - Native OS notifications when an agent finishes (today surfaced in the always-on-top companion).
 - Copy-mode keybindings.
-- Per-workspace containers (today saved workspaces share one runtime container, re-pointing the `/workspace` mount).
 - Auto-update via Tauri updater plugin.
 - App icon set.
 - Code-split the frontend bundle.

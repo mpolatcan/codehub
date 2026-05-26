@@ -41,9 +41,17 @@ codehub/
     src/
       main.rs               # Tiny entry, calls codehub_lib::run()
       lib.rs                # Tauri commands + setup hook
+      manager.rs            # LifecycleManager — resolves shared vs per-workspace
+                            #   container (codehub-ws-<key>); fleet listing
       lifecycle.rs          # Image pull, container create/start/stop
       docker.rs             # tmux session ops + exec attach
       pty.rs                # PtyRegistry — pane stream pumps (PaneEmitter trait)
+      events.rs             # Agent-event hook tailer: one bollard-exec tailer per
+                            #   running container, dedup replay cursor, EventsTracker
+      activity.rs           # Activity ring buffer + pending-prompt tracking
+      config.rs             # Settings / agent-config persistence store
+      island.rs             # macOS Dynamic Island companion (objc2/AppKit NSPanel)
+      types.rs              # Shared IPC types
       devserver.rs          # Dev-only HTTP/WS bridge logic (feature `devserver`)
   runtime/
     Dockerfile              # Runtime image (CLIs + tmux)
@@ -120,21 +128,15 @@ Environment knobs:
 - **xterm panes mount via `absolute inset-0`, never flexbox.** `.pane-body` is `position:relative; flex:1` but NOT `display:flex`; a `flex-1` slot collapses to height 0 and the absolutely-positioned `.term-surface` renders blank. `<PaneMount>` fills the slot with `absolute inset-0` + a `ResizeObserver` that re-fits on resize (there is no window-level resize handler — the observer is it).
 - **Global keyboard shortcuts (`useKeyboard`) attach at the capture phase** so they beat xterm's textarea handler. Don't switch to bubble phase, and don't blanket-skip on `TEXTAREA` — xterm's helper IS a textarea, so the rename-input guard keys off the `.pane-name-input` class instead.
 - **Spawn background tasks in the Tauri `setup` hook with `tauri::async_runtime::spawn`, NOT `tokio::spawn`.** `setup` runs on the main thread with no entered tokio runtime, so a bare `tokio::spawn` panics (`there is no reactor running`) — and because it unwinds across the Obj-C `did_finish_launching` boundary, the process *aborts* instead of erroring. Code shared with the dev bridge (which runs under `#[tokio::main]`, where `tokio::spawn` is valid) must not bake in the spawner: expose the loop as a plain `async fn` and let each caller spawn on its own runtime (see `events::event_tailer_loop` + its two call sites). This shipped as a latent startup crash because the subsystem had only ever run via `make dev-web`, never a real Tauri launch.
+- **The agent-event tailer (`events.rs`) keys strictly by container ID, never name.** Agents append JSON lines to `/tmp/codehub/events/<session>.jsonl` (container-LOCAL, NOT mounted — that's why per-workspace containers each need their own tailer). The reconciler runs one bollard-exec `tail` per running container, re-scanning every 5s, and a per-container/per-session replay cursor de-dups the full-file replays that `tail -n +1 -F` re-emits on every (re)attach. Key the cursor by container **ID** (not name): a recreate (new id, fresh `/tmp`) then drops the stale cursor instead of suppressing fresh events, and an old tailer can't exec into a same-name replacement. Don't reintroduce a name fallback — it replays from line 1 on the first id flip (this regressed four times; see PR #64).
 
 ## Testing posture
 
-There is no automated IPC test suite yet. Manual regression matrix lives in `TEST_SCENARIOS.md` — run it before any release cut, paying special attention to the close-tab → tmux-kill flow (S3, S5, S7, S8) which previously regressed.
+Testing + visual-verification rules live in their own file, imported here:
 
-### Visual / design verification (mandatory for any UI change)
+@.claude/rules/testing.md
 
-ALWAYS visually verify frontend, layout, styling, or UX changes in a real browser before claiming they work — reading the diff is not enough. Use the **dev bridge + Playwright CLI**, never inference:
-
-1. `make dev-web` — boots Vite (`:1420`) + the backend bridge (`:4555`) against a live container, no Tauri window.
-2. Drive it with the `playwright-cli` skill: `open --browser=chrome`, `resize 1440 900`, `goto http://localhost:1420`, then `screenshot` and `Read` the PNG.
-3. Capture every state the change touches — for launch UX that means each surface (`+` new-tab, ⌘T, pane split control, rail "+") — and compare them against each other for consistency, not just the default view.
-4. Check the browser `console` for errors after interacting.
-
-Don't mark UI work done on inference alone — describe the screenshots you actually observed.
+Short version: no automated IPC suite — run `TEST_SCENARIOS.md` before a release (guard S3/S5/S7/S8); any UI change MUST be visually verified via `make dev-web` + Playwright, never inference.
 
 ## When in doubt
 
