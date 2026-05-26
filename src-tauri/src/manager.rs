@@ -163,11 +163,7 @@ impl LifecycleManager {
 
     /// Resolve by optional key for IPC commands that still pass `Option<String>`.
     /// `None` is a programming error (all sessions have a workspace key).
-    pub fn resolve_opt(
-        &self,
-        key: Option<&str>,
-        workspace_dir: Option<PathBuf>,
-    ) -> Arc<Lifecycle> {
+    pub fn resolve_opt(&self, key: Option<&str>, workspace_dir: Option<PathBuf>) -> Arc<Lifecycle> {
         self.for_workspace(
             key.expect("workspace key required (shared runtime removed)"),
             workspace_dir,
@@ -177,9 +173,7 @@ impl LifecycleManager {
     /// Resolve by optional key for inspection/lifecycle commands.
     /// `None` is a programming error.
     pub fn resolve_container(&self, key: Option<&str>) -> Arc<Lifecycle> {
-        self.workspace_container(
-            key.expect("workspace key required (shared runtime removed)"),
-        )
+        self.workspace_container(key.expect("workspace key required (shared runtime removed)"))
     }
 
     /// Raw bollard `Docker` handle — for daemon-level operations (`docker_info`,

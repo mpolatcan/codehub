@@ -45,7 +45,7 @@ import {
   type RuntimeHealth,
   ipc,
 } from "@/app/lib/ipc";
-import { useStore } from "@/app/lib/store";
+import { activeWorkspace, useStore } from "@/app/lib/store";
 import { type Theme, useTheme } from "@/app/lib/theme";
 import { Button } from "@/app/ui/button";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
@@ -55,6 +55,8 @@ import { IntegrationsPane } from "./Integrations";
 export interface SettingsProps {
   /** Kill every running session. Defaults to the store's closeAllSessions. */
   onStopAll?: () => void;
+  /** Dev preview hook: open Agents directly on one agent's factual detail view. */
+  initialAgentDetail?: AgentCli;
 }
 
 const NAV_GROUPS: { label: string; items: { key: string; label: string; soon?: boolean }[] }[] = [
@@ -90,7 +92,7 @@ const NAV_GROUPS: { label: string; items: { key: string; label: string; soon?: b
   },
 ];
 
-export function Settings({ onStopAll }: SettingsProps) {
+export function Settings({ onStopAll, initialAgentDetail }: SettingsProps) {
   // Every pane is now ported. Panes with a real backend (Agents, Container
   // runtime, Repositories, Keyboard shortcuts, Appearance, About) show live
   // data; the rest (General, Notifications) render honest disabled controls
@@ -187,7 +189,7 @@ export function Settings({ onStopAll }: SettingsProps) {
       {/* pane */}
       <div style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
         {active === "agents" ? (
-          <AgentsPane onStopAll={onStopAll} />
+          <AgentsPane onStopAll={onStopAll} initialDetail={initialAgentDetail} />
         ) : active === "runtime" ? (
           <RuntimePane dockerInfo={dockerInfo} />
         ) : active === "integrations" ? (
@@ -235,12 +237,18 @@ function PaneHead({ title, children }: { title: string; children: ReactNode }) {
 // Agents & API keys — REAL Tier-1 data (versions + host-env key presence).
 // Default agent is live (config store); the approve/budget controls stay
 // disabled until per-agent permissions land; "Stop all" is real (closeAllSessions).
-function AgentsPane({ onStopAll }: { onStopAll?: () => void }) {
+function AgentsPane({
+  onStopAll,
+  initialDetail,
+}: {
+  onStopAll?: () => void;
+  initialDetail?: AgentCli;
+}) {
   const keyStatus = useStore((s) => s.keyStatus);
   const agentVersions = useStore((s) => s.agentVersions);
   const sessionCount = useStore((s) => Object.keys(s.sessionMeta).length);
   const closeAllSessions = useStore((s) => s.closeAllSessions);
-  const [detail, setDetail] = useState<AgentCli | null>(null);
+  const [detail, setDetail] = useState<AgentCli | null>(initialDetail ?? null);
 
   const stopAll = () => {
     if (sessionCount === 0) return;
@@ -618,7 +626,7 @@ function AboutPane({
 
       <SectionHead label="Credits" />
       <p style={{ margin: "0 0 8px", fontSize: 12, color: "var(--fg-2)", lineHeight: 1.6 }}>
-        CodeHub runs Claude Code, Codex, and Antigravity side by side in one shared container. Built
+        CodeHub runs Claude Code, Codex, and Antigravity side by side in workspace containers. Built
         with Tauri, React, and xterm.js. Agent CLIs and their model providers are owned by their
         respective vendors.
       </p>
@@ -977,13 +985,41 @@ const MATRIX_COLS = "1fr 104px 104px 1.1fr";
 function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
   return (
     <div style={{ maxWidth: 880 }}>
-      <PaneHead title="Platform">
-        CodeHub ships desktop-first; web support is on the roadmap. This page maps every feature to
-        where it works — so you and your team know what to expect per build. It is a static
-        reference, not live status.
-      </PaneHead>
-
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 16,
+          marginBottom: 26,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <h1
+            style={{
+              margin: "0 0 6px",
+              fontSize: 22,
+              fontWeight: 600,
+              letterSpacing: "-0.01em",
+              color: "var(--fg-0)",
+            }}
+          >
+            Platform
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              color: "var(--fg-2)",
+              fontSize: 13,
+              maxWidth: 540,
+              lineHeight: 1.5,
+            }}
+          >
+            CodeHub ships desktop-first; web support is on the roadmap. This page maps every
+            feature to where it works — so you and your team know what to expect per build. It is a
+            static reference, not live status.
+          </p>
+        </div>
+        <span style={{ flex: 1 }} />
         <PlatformPill version={appInfo?.version ?? null} />
       </div>
 
@@ -1188,22 +1224,31 @@ function ReposPane() {
   const dash = "—";
   const [mounts, setMounts] = useState<MountInfo[] | null>(null);
   const [git, setGit] = useState<GitStatus | null>(null);
+  const containerKey = useStore((s) => activeWorkspace(s)?.containerKey ?? null);
   const loadWorkspaceInfo = useStore((s) => s.loadWorkspaceInfo);
   useEffect(() => {
     let alive = true;
+    if (!containerKey) {
+      setMounts([]);
+      setGit(null);
+      void loadWorkspaceInfo();
+      return () => {
+        alive = false;
+      };
+    }
     ipc
-      .containerMounts()
+      .containerMounts(containerKey)
       .then((m) => alive && setMounts(m))
       .catch(() => alive && setMounts([]));
     ipc
-      .containerGitStatus()
+      .containerGitStatus(containerKey)
       .then((g) => alive && setGit(g))
       .catch(() => {});
     void loadWorkspaceInfo();
     return () => {
       alive = false;
     };
-  }, [loadWorkspaceInfo]);
+  }, [containerKey, loadWorkspaceInfo]);
 
   const workspace = mounts?.find((m) => m.destination === "/workspace");
   const branchLine = git?.isRepo
@@ -1257,6 +1302,7 @@ function ReposPane() {
 // mounted. Shared concern with the spawn dialog's RepositoryPicker.
 function WorkspaceChanger() {
   const workspaceInfo = useStore((s) => s.workspaceInfo);
+  const error = useStore((s) => s.error);
   // Default outside the selector — a `?? []` inside returns a fresh array per
   // render and loops useSyncExternalStore (config starts null).
   const recents = useStore((s) => s.config?.recentWorkspaces) ?? [];
@@ -1264,10 +1310,28 @@ function WorkspaceChanger() {
   const pickWorkspaceDir = useStore((s) => s.pickWorkspaceDir);
   const selectWorkspaceDir = useStore((s) => s.selectWorkspaceDir);
   const recreateRuntime = useStore((s) => s.recreateRuntime);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualPath, setManualPath] = useState("");
 
   const effective = workspaceInfo?.effective ?? null;
   const needsRecreate = workspaceInfo?.needsRecreate ?? false;
   const otherRecents = recents.filter((p) => p !== effective);
+
+  useEffect(() => {
+    if (effective && !manualPath) setManualPath(effective);
+  }, [effective, manualPath]);
+
+  const chooseWithDialog = async () => {
+    const picked = await pickWorkspaceDir();
+    // The browser dev bridge cannot show a native folder picker. Match the spawn
+    // and new-workspace repository picker by falling back to a typed path.
+    if (!picked) setManualOpen(true);
+  };
+
+  const submitManualPath = () => {
+    const path = manualPath.trim();
+    if (path) void selectWorkspaceDir(path);
+  };
 
   const restart = () => {
     if (
@@ -1296,10 +1360,45 @@ function WorkspaceChanger() {
           {effective ?? "—"}
         </span>
         <span style={{ flex: 1 }} />
-        <Button variant="outline" size="sm" onClick={() => void pickWorkspaceDir()}>
+        <Button variant="outline" size="sm" onClick={() => void chooseWithDialog()}>
           {Ico.files}Choose folder…
         </Button>
       </div>
+
+      {(manualOpen || !effective) && (
+        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            value={manualPath}
+            onChange={(e) => setManualPath(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitManualPath();
+            }}
+            placeholder="/absolute/path/to/repo"
+            spellCheck={false}
+            className="mono"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              padding: "7px 10px",
+              borderRadius: 6,
+              border: "1px solid var(--bd-soft)",
+              background: "var(--bg-0)",
+              color: "var(--fg-1)",
+              fontSize: 11.5,
+              outline: "none",
+            }}
+          />
+          <Button variant="outline" size="sm" disabled={!manualPath.trim()} onClick={submitManualPath}>
+            Use path
+          </Button>
+        </div>
+      )}
+
+      {error?.startsWith("set workspace dir failed") && (
+        <div className="mono" style={{ marginTop: 8, fontSize: 10.5, color: "var(--err)" }}>
+          {error}
+        </div>
+      )}
 
       {otherRecents.length > 0 && (
         <div style={{ marginTop: 12 }}>
@@ -1440,6 +1539,951 @@ function NotificationsPane() {
         live
         last
       />
+
+      <SectionHead label="Live activity preview" />
+      <LiveActivityPreview />
+      <LiveActivityStateGrid />
+
+      <SectionHead label="Cross-platform toasts" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+        <NotificationPreview os="macOS">
+          <MacNotificationPreview />
+        </NotificationPreview>
+        <NotificationPreview os="Windows 11">
+          <WindowsNotificationPreview />
+        </NotificationPreview>
+        <NotificationPreview os="Linux · GNOME">
+          <LinuxNotificationPreview />
+        </NotificationPreview>
+      </div>
+    </div>
+  );
+}
+
+export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" | "screen" }) {
+  const screen = variant === "screen";
+  return (
+    <div
+      style={{
+        position: "relative",
+        height: screen ? 420 : 336,
+        overflow: "hidden",
+        border: screen ? "none" : "1px solid var(--bd)",
+        borderRadius: screen ? 0 : 10,
+        background:
+          "radial-gradient(ellipse at 26% 16%, oklch(0.35 0.06 30), oklch(0.18 0.04 230) 58%, oklch(0.12 0.03 250))",
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundImage: "radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)",
+          backgroundSize: "3px 3px",
+          mixBlendMode: "overlay",
+          opacity: 0.55,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 28,
+          background: "rgba(0,0,0,0.55)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          display: "flex",
+          alignItems: "center",
+          padding: "0 14px",
+          fontSize: 12,
+          color: "rgba(255,255,255,0.85)",
+        }}
+      >
+        <span style={{ fontWeight: 600, marginRight: 18 }}>CodeHub</span>
+          <span style={{ marginRight: 14 }}>Session</span>
+          <span style={{ marginRight: 14 }}>Agent</span>
+          <span style={{ marginRight: 14 }}>View</span>
+          {screen && <span style={{ marginRight: 14 }}>Help</span>}
+          <span style={{ flex: 1 }} />
+          <MenuBarActivity />
+        <span className="mono" style={{ fontSize: 11 }}>
+          21:36
+        </span>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          top: screen ? 0 : 40,
+          left: screen ? "50%" : "39%",
+          transform: screen ? "translateX(-50%)" : "translateX(-50%) scale(0.9)",
+          transformOrigin: "top center",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 8,
+          zIndex: 2,
+        }}
+      >
+        <LiveIsland state="wait" />
+        <div style={{ transform: "scale(0.94)", transformOrigin: "top center" }}>
+          <LiveIsland state="live" />
+        </div>
+        <div style={{ transform: "scale(0.88)", transformOrigin: "top center", opacity: 0.85 }}>
+          <LiveIsland state="done" />
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          top: screen ? 36 : 42,
+          right: 16,
+          bottom: screen ? 60 : 18,
+          width: screen ? 304 : 268,
+          padding: 8,
+          display: "flex",
+          flexDirection: "column",
+          background: "rgba(28,28,32,0.58)",
+          backdropFilter: "blur(40px) saturate(140%)",
+          WebkitBackdropFilter: "blur(40px) saturate(140%)",
+          border: "0.5px solid rgba(255,255,255,0.08)",
+          borderRadius: 14,
+          boxShadow: "0 24px 80px rgba(0,0,0,0.48)",
+        }}
+      >
+        <div
+          style={{
+            padding: "4px 8px 8px",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "rgba(255,255,255,0.62)",
+          }}
+        >
+          <span className="mono" style={{ fontSize: 10.5, letterSpacing: "0.08em" }}>
+            LIVE ACTIVITIES
+          </span>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 11 }}>3 active</span>
+        </div>
+        <NotificationCenterCard
+          agent="claude"
+          title="Refactor auth middleware"
+          meta="turn 04:12 · 184k ctx"
+          live
+        />
+        <NotificationCenterCard
+          agent="codex"
+          title="Needs permission · migrate:up"
+          meta="awaiting · 14s blocked"
+          tone="wait"
+        />
+        <NotificationCenterCard
+          agent="antigravity"
+          title="Profiling complete · 3 hotspots"
+          meta="2m ago · done"
+          tone="done"
+        />
+        {screen && (
+          <>
+            <div
+              className="mono"
+              style={{
+                padding: "6px 8px 5px",
+                fontSize: 10.5,
+                letterSpacing: "0.08em",
+                color: "rgba(255,255,255,0.48)",
+              }}
+            >
+              EARLIER TODAY
+            </div>
+            <NotificationCenterCard
+              agent="claude"
+              title="Failed: ENOENT /tmp/snap-3"
+              meta="34m ago"
+              tone="err"
+            />
+            <NotificationCenterCard
+              agent="claude"
+              title="Ran pnpm test · 218 pass"
+              meta="14m ago"
+              tone="done"
+            />
+          </>
+        )}
+      </div>
+      {screen && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 18,
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "5px 10px",
+            borderRadius: 999,
+            background: "rgba(0,0,0,0.45)",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
+            color: "rgba(255,255,255,0.85)",
+            fontSize: 12,
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff" }} />
+          <span>
+            macOS notch · menu bar widget · Notification Center ·{" "}
+            <span
+              className="mono"
+              style={{
+                background: "rgba(255,255,255,0.12)",
+                padding: "1px 5px",
+                borderRadius: 3,
+              }}
+            >
+              ⌘⇧J
+            </span>{" "}
+            cycles focus
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuBarActivity() {
+  const r = 5.5;
+  return (
+    <span
+      title="Claude · turn 04:12"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        height: 22,
+        padding: "2px 10px",
+        marginRight: 14,
+        borderRadius: 999,
+        background: "rgba(255,255,255,0.10)",
+        border: "0.5px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+        <circle cx="7" cy="7" r={r} stroke="rgba(255,255,255,0.18)" strokeWidth="1.4" fill="none" />
+        <circle
+          cx="7"
+          cy="7"
+          r={r}
+          stroke="oklch(0.80 0.17 145)"
+          strokeWidth="1.4"
+          fill="none"
+          strokeDasharray={`${0.62 * 2 * Math.PI * r} ${2 * Math.PI * r}`}
+          transform="rotate(-90 7 7)"
+          strokeLinecap="round"
+        />
+      </svg>
+      <span style={{ fontSize: 11, color: "#fff" }}>Refactor auth</span>
+      <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.65)" }}>
+        04:12
+      </span>
+    </span>
+  );
+}
+
+export function LiveActivityStateGrid() {
+  return (
+    <div style={{ marginTop: 10, marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-0)" }}>States</span>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+          island, stack, and expanded variants
+        </span>
+        <span style={{ flex: 1, height: 1, background: "var(--bd-soft)" }} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+        <IslandStateCard title="Idle" detail="compact summary">
+          <LiveIsland state="idle" />
+        </IslandStateCard>
+        <IslandStateCard title="Live" detail="turn in progress">
+          <LiveIsland state="live" />
+        </IslandStateCard>
+        <IslandStateCard title="Awaiting input" detail="approve or deny inline" tone="wait">
+          <LiveIsland state="wait" />
+        </IslandStateCard>
+        <IslandStateCard title="Turn finished" detail="review before it fades" tone="done">
+          <LiveIsland state="done" />
+        </IslandStateCard>
+        <IslandStateCard title="Failed" detail="sticks until acknowledged" tone="err">
+          <LiveIsland state="err" />
+        </IslandStateCard>
+        <IslandStateCard title="Split" detail="two simultaneous events">
+          <LiveIsland state="split" />
+        </IslandStateCard>
+        <IslandStateCard title="Multi" detail="condensed event stack">
+          <LiveIsland state="multi" />
+        </IslandStateCard>
+        <IslandStateCard title="Stack" detail="priority ordered queue" tone="wait">
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <LiveIsland state="wait" />
+            <div style={{ transform: "scale(0.92)", transformOrigin: "top center" }}>
+              <LiveIsland state="live" />
+            </div>
+            <div style={{ transform: "scale(0.84)", transformOrigin: "top center", opacity: 0.78 }}>
+              <LiveIsland state="done" />
+            </div>
+          </div>
+        </IslandStateCard>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <IslandStateCard title="Expanded" detail="rich card with terminal peek">
+            <ExpandedIslandPreview />
+          </IslandStateCard>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IslandStateCard({
+  title,
+  detail,
+  tone,
+  children,
+}: {
+  title: string;
+  detail: string;
+  tone?: "wait" | "done" | "err";
+  children: ReactNode;
+}) {
+  const color =
+    tone === "wait"
+      ? "var(--wait)"
+      : tone === "done"
+        ? "var(--idle)"
+        : tone === "err"
+          ? "var(--err)"
+          : "var(--fg-2)";
+  return (
+    <div
+      className="ch-card"
+      style={{ padding: 0, overflow: "hidden", background: "var(--bg-2)" }}
+    >
+      <div
+        style={{
+          minHeight: 92,
+          padding: 14,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background:
+            "radial-gradient(ellipse at 50% 10%, oklch(0.24 0.04 250), oklch(0.13 0.03 250))",
+          borderBottom: "1px solid var(--bd-soft)",
+          overflow: "hidden",
+        }}
+      >
+        {children}
+      </div>
+      <div style={{ padding: "10px 12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 2 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
+          <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>{title}</span>
+        </div>
+        <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+          {detail}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveIsland({ state }: { state: "idle" | "live" | "wait" | "done" | "err" | "split" | "multi" }) {
+  const base: CSSProperties = {
+    background: "#000",
+    color: "rgba(255,255,255,0.95)",
+    fontFamily: "var(--mono)",
+    display: "flex",
+    alignItems: "center",
+    boxShadow: "0 6px 22px rgba(0,0,0,0.55)",
+    overflow: "hidden",
+    border: "1px solid rgba(255,255,255,0.04)",
+  };
+  if (state === "idle") {
+    return (
+      <div
+        style={{
+          ...base,
+          height: 28,
+          padding: "0 14px",
+          borderRadius: 999,
+          gap: 9,
+          fontSize: 12,
+        }}
+      >
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: "oklch(0.80 0.17 145)",
+            boxShadow: "0 0 8px oklch(0.80 0.17 145)",
+          }}
+        />
+        <span>2 agents</span>
+        <span style={{ color: "rgba(255,255,255,0.45)" }}>·</span>
+        <span className="tnum">04:12</span>
+      </div>
+    );
+  }
+  if (state === "wait") {
+    return (
+      <div
+        style={{
+          ...base,
+          width: 326,
+          height: 52,
+          padding: "0 6px 0 14px",
+          borderRadius: 26,
+          gap: 10,
+          boxSizing: "border-box",
+        }}
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: "oklch(0.83 0.14 80)",
+            boxShadow: "0 0 10px oklch(0.83 0.14 80)",
+          }}
+        />
+        <AgentGlyph agent="codex" size={13} color="oklch(0.78 0.10 265)" />
+        <span
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            lineHeight: 1.2,
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          <span style={{ fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}>
+            Codex needs permission
+          </span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.58)" }}>
+            aurora-api · pnpm migrate:up
+          </span>
+        </span>
+        <IslandButton>Deny</IslandButton>
+        <IslandButton tone="ok">Approve</IslandButton>
+      </div>
+    );
+  }
+  if (state === "err") {
+    return (
+      <div
+        style={{
+          ...base,
+          width: 290,
+          height: 46,
+          padding: "0 7px 0 14px",
+          borderRadius: 23,
+          gap: 10,
+          boxSizing: "border-box",
+        }}
+      >
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            background: "oklch(0.68 0.18 25)",
+            boxShadow: "0 0 10px oklch(0.68 0.18 25)",
+          }}
+        />
+        <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
+        <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, flex: 1 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 500 }}>Claude failed</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.58)" }}>
+            ENOENT /tmp/snap-3
+          </span>
+        </span>
+        <IslandButton tone="white">Open</IslandButton>
+      </div>
+    );
+  }
+  if (state === "split") {
+    return (
+      <div
+        style={{
+          ...base,
+          height: 38,
+          padding: 0,
+          borderRadius: 19,
+          fontSize: 12,
+          alignItems: "stretch",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px" }}>
+          <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
+          <span>refactor auth</span>
+          <span className="tnum" style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>
+            04:12
+          </span>
+        </div>
+        <span style={{ width: 1, background: "rgba(255,255,255,0.10)" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px" }}>
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "oklch(0.83 0.14 80)",
+              boxShadow: "0 0 8px oklch(0.83 0.14 80)",
+            }}
+          />
+          <AgentGlyph agent="codex" size={13} color="oklch(0.78 0.10 265)" />
+          <span>needs input</span>
+        </div>
+      </div>
+    );
+  }
+  if (state === "multi") {
+    return (
+      <div
+        style={{
+          ...base,
+          height: 34,
+          padding: "0 14px",
+          borderRadius: 17,
+          gap: 9,
+          fontSize: 12,
+        }}
+      >
+        <span style={{ display: "inline-flex", marginRight: -4 }}>
+          <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
+        </span>
+        <span style={{ display: "inline-flex", marginLeft: -3 }}>
+          <AgentGlyph agent="codex" size={13} color="oklch(0.78 0.10 265)" />
+        </span>
+        <span>5 updates</span>
+        <span
+          className="tnum"
+          style={{
+            padding: "1px 7px",
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.12)",
+            color: "#fff",
+            fontSize: 11,
+          }}
+        >
+          +3
+        </span>
+      </div>
+    );
+  }
+  if (state === "done") {
+    return (
+      <div
+        style={{
+          ...base,
+          width: 288,
+          height: 48,
+          padding: "0 6px 0 14px",
+          borderRadius: 24,
+          gap: 10,
+          boxSizing: "border-box",
+        }}
+      >
+        <span
+          style={{ width: 7, height: 7, borderRadius: "50%", background: "oklch(0.78 0.08 200)" }}
+        />
+        <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
+        <span
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            lineHeight: 1.2,
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 500 }}>Claude finished refactor</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.58)" }}>
+            14 edits · 4:21 elapsed
+          </span>
+        </span>
+        <IslandButton tone="white">Review</IslandButton>
+      </div>
+    );
+  }
+  return (
+    <div
+      style={{
+        ...base,
+        height: 38,
+        padding: "0 14px",
+        borderRadius: 19,
+        gap: 10,
+        position: "relative",
+      }}
+    >
+      <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
+      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1, gap: 2 }}>
+        <span style={{ fontSize: 12 }}>Claude · refactor auth</span>
+        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>
+          turn 04:12 · tests passing
+        </span>
+      </span>
+      <span
+        style={{
+          position: "absolute",
+          left: 14,
+          right: 14,
+          bottom: 4,
+          height: 2,
+          background: "rgba(255,255,255,0.1)",
+          borderRadius: 999,
+        }}
+      >
+        <span
+          style={{
+            display: "block",
+            width: "62%",
+            height: "100%",
+            background: "oklch(0.80 0.17 145)",
+            borderRadius: 999,
+          }}
+        />
+      </span>
+    </div>
+  );
+}
+
+function ExpandedIslandPreview() {
+  return (
+    <div
+      style={{
+        width: "min(100%, 460px)",
+        background: "#000",
+        color: "#fff",
+        borderRadius: 22,
+        boxShadow: "0 18px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05)",
+        border: "1px solid rgba(255,255,255,0.06)",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ padding: "12px 14px 8px", display: "flex", alignItems: "center", gap: 10 }}>
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            background: "oklch(0.80 0.17 145)",
+            boxShadow: "0 0 10px oklch(0.80 0.17 145)",
+          }}
+        />
+        <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Claude · aurora-api</span>
+        <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+          opus · feat/auth
+        </span>
+        <span style={{ flex: 1 }} />
+        <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.65)" }}>
+          04:12
+        </span>
+      </div>
+      <div
+        className="mono"
+        style={{
+          margin: "0 12px",
+          padding: "10px 12px",
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: 8,
+          fontSize: 11.5,
+          lineHeight: 1.55,
+          color: "rgba(255,255,255,0.84)",
+        }}
+      >
+        <div style={{ color: "oklch(0.80 0.17 145)" }}>
+          Bash <span style={{ color: "rgba(255,255,255,0.55)" }}>pnpm test src/auth</span>
+        </div>
+        <div>
+          <span style={{ color: "oklch(0.80 0.17 145)" }}>✓</span>{" "}
+          verifier.spec.ts <span style={{ color: "rgba(255,255,255,0.45)" }}>(4 tests)</span>
+        </div>
+        <div style={{ color: "rgba(255,255,255,0.56)" }}>Running final typecheck…</div>
+      </div>
+      <div style={{ padding: "12px 14px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+        <IslandButton tone="white">Jump to terminal</IslandButton>
+        <IslandButton>View diff</IslandButton>
+        <IslandButton>Dismiss</IslandButton>
+      </div>
+    </div>
+  );
+}
+
+function IslandButton({ children, tone }: { children: ReactNode; tone?: "ok" | "white" }) {
+  return (
+    <button
+      type="button"
+      style={{
+        border: "none",
+        cursor: "default",
+        fontSize: 11.5,
+        fontWeight: 600,
+        padding: "7px 10px",
+        borderRadius: 999,
+        background:
+          tone === "ok"
+            ? "oklch(0.80 0.17 145)"
+            : tone === "white"
+              ? "#fff"
+              : "rgba(255,255,255,0.10)",
+        color: tone === "ok" || tone === "white" ? "#000" : "rgba(255,255,255,0.85)",
+        lineHeight: 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function NotificationCenterCard({
+  agent,
+  title,
+  meta,
+  tone,
+  live,
+}: {
+  agent: AgentCli;
+  title: string;
+  meta: string;
+  tone?: "wait" | "done" | "err";
+  live?: boolean;
+}) {
+  const color =
+    tone === "wait"
+      ? "oklch(0.83 0.14 80)"
+      : tone === "err"
+        ? "oklch(0.68 0.18 25)"
+        : tone === "done"
+          ? "rgba(255,255,255,0.45)"
+          : "oklch(0.80 0.17 145)";
+  return (
+    <div
+      style={{
+        marginBottom: 6,
+        padding: "10px 12px",
+        borderRadius: 10,
+        background: "rgba(50,50,55,0.62)",
+        border: "0.5px solid rgba(255,255,255,0.06)",
+        color: "#fff",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: color,
+            boxShadow: live ? `0 0 8px ${color}` : "none",
+          }}
+        />
+        <AgentGlyph agent={agent} size={11} color={color} />
+        <span style={{ fontSize: 12, fontWeight: 600 }}>CodeHub</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+          {meta.split(" · ").at(-1)}
+        </span>
+      </div>
+      <div style={{ fontSize: 12, marginBottom: 2 }}>{title}</div>
+      <div className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.56)" }}>
+        {meta}
+      </div>
+    </div>
+  );
+}
+
+export function NotificationPreview({ os, children }: { os: string; children: ReactNode }) {
+  return (
+    <div
+      style={{
+        border: "1px solid var(--bd)",
+        borderRadius: 10,
+        padding: 12,
+        background: "var(--bg-2)",
+      }}
+    >
+      <div
+        style={{
+          minHeight: 124,
+          borderRadius: 7,
+          padding: "18px 12px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "linear-gradient(135deg, oklch(0.30 0.05 230), oklch(0.18 0.04 250))",
+          border: "1px solid var(--bd-soft)",
+          overflow: "hidden",
+        }}
+      >
+        {children}
+      </div>
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <span className="lbl" style={{ fontSize: 11 }}>
+          {os}
+        </span>
+        <span style={{ flex: 1, height: 1, background: "var(--bd-soft)" }} />
+        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+          native APIs
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function MacNotificationPreview() {
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 280,
+        padding: "11px 12px",
+        borderRadius: 14,
+        background: "rgba(28,28,32,0.92)",
+        border: "0.5px solid rgba(255,255,255,0.06)",
+        color: "#fff",
+        display: "flex",
+        gap: 10,
+        boxShadow: "0 10px 40px rgba(0,0,0,0.45)",
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 7,
+          background: "var(--bg-0)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <Logo size={18} withText={false} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 1 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>CodeHub</span>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>now</span>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 1 }}>Codex needs permission</div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.72)" }}>
+          aurora-api · run pnpm migrate:up?
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function WindowsNotificationPreview() {
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 280,
+        padding: 12,
+        borderRadius: 8,
+        background: "rgba(28,28,30,0.94)",
+        color: "#fff",
+        boxShadow: "0 12px 32px rgba(0,0,0,0.50)",
+        border: "1px solid rgba(255,255,255,0.05)",
+        position: "relative",
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: 3,
+          bottom: 0,
+          background: "oklch(0.78 0.10 265)",
+          borderRadius: "8px 0 0 8px",
+        }}
+      />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <Logo size={13} withText={false} />
+        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.70)" }}>CodeHub</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>1m ago</span>
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Claude finished refactor</div>
+      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)" }}>
+        14 edits, 218 tests pass · 4:21 elapsed
+      </div>
+    </div>
+  );
+}
+
+export function LinuxNotificationPreview() {
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 296,
+        padding: "10px 12px",
+        borderRadius: 10,
+        background: "rgba(20,22,26,0.96)",
+        color: "#fff",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        boxShadow: "0 10px 36px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.06)",
+      }}
+    >
+      <div
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: "50%",
+          background: "oklch(0.72 0.18 25)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        !
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 1 }}>
+          Claude failed · dash-web
+        </div>
+        <div
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "rgba(255,255,255,0.70)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          ENOENT: no such file '/tmp/snap-3'
+        </div>
+      </div>
     </div>
   );
 }

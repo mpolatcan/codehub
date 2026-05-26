@@ -15,7 +15,6 @@ import { Tag } from "@/app/components/primitives/Tag";
  * placeholder copy is acceptable, because it is explicitly a catalogue of looks.
  */
 import { Ico } from "@/app/components/primitives/icons";
-import { useTheme } from "@/app/lib/theme";
 import { Button } from "@/app/ui/button";
 import type { ReactNode } from "react";
 
@@ -667,7 +666,6 @@ function StateCard({
 }
 
 export default function StatesGallery() {
-  const { theme, toggle } = useTheme();
   return (
     <div
       style={{
@@ -692,28 +690,12 @@ export default function StatesGallery() {
           States
         </h1>
         <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
-          loading · error · empty states across the app · dev reference
+          loading · error · empty states across the app · reference
         </span>
-        <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          onClick={toggle}
-          style={{
-            padding: "4px 12px",
-            borderRadius: 6,
-            border: "1px solid var(--bd)",
-            background: "var(--bg-3)",
-            color: "var(--fg-0)",
-            fontSize: 12,
-            cursor: "pointer",
-          }}
-        >
-          Theme: {theme}
-        </button>
       </div>
 
       <div style={{ flex: 1, overflow: "auto", padding: "20px 28px" }}>
-        <SectionTitle label="Loading" caption="skeletons + container boot progress" />
+        <SectionTitle label="Loading" caption="skeletons + spawn progress" />
         <div
           style={{
             display: "grid",
@@ -744,12 +726,6 @@ export default function StatesGallery() {
             desc="First paint before agent metadata returns. Shimmer block, then content."
           >
             <SkeletonPane caption="loading transcript…" turns={218} />
-          </StateCard>
-          <StateCard
-            caption="Skeleton (no turn count)"
-            desc="When the transcript length isn't known yet, the count is omitted — never guessed."
-          >
-            <SkeletonPane caption="attaching…" />
           </StateCard>
         </div>
 
@@ -823,10 +799,10 @@ export default function StatesGallery() {
               icon={Ico.container}
               title="No workspaces yet"
               hint="A workspace is created when you spawn your first agent."
-              cta="New agent"
+              cta="New workspace"
             />
           </StateCard>
-          <StateCard caption="No resumable sessions" desc="Resume library on day one.">
+          <StateCard caption="No resumable agents" desc="Resume library on day one.">
             <EmptyPanel
               icon={Ico.hub}
               title="Nothing to resume"
@@ -853,8 +829,8 @@ export default function StatesGallery() {
             <EmptyPanel
               small
               icon={Ico.search}
-              title="No matches"
-              hint="Try a shorter query, or ⌘N to spawn a new agent."
+              title='No matches for "audit-tracking"'
+              hint="Try a shorter query, or use ⌘N to spawn a new agent on this topic."
             />
           </StateCard>
           <StateCard

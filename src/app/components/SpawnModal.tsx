@@ -1,7 +1,8 @@
+import { useEffect } from "react";
 import type { Cli, Mode } from "../lib/ipc";
 import { useLauncher } from "../lib/launcher";
 import { activeWorkspace, useStore } from "../lib/store";
-import { leavesList } from "../lib/tree";
+import { MAX_GROUP_PANES, leavesList, workspaceTitle } from "../lib/tree";
 import { type GroupChoice, NEW_GROUP, SpawnDialog } from "../screens/SpawnDialog";
 
 // The single agent-creation modal, shared by every launch surface (sidebar
@@ -24,6 +25,17 @@ export function SpawnModal() {
   const active = useStore(activeWorkspace);
   const runtimeLive = useStore((s) => s.status?.state === "running");
 
+  useEffect(() => {
+    if (openKey === null) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      close();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openKey, close]);
+
   if (openKey === null) return null;
   const splitting = Boolean(ctx?.session);
 
@@ -32,13 +44,18 @@ export function SpawnModal() {
   // (ctx.groupId) already fixes where the pane lands, so no picker is shown.
   const groups: GroupChoice[] | undefined =
     !splitting && !ctx?.groupId && active
-      ? active.groups.map((g) => ({
-          id: g.id,
-          name: g.name,
-          color: g.color,
-          count: leavesList(g.root).length,
-        }))
+      ? active.groups.map((g) => {
+          const count = leavesList(g.root).length;
+          return {
+            id: g.id,
+            name: g.name,
+            color: g.color,
+            count,
+            full: count >= MAX_GROUP_PANES,
+          };
+        })
       : undefined;
+  const workspaceName = active ? workspaceTitle(active) : ctx?.workspaceTitle;
 
   const launch = (
     cli: Cli,
@@ -58,11 +75,19 @@ export function SpawnModal() {
       // once we know the spawn can land, so a stopped container can't orphan an
       // empty, now-active group.
       if (targetGroupId === NEW_GROUP && !runtimeLive) return;
+      if (targetGroupId !== NEW_GROUP) {
+        const targetGroup = active.groups.find((g) => g.id === targetGroupId);
+        if (leavesList(targetGroup?.root ?? null).length >= MAX_GROUP_PANES) return;
+      }
       const groupId = targetGroupId === NEW_GROUP ? addGroup(active.id) : targetGroupId;
       void addPaneToGroup(active.id, groupId, cli, mode, prompt, account);
     } else {
       // Default (and historic) behaviour: a brand-new workspace tab.
-      void newPlate(cli, mode, undefined, prompt, account);
+      void newPlate(cli, mode, undefined, prompt, account, {
+        title: ctx?.workspaceTitle,
+        dir: ctx?.workspaceDir,
+        savedWorkspaceId: ctx?.savedWorkspaceId,
+      });
     }
   };
 
@@ -77,9 +102,10 @@ export function SpawnModal() {
       }}
     >
       <SpawnDialog
-        defaultCli={defaultCli}
+        defaultCli={ctx?.preferredCli ?? defaultCli}
         splitting={splitting}
         groups={groups}
+        workspaceName={workspaceName}
         onLaunch={launch}
         onCancel={close}
       />

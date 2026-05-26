@@ -340,7 +340,10 @@ fn remove_account_profile(
 async fn agent_versions(
     state: tauri::State<'_, AppState>,
 ) -> Result<HashMap<String, AgentVersion>, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
     Ok(docker.agent_versions().await)
 }
@@ -354,7 +357,10 @@ async fn container_stats(
 ) -> Result<ContainerStats, String> {
     let docker = match workspace {
         Some(ref key) => Arc::new(state.manager.workspace_container(key).docker_client()),
-        None => state.manager.any_running_docker().await
+        None => state
+            .manager
+            .any_running_docker()
+            .await
             .ok_or_else(|| "no running workspace container".to_string())?,
     };
     docker.stats().await.map_err(|e| e.to_string())
@@ -394,7 +400,10 @@ async fn container_image(
 ) -> Result<ImageInfo, String> {
     let docker = match workspace {
         Some(ref key) => Arc::new(state.manager.workspace_container(key).docker_client()),
-        None => state.manager.any_running_docker().await
+        None => state
+            .manager
+            .any_running_docker()
+            .await
             .ok_or_else(|| "no running workspace container".to_string())?,
     };
     docker.image_info().await.map_err(|e| e.to_string())
@@ -409,7 +418,10 @@ async fn container_health(
 ) -> Result<RuntimeHealth, String> {
     let docker = match workspace {
         Some(ref key) => Arc::new(state.manager.workspace_container(key).docker_client()),
-        None => state.manager.any_running_docker().await
+        None => state
+            .manager
+            .any_running_docker()
+            .await
             .ok_or_else(|| "no running workspace container".to_string())?,
     };
     docker.health().await.map_err(|e| e.to_string())
@@ -558,7 +570,10 @@ async fn container_top(
 /// workspace container. Errs when no containers are running.
 #[tauri::command]
 async fn claude_usage(state: tauri::State<'_, AppState>) -> Result<ClaudeUsage, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
     docker.claude_usage().await.map_err(|e| e.to_string())
 }
@@ -566,7 +581,10 @@ async fn claude_usage(state: tauri::State<'_, AppState>) -> Result<ClaudeUsage, 
 /// Past Claude conversations from on-disk transcripts (Resume screen).
 #[tauri::command]
 async fn claude_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<ClaudeSession>, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
     docker.claude_sessions().await.map_err(|e| e.to_string())
 }
@@ -577,9 +595,15 @@ async fn claude_session_usage(
     id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<SessionUsage>, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
-    docker.claude_session_usage(&id).await.map_err(|e| e.to_string())
+    docker
+        .claude_session_usage(&id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Build the native island's honest one-line Claude metric (e.g.
@@ -610,18 +634,30 @@ fn island_metric(u: &SessionUsage) -> Option<String> {
 async fn claude_integrations(
     state: tauri::State<'_, AppState>,
 ) -> Result<ClaudeIntegrations, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
-    docker.claude_integrations().await.map_err(|e| e.to_string())
+    docker
+        .claude_integrations()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Claude's configurable surface (Agent settings detail): active model, default
 /// permission mode, sub-agents, skills, plugins. Reads from `/config`.
 #[tauri::command]
 async fn claude_agent_config(state: tauri::State<'_, AppState>) -> Result<AgentConfig, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
-    docker.claude_agent_config().await.map_err(|e| e.to_string())
+    docker
+        .claude_agent_config()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Recent commits on `/workspace` (Dashboard "Recent commits").
@@ -672,10 +708,9 @@ async fn create_session(
             .find(|p| p.id == id)
             .map(|p| p.var_name)
     });
-    let lifecycle = state.manager.resolve(
-        &workspace,
-        workspace_dir.map(std::path::PathBuf::from),
-    );
+    let lifecycle = state
+        .manager
+        .resolve(&workspace, workspace_dir.map(std::path::PathBuf::from));
     lifecycle
         .ensure_runtime()
         .await
@@ -976,7 +1011,10 @@ async fn session_activity_history(
 /// Codex usage analytics from rollout files.
 #[tauri::command]
 async fn codex_usage(state: tauri::State<'_, AppState>) -> Result<CodexUsage, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
     docker.codex_usage().await.map_err(|e| e.to_string())
 }
@@ -984,7 +1022,10 @@ async fn codex_usage(state: tauri::State<'_, AppState>) -> Result<CodexUsage, St
 /// Past Codex conversations from rollout files (Resume view).
 #[tauri::command]
 async fn codex_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<CodexSession>, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
     docker.codex_sessions().await.map_err(|e| e.to_string())
 }
@@ -995,9 +1036,15 @@ async fn codex_session_usage(
     id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<CodexSessionUsage>, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
-    docker.codex_session_usage(&id).await.map_err(|e| e.to_string())
+    docker
+        .codex_session_usage(&id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Codex rate-limit / plan meters from the most recent rollout file.
@@ -1005,7 +1052,10 @@ async fn codex_session_usage(
 async fn codex_rate_limits(
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<CodexRateLimits>, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
     docker.codex_rate_limits().await.map_err(|e| e.to_string())
 }
@@ -1014,7 +1064,10 @@ async fn codex_rate_limits(
 /// host — presence-only, the value is NEVER returned.
 #[tauri::command]
 async fn github_status(state: tauri::State<'_, AppState>) -> Result<GithubStatus, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
     docker.github_status().await.map_err(|e| e.to_string())
 }
@@ -1022,7 +1075,10 @@ async fn github_status(state: tauri::State<'_, AppState>) -> Result<GithubStatus
 /// Repos visible to the connected GitHub account (up to 30, sorted by push date).
 #[tauri::command]
 async fn github_repos(state: tauri::State<'_, AppState>) -> Result<Vec<GithubRepo>, String> {
-    let docker = state.manager.any_running_docker().await
+    let docker = state
+        .manager
+        .any_running_docker()
+        .await
         .ok_or_else(|| "no running workspace container".to_string())?;
     docker.github_repos().await.map_err(|e| e.to_string())
 }
@@ -1274,7 +1330,10 @@ pub fn run() {
                     };
                     let _ = handle.emit("codehub://lifecycle", &status);
                 } else {
-                    let _ = handle.emit("codehub://lifecycle-error", "Docker daemon unreachable — is Docker Desktop running?".to_string());
+                    let _ = handle.emit(
+                        "codehub://lifecycle-error",
+                        "Docker daemon unreachable — is Docker Desktop running?".to_string(),
+                    );
                 }
             });
 

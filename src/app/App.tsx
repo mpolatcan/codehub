@@ -12,8 +12,10 @@ import { HubSidebar } from "./components/hub/HubSidebar";
 import { HubStatusBar } from "./components/hub/HubStatusBar";
 import { HubTabs } from "./components/hub/HubTabs";
 import { RuntimeBanner } from "./components/hub/RuntimeBanner";
+import { ShellPanel } from "./components/hub/ShellPanel";
 import { Shortcuts } from "./components/hub/Shortcuts";
 import { WorkspaceBar } from "./components/hub/WorkspaceBar";
+import { Ico } from "./components/primitives/icons";
 import { useActivityPoll } from "./hooks/useActivityPoll";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useContainerStatsPoll } from "./hooks/useContainerStatsPoll";
@@ -133,11 +135,14 @@ function HubView() {
   const setFiles = useOverlay((s) => s.setFiles);
   const diff = useOverlay((s) => s.diff);
   const setDiff = useOverlay((s) => s.setDiff);
+  const shell = useOverlay((s) => s.shell);
   // Resume drawer docks at the right, replacing the activity-rail slot (design
   // resume.jsx). The drawer self-gates on the same flag, so it's null when closed.
   const resume = useOverlay((s) => s.resume);
   // The drawer can dock left (before the hub) or right (replacing the rail).
   const resumeSide = useOverlay((s) => s.resumeSide);
+  const activityRail = useOverlay((s) => s.activityRail);
+  const setActivityRail = useOverlay((s) => s.setActivityRail);
   // Real working/idle signal for PaneHead + the rail's Activity section.
   useActivityPoll();
   // Live awaiting-input + turn-history stream (← agent-native hooks, §7): keeps
@@ -166,6 +171,7 @@ function HubView() {
             <div className="hub-grid">
               <Grid ws={active} />
             </div>
+            {shell && <ShellPanel />}
             {/* Design order below the grid: meta strip → pane actions → status. */}
             <WorkspaceBar />
             {/* Bottom chrome: Files / Shell / Diff + Resume + the spawn CTA. Only
@@ -179,14 +185,32 @@ function HubView() {
         ) : (
           <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
             {/* New-agent flow opens the shared launcher anchored in the sidebar. */}
-            <EmptyHero onNew={() => openLaunch("newtab")} />
+            <EmptyHero
+              onNew={(cli) => openLaunch("newtab", cli ? { dir: "row", preferredCli: cli } : undefined)}
+            />
           </div>
         )}
         <HubStatusBar />
       </main>
 
       {diff !== null && <DiffViewer path={diff} onClose={() => setDiff(null)} />}
-      {resume && resumeSide === "right" ? <ResumeDrawer /> : <ActivityRail />}
+      {resume && resumeSide === "right" ? (
+        <ResumeDrawer />
+      ) : activityRail ? (
+        <ActivityRail />
+      ) : (
+        <button
+          type="button"
+          className="ch-activity-rail-reveal"
+          title="Show activity panel (⌘⇧A)"
+          onClick={() => setActivityRail(true)}
+        >
+          <span style={{ position: "relative", display: "inline-flex" }}>{Ico.bell}</span>
+          <span style={{ display: "inline-flex", transform: "rotate(180deg)" }}>
+            {Ico.sidebarR}
+          </span>
+        </button>
+      )}
     </>
   );
 }

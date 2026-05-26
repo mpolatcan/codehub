@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import type { CharacterKind } from "../components/primitives/Character";
 
-// Global overlays that float above every view: the command palette (⌘K), the
-// keyboard-shortcuts cheat sheet (⌘/), and the diff viewer. Kept in their own
-// tiny store, like the launcher, so opening one from a keyboard handler or the
-// Hub toolbar doesn't touch app state.
+// Global overlays that float above or dock into every view: the command palette
+// (⌘K), keyboard-shortcuts cheat sheet (⌘/), and hub utility panels. Kept in
+// their own tiny store, like the launcher, so opening one from a keyboard
+// handler or the Hub toolbar doesn't touch app state.
 interface OverlayState {
   palette: boolean;
   shortcuts: boolean;
@@ -16,6 +16,10 @@ interface OverlayState {
   // Files browser open/closed. Like `diff`, lives here so the Hub toolbar's
   // Files button (and later a shortcut) drive the one viewer.
   files: boolean;
+  // Workspace-level Shell panel open/closed. This is the design's docked bottom
+  // utility panel, separate from agent split panes and restored by the Hub when
+  // toggled from the ActionBar / shortcut.
+  shell: boolean;
   // Resume drawer open/closed (⌘R, the ActionBar "Resume" button, Welcome's
   // "Browse sessions" card). A docked right-side drawer over the live hub — past
   // Claude/Codex transcripts, grouped by agent. Lives here (not a top-level view)
@@ -33,6 +37,10 @@ interface OverlayState {
   // template). A modal over the Welcome list; creates a saved workspace + opens
   // its first agent. Lives here so a keyboard handler can open it directly.
   newWorkspace: boolean;
+  // Right-side activity rail visibility (design main-hub-a reveal/collapse).
+  // Session-local UI state: when hidden, App.tsx renders the slim reveal strip
+  // in its place rather than unmounting the rest of the hub.
+  activityRail: boolean;
   // Focus mode (design hub-states HubStateFocus): the active group's focused pane
   // is maximized; its siblings collapse to a "Minimized · N" side strip. Esc (or
   // the strip's "Show all") exits. Only meaningful when the group has 2+ panes;
@@ -52,10 +60,12 @@ interface OverlayState {
   setShortcuts: (open: boolean) => void;
   setDiff: (path: string | null) => void;
   setFiles: (open: boolean) => void;
+  setShell: (open: boolean) => void;
   setResume: (open: boolean) => void;
   setResumeSide: (side: "left" | "right") => void;
   setAbout: (open: boolean) => void;
   setNewWorkspace: (open: boolean) => void;
+  setActivityRail: (open: boolean) => void;
   setFocusMode: (on: boolean) => void;
   setDragSession: (session: string | null) => void;
   togglePalette: () => void;
@@ -67,20 +77,24 @@ export const useOverlay = create<OverlayState>((set) => ({
   shortcuts: false,
   diff: null,
   files: false,
+  shell: false,
   resume: false,
   resumeSide: "right",
   about: false,
   newWorkspace: false,
+  activityRail: true,
   focusMode: false,
   dragSession: null,
   setPalette: (palette) => set({ palette }),
   setShortcuts: (shortcuts) => set({ shortcuts }),
   setDiff: (diff) => set({ diff }),
   setFiles: (files) => set({ files }),
+  setShell: (shell) => set({ shell }),
   setResume: (resume) => set({ resume }),
   setResumeSide: (resumeSide) => set({ resumeSide }),
   setAbout: (about) => set({ about }),
   setNewWorkspace: (newWorkspace) => set({ newWorkspace }),
+  setActivityRail: (activityRail) => set({ activityRail }),
   setFocusMode: (focusMode) => set({ focusMode }),
   setDragSession: (dragSession) => set({ dragSession }),
   // Opening one overlay closes the other so they never stack.

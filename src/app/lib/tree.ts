@@ -4,6 +4,10 @@ import type { Cli, Mode } from "./ipc";
 // split nodes divide space row/col with a ratio. Ported verbatim from the
 // vanilla layout model so behaviour (and TEST_SCENARIOS) stays identical.
 
+// Design hub-states caps one group at five panes, then steers new work into a
+// fresh group so the split grid stays readable.
+export const MAX_GROUP_PANES = 5;
+
 export type SplitDir = "row" | "col";
 
 export interface LeafNode {
@@ -26,7 +30,7 @@ export type LayoutNode = LeafNode | SplitNode;
 // A group is a named, colored set of panes within a workspace — it owns its own
 // split tree + focus (design/screens/main-hub-a.jsx `GroupsBar` / `GroupGrid`).
 // A workspace holds N groups; one is active and shown in the grid. tmux sessions
-// stay flat in the single shared container — groups are frontend organisation.
+// stay flat inside that workspace's container — groups are frontend organisation.
 export interface Group {
   id: string;
   name: string;
@@ -38,6 +42,12 @@ export interface Group {
 export interface Workspace {
   id: string;
   plate: number;
+  // User-facing name for saved workspaces. Falls back to "Workspace N" for
+  // ad-hoc tabs or restored containers whose saved pointer is unknown.
+  title?: string;
+  // Host directory mounted at /workspace when this tab was opened, when known.
+  dir?: string;
+  savedWorkspaceId?: string;
   groups: Group[];
   activeGroupId: string;
   // Per-workspace-container ROUTING key — the container every pane of this
@@ -109,6 +119,11 @@ export function makeGroup(
 // callers never have to null-check a malformed workspace.
 export function activeGroup(ws: Workspace): Group {
   return ws.groups.find((g) => g.id === ws.activeGroupId) ?? ws.groups[0];
+}
+
+export function workspaceTitle(ws: Pick<Workspace, "plate" | "title">): string {
+  const title = ws.title?.trim();
+  return title || `Workspace ${ws.plate}`;
 }
 
 // Find which group within a workspace owns a given session (by leaf membership).

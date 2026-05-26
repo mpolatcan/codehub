@@ -1,17 +1,17 @@
 /**
  * Shared spawn-form pieces, used by BOTH the SpawnDialog modal and the
  * new-workspace wizard. Extracted so the two surfaces can't drift — every
- * honest adaptation (host-env accounts not keychain, the single shared runtime,
+ * honest adaptation (host-env accounts not keychain, per-workspace containers,
  * the real /workspace mount picker with its recreate affordance) lives here once.
  */
 import { AGENT_META, AgentGlyph, type AgentId } from "@/app/components/primitives/AgentGlyph";
 import { StatusBadge } from "@/app/components/primitives/StatusBadge";
 import { Tag } from "@/app/components/primitives/Tag";
 import { Ico } from "@/app/components/primitives/icons";
-import type { AgentCli } from "@/app/lib/ipc";
+import { type AgentCli, ipc } from "@/app/lib/ipc";
 import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 // Per-agent model/window hint shown under the glyph. Static catalog copy.
 export const MODEL_HINT: Record<AgentCli, string> = {
@@ -164,7 +164,7 @@ export function AccountCard({
 
 // One read-only runtime indicator. `on` = an active runtime behavior (filled
 // dot); `soon` = a deferred capability ("Coming soon" tag); neither = a stated
-// fact (hollow dot). Not interactive — these describe the shared runtime, they
+// fact (hollow dot). Not interactive — these describe the workspace container, they
 // don't toggle anything (no per-spawn backend flag exists).
 export function RuntimeFact({
   on,
@@ -204,8 +204,8 @@ export function RuntimeFact({
   );
 }
 
-// The honest "Container" surface: a single shared runtime (no per-workspace
-// sizing/cost to fabricate). Live state badge reflects the real container status.
+// The honest "Container" surface: the active workspace container. Live state
+// badge reflects the real container status; no sizing/cost is fabricated.
 export function SharedRuntimePanel() {
   const status = useStore((s) => s.status);
   const live = status?.state === "running";
@@ -252,15 +252,15 @@ export function SharedRuntimePanel() {
             </StatusBadge>
           </div>
           <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-2)" }}>
-            workspace mounted at /workspace · per-session reuse coming soon
+            workspace mounted at /workspace · panes reuse this container
           </div>
         </div>
         <Tag color={live ? "var(--live)" : "var(--fg-3)"}>{live ? "~instant" : "off"}</Tag>
       </div>
 
-      {/* Real runtime facts as read-only indicators (the shared runtime config is
-          fixed, so a per-spawn checkbox would be a lie). Sizing is a deferral,
-          marked "Coming soon", not faked. */}
+      {/* Real container facts as read-only indicators. Per-spawn checkboxes would
+          imply backend flags that do not exist. Sizing is a deferral, marked
+          "Coming soon", not faked. */}
       <div
         style={{
           marginTop: 8,
@@ -280,25 +280,75 @@ export function SharedRuntimePanel() {
   );
 }
 
-// The real /workspace mount picker (Tier-2). Shows the effective host dir, lets
-// the user change it via the native folder dialog or an MRU recent, and — since
-// the mount source is fixed at container create-time — surfaces a "restart
-// runtime to apply" affordance when the choice differs from what's mounted.
-export function RepositoryPicker() {
+// The real /workspace mount picker (Tier-2). Uncontrolled mode edits the active
+// runtime mount and surfaces the recreate affordance. Controlled mode is used by
+// NewWorkspace to collect a repo path without mutating the active workspace.
+export function RepositoryPicker({
+  value,
+  onChange,
+}: {
+  value?: string | null;
+  onChange?: (path: string) => void;
+}) {
   const dash = "—";
+  const controlled = onChange !== undefined;
+  const inBrowser = typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window);
   const workspaceInfo = useStore((s) => s.workspaceInfo);
+  const error = useStore((s) => s.error);
   // Default outside the selector — a `?? []` inside returns a fresh array per
   // render and loops useSyncExternalStore (config starts null).
   const recents = useStore((s) => s.config?.recentWorkspaces) ?? [];
   const running = useStore((s) => s.status?.state === "running");
+  const loadWorkspaceInfo = useStore((s) => s.loadWorkspaceInfo);
   const pickWorkspaceDir = useStore((s) => s.pickWorkspaceDir);
   const selectWorkspaceDir = useStore((s) => s.selectWorkspaceDir);
   const recreateRuntime = useStore((s) => s.recreateRuntime);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualPath, setManualPath] = useState("");
 
-  const effective = workspaceInfo?.effective ?? null;
-  const needsRecreate = workspaceInfo?.needsRecreate ?? false;
+  const effective = controlled ? (value ?? null) : (workspaceInfo?.effective ?? null);
+  const needsRecreate = !controlled && (workspaceInfo?.needsRecreate ?? false);
   // Other recents (exclude the one currently selected).
   const otherRecents = recents.filter((p) => p !== effective).slice(0, 4);
+
+  useEffect(() => {
+    void loadWorkspaceInfo();
+  }, [loadWorkspaceInfo]);
+
+  useEffect(() => {
+    if (effective && !manualPath) setManualPath(effective);
+  }, [effective, manualPath]);
+
+  const chooseWithDialog = async () => {
+    if (controlled) {
+      const path = await ipc.pickDirectory().catch(() => null);
+      if (path) {
+        setManualPath(path);
+        onChange(path);
+      } else setManualOpen(true);
+      return;
+    }
+    const picked = await pickWorkspaceDir();
+    // Browser dev bridge cannot open a native folder dialog; it returns null.
+    // Fall back to a typed absolute path in that case.
+    if (!picked) setManualOpen(true);
+  };
+
+  const submitManualPath = () => {
+    const path = manualPath.trim();
+    if (!path) return;
+    if (controlled) onChange(path);
+    else void selectWorkspaceDir(path);
+  };
+
+  const chooseRecent = (path: string) => {
+    if (controlled) {
+      setManualPath(path);
+      onChange(path);
+      return;
+    }
+    void selectWorkspaceDir(path);
+  };
 
   const restart = () => {
     if (
@@ -341,10 +391,57 @@ export function RepositoryPicker() {
         <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
           /workspace
         </span>
-        <Button variant="outline" size="xs" onClick={() => void pickWorkspaceDir()}>
-          Change…
+        <Button variant="outline" size="xs" onClick={() => void chooseWithDialog()}>
+          {inBrowser ? "Type path…" : "Change…"}
         </Button>
       </div>
+
+      {(manualOpen || !effective) && (
+        <div
+          style={{
+            marginTop: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <input
+            className="mono"
+            value={manualPath}
+            onChange={(e) => setManualPath(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitManualPath();
+            }}
+            placeholder="/absolute/path/to/repo"
+            spellCheck={false}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid var(--bd-soft)",
+              background: "var(--bg-0)",
+              color: "var(--fg-1)",
+              fontSize: 11.5,
+              outline: "none",
+            }}
+          />
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={!manualPath.trim()}
+            onClick={submitManualPath}
+          >
+            Use path
+          </Button>
+        </div>
+      )}
+
+      {!controlled && error?.startsWith("set workspace dir failed") && (
+        <div className="mono" style={{ marginTop: 6, fontSize: 10.5, color: "var(--err)" }}>
+          {error}
+        </div>
+      )}
 
       {otherRecents.length > 0 && (
         <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -352,7 +449,7 @@ export function RepositoryPicker() {
             <button
               key={p}
               type="button"
-              onClick={() => void selectWorkspaceDir(p)}
+              onClick={() => chooseRecent(p)}
               title={p}
               style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
             >

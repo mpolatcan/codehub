@@ -35,8 +35,48 @@ export function Grid({ ws }: { ws: Workspace }) {
 // (groupKey ctx), so the spawn lands here rather than in a new tab.
 function EmptyGroup({ ws, group }: { ws: Workspace; group: Group }) {
   const open = useLauncher((s) => s.open);
+  const addPaneToGroup = useStore((s) => s.addPaneToGroup);
+  const setFiles = useOverlay((s) => s.setFiles);
+  const setShell = useOverlay((s) => s.setShell);
+  const setDiff = useOverlay((s) => s.setDiff);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const spawn = (cli: "claude" | "codex" | "antigravity") => {
+    void addPaneToGroup(ws.id, group.id, cli, "standard");
+  };
+  const openMore = () =>
+    open(groupKey(group.id), { dir: "row", groupId: group.id, workspaceId: ws.id });
+  const items: PaneMenuItem[] = [
+    {
+      icon: <AgentGlyph agent="claude" size={14} />,
+      label: "New Claude",
+      kbd: "⌘1",
+      onClick: () => spawn("claude"),
+    },
+    {
+      icon: <AgentGlyph agent="codex" size={14} />,
+      label: "New Codex",
+      kbd: "⌘2",
+      onClick: () => spawn("codex"),
+    },
+    {
+      icon: <AgentGlyph agent="antigravity" size={14} />,
+      label: "New Antigravity",
+      kbd: "⌘3",
+      onClick: () => spawn("antigravity"),
+    },
+    { label: "—", onClick: () => {} },
+    { icon: Ico.files, label: "Show Files", onClick: () => setFiles(true) },
+    { icon: Ico.terminal, label: "Show Shell", onClick: () => setShell(true) },
+    { icon: Ico.diff, label: "Show Diff", onClick: () => setDiff("") },
+    { label: "—", onClick: () => {} },
+    { icon: Ico.plus, label: "More agents", onClick: openMore },
+  ];
   return (
     <div
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
       style={{
         flex: 1,
         display: "flex",
@@ -67,34 +107,54 @@ function EmptyGroup({ ws, group }: { ws: Workspace; group: Group }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: group.color }} />
-          <span style={{ fontSize: 15, color: "var(--fg-0)", fontWeight: 500 }}>{group.name}</span>
+          <span style={{ fontSize: 15, color: "var(--fg-0)", fontWeight: 500 }}>Empty group</span>
         </div>
         <div style={{ fontSize: 12, color: "var(--fg-2)", textAlign: "center", maxWidth: 384 }}>
-          This group is empty. Add an agent to start working here.
+          Add an agent or utility pane to {group.name}. Right-click anywhere to see all options.
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() =>
-          open(groupKey(group.id), { dir: "row", groupId: group.id, workspaceId: ws.id })
-        }
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 7,
-          padding: "7px 14px",
-          borderRadius: 7,
-          border: "none",
-          background: "var(--pri)",
-          color: "var(--pri-fg, #fff)",
-          fontSize: 13,
-          fontWeight: 500,
-          cursor: "pointer",
-        }}
-      >
-        {Ico.plus}
-        <span>Add agent</span>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+        <button type="button" className="btn sm pri" onClick={() => spawn("claude")}>
+          <span
+            style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--a-claude)" }}
+          />
+          Claude
+          <span className="kbd">⌘1</span>
+        </button>
+        <button type="button" className="btn sm pri" onClick={() => spawn("codex")}>
+          <span
+            style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--a-codex)" }}
+          />
+          Codex
+          <span className="kbd">⌘2</span>
+        </button>
+        <button type="button" className="btn sm pri" onClick={() => spawn("antigravity")}>
+          <span
+            style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--a-antigravity)" }}
+          />
+          Antigravity
+          <span className="kbd">⌘3</span>
+        </button>
+        <div className="vr" style={{ height: 24, alignSelf: "center" }} />
+        <button type="button" className="btn sm" onClick={() => setFiles(true)}>
+          {Ico.files}
+          Files
+        </button>
+        <button type="button" className="btn sm" onClick={() => setShell(true)}>
+          {Ico.terminal}
+          Shell
+        </button>
+        <button type="button" className="btn sm" onClick={() => setDiff("")}>
+          {Ico.diff}
+          Diff
+        </button>
+      </div>
+      <button type="button" onClick={openMore} className="btn ghost sm">
+        More agents
       </button>
+      {menu && (
+        <PaneContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} />
+      )}
     </div>
   );
 }
@@ -275,7 +335,7 @@ function DropQuadrants({ active }: { active: DropZone | null }) {
       alignItems: "center",
       justifyContent: "center",
       gap: 5,
-      fontFamily: "var(--font-mono)",
+      fontFamily: "var(--mono)",
       fontSize: 11,
       color: "var(--pri)",
       opacity: on ? 1 : 0.5,

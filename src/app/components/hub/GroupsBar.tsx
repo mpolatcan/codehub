@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { confirmCloseGroup, useStore } from "../../lib/store";
-import { GROUP_COLORS, type Group, type Workspace, leavesList } from "../../lib/tree";
+import {
+  GROUP_COLORS,
+  MAX_GROUP_PANES,
+  type Group,
+  type Workspace,
+  leavesList,
+} from "../../lib/tree";
 import { IconBtn } from "../primitives/IconBtn";
 import { Ico } from "../primitives/icons";
 
@@ -67,6 +73,7 @@ function GroupTab({
   const renameGroup = useStore((s) => s.renameGroup);
   const closeGroup = useStore((s) => s.closeGroup);
   const count = leavesList(group.root).length;
+  const full = count >= MAX_GROUP_PANES;
   const [editing, setEditing] = useState(false);
 
   const close = (e: React.MouseEvent) => {
@@ -142,8 +149,20 @@ function GroupTab({
       ) : (
         <span style={{ fontWeight: active ? 500 : 400 }}>{group.name}</span>
       )}
-      <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-        {count}
+      <span
+        className="mono"
+        title={full ? "Group at pane capacity" : `${count} pane${count === 1 ? "" : "s"}`}
+        style={{
+          fontSize: 10,
+          color: full ? "var(--wait)" : "var(--fg-3)",
+          background: full ? "color-mix(in oklab, var(--wait) 14%, transparent)" : "transparent",
+          border: full ? "1px solid color-mix(in oklab, var(--wait) 30%, transparent)" : "none",
+          borderRadius: 999,
+          padding: full ? "1px 5px" : 0,
+          lineHeight: 1,
+        }}
+      >
+        {full ? `${count}/${MAX_GROUP_PANES}` : count}
       </span>
       <IconBtn title="Close group" onClick={close} style={{ width: 18, height: 18, marginLeft: 4 }}>
         {Ico.close}

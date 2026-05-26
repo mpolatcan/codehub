@@ -78,6 +78,17 @@ export function AboutDialog() {
   // "idle" → not checked this open; "checking" → in flight; "done" → resolved.
   const [updateState, setUpdateState] = useState<"idle" | "checking" | "done">("idle");
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      useOverlay.getState().setAbout(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
   // Fetch the static identity (app_info) + the runtime image tag once the dialog
   // is opened. Both are cheap reads; image is best-effort (em-dash if the daemon
   // is down). Guarded by `open` so a closed dialog does no I/O.
@@ -135,6 +146,9 @@ export function AboutDialog() {
         setUpdateState("done");
       });
   };
+  const copyAbout = (text: string) => {
+    void navigator.clipboard?.writeText(text).catch(() => {});
+  };
 
   if (!open) return null;
 
@@ -150,12 +164,13 @@ export function AboutDialog() {
         position: "fixed",
         inset: 0,
         zIndex: 60,
-        background: "rgba(6,7,9,0.72)",
-        backdropFilter: "blur(3px)",
-        WebkitBackdropFilter: "blur(3px)",
+        background: "rgba(6,7,9,0.55)",
+        backdropFilter: "blur(14px) saturate(120%)",
+        WebkitBackdropFilter: "blur(14px) saturate(120%)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        overflow: "hidden",
       }}
       onClick={close}
       onKeyDown={(e) => {
@@ -163,8 +178,19 @@ export function AboutDialog() {
       }}
     >
       <div
+        aria-hidden
         style={{
-          width: 600,
+          position: "absolute",
+          inset: 0,
+          background: "radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.45) 100%)",
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        style={{
+          position: "relative",
+          zIndex: 1,
+          width: "40rem",
           maxWidth: "calc(100vw - 48px)",
           background: "var(--bg-2)",
           border: "1px solid var(--bd-strong)",
@@ -389,6 +415,39 @@ export function AboutDialog() {
           <span>MIT licensed</span>
           <span style={{ color: "var(--fg-3)" }}>·</span>
           <span>built on Tauri, tmux, Docker, and Geist Mono</span>
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={() => copyAbout("Tauri, tmux, Docker, Geist Mono")}
+            style={{
+              padding: "4px 9px",
+              borderRadius: 6,
+              border: "1px solid var(--bd)",
+              background: "transparent",
+              color: "var(--fg-1)",
+              fontSize: 11,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            Credits
+          </button>
+          <button
+            type="button"
+            onClick={() => copyAbout("MIT licensed")}
+            style={{
+              padding: "4px 9px",
+              borderRadius: 6,
+              border: "1px solid var(--bd)",
+              background: "transparent",
+              color: "var(--fg-1)",
+              fontSize: 11,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            License
+          </button>
         </div>
 
         {/* footer — honest update status. "Check now" re-runs check_update; the
@@ -404,7 +463,15 @@ export function AboutDialog() {
             gap: 10,
           }}
         >
-          <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+          <span
+            className="mono"
+            style={{
+              fontSize: 11,
+              color: "var(--fg-3)",
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+            }}
+          >
             {updateState === "checking"
               ? "checking for updates…"
               : hasUpdate
@@ -413,10 +480,22 @@ export function AboutDialog() {
                   ? "up to date"
                   : "releases at"}
           </span>
-          <span className="mono" style={{ fontSize: 11, color: "var(--fg-1)", userSelect: "all" }}>
+          <span
+            className="mono"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 11,
+              color: "var(--fg-1)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              userSelect: "all",
+            }}
+            title={REPO_RELEASES}
+          >
             {REPO_RELEASES}
           </span>
-          <span style={{ flex: 1 }} />
           <button
             type="button"
             onClick={checkNow}
@@ -430,6 +509,8 @@ export function AboutDialog() {
               fontSize: 12,
               cursor: updateState === "checking" ? "default" : "pointer",
               opacity: updateState === "checking" ? 0.6 : 1,
+              flexShrink: 0,
+              whiteSpace: "nowrap",
             }}
           >
             Check now
@@ -452,6 +533,8 @@ export function AboutDialog() {
                 fontSize: 12,
                 fontWeight: 600,
                 cursor: "pointer",
+                flexShrink: 0,
+                whiteSpace: "nowrap",
               }}
             >
               Install v{update?.available} &amp; restart
@@ -468,6 +551,8 @@ export function AboutDialog() {
                 color: "var(--fg-0)",
                 fontSize: 12,
                 cursor: "pointer",
+                flexShrink: 0,
+                whiteSpace: "nowrap",
               }}
             >
               Close

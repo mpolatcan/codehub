@@ -22,7 +22,7 @@ export interface SidebarRailProps {
 
 const DEFAULT_ITEMS: RailItem[] = [
   { key: "hub", icon: "hub", label: "Hub" },
-  { key: "containers", icon: "container", label: "Containers" },
+  { key: "containers", icon: "container", label: "Workspaces" },
   { key: "files", icon: "files", label: "Files" },
   { key: "branch", icon: "branch", label: "Branch" },
   { key: "search", icon: "search", label: "Search" },

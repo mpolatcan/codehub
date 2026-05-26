@@ -8,10 +8,11 @@ import type { ReactNode } from "react";
 export interface AppShellProps {
   title?: string;
   rail?: ReactNode;
+  railFramed?: boolean;
   children: ReactNode;
 }
 
-export function AppShell({ title = "CodeHub", rail, children }: AppShellProps) {
+export function AppShell({ title = "CodeHub", rail, railFramed = true, children }: AppShellProps) {
   return (
     <div
       style={{
@@ -58,7 +59,9 @@ export function AppShell({ title = "CodeHub", rail, children }: AppShellProps) {
 
       {/* Body: optional rail + main area */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {rail && (
+        {rail && !railFramed ? (
+          rail
+        ) : rail ? (
           <div
             style={{
               flexShrink: 0,
@@ -70,7 +73,7 @@ export function AppShell({ title = "CodeHub", rail, children }: AppShellProps) {
           >
             {rail}
           </div>
-        )}
+        ) : null}
         <div style={{ flex: 1, overflow: "hidden" }}>{children}</div>
       </div>
     </div>

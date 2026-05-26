@@ -317,6 +317,7 @@ function GitHubCard({
               ))
             )}
           </div>
+          <GitHubCapabilityStrip status={status} />
         </>
       ) : (
         // Not connected → instructional. Names the env var; never a secret box.
@@ -352,6 +353,55 @@ function GitHubCard({
       )}
     </div>
   );
+}
+
+function GitHubCapabilityStrip({ status }: { status: GithubStatus | null }) {
+  const scopes = status?.scopes ?? [];
+  const canPush = hasGithubScope(scopes, ["repo", "public_repo", "contents"]);
+  const canPr = hasGithubScope(scopes, ["repo", "pull_request", "pull_requests"]);
+  const canIssues = hasGithubScope(scopes, ["repo", "issues"]);
+  return (
+    <div
+      style={{
+        padding: "12px 18px",
+        borderTop: "1px solid var(--bd-soft)",
+        background: "var(--bg-1)",
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        fontSize: 12,
+        color: "var(--fg-2)",
+        fontFamily: "var(--mono)",
+        flexWrap: "wrap",
+      }}
+    >
+      <span className="lbl" style={{ fontSize: 11 }}>
+        agents can
+      </span>
+      <Capability label="clone" ok />
+      <Capability label="fetch" ok />
+      <Capability label="push" ok={canPush} />
+      <Capability label="open PR" ok={canPr} />
+      <Capability label="comment issues" ok={canIssues} />
+      <span style={{ flex: 1, minWidth: 24 }} />
+      <span style={{ color: "var(--fg-3)" }}>
+        write permissions depend on scopes reported by GitHub
+      </span>
+    </div>
+  );
+}
+
+function Capability({ label, ok }: { label: string; ok: boolean }) {
+  return (
+    <span style={{ color: ok ? "var(--fg-1)" : "var(--fg-3)", whiteSpace: "nowrap" }}>
+      {label}
+    </span>
+  );
+}
+
+function hasGithubScope(scopes: string[], needles: string[]): boolean {
+  const normalized = scopes.map((s) => s.toLowerCase().replace(/[\s:.-]+/g, "_"));
+  return needles.some((needle) => normalized.some((scope) => scope.includes(needle)));
 }
 
 function ScopeChip({ label }: { label: string }) {

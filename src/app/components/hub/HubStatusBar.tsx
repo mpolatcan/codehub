@@ -1,8 +1,9 @@
 import { StatusDot } from "../../components/primitives/StatusDot";
+import { Ico } from "../../components/primitives/icons";
 import { useBurnRate } from "../../hooks/useBurnRate";
 import type { ContainerState, ContainerStats } from "../../lib/ipc";
 import { activeWorkspace, useStore } from "../../lib/store";
-import { activeGroup, workspaceLeaves } from "../../lib/tree";
+import { workspaceLeaves } from "../../lib/tree";
 
 // Bottom status bar, ported from design/screens/main-hub-a.jsx (tabs) and
 // main-hub-b.jsx (the compare grid). Runtime state, focused session and tab are
@@ -16,14 +17,6 @@ const STATE_LABEL: Record<ContainerState, string> = {
   starting: "waking",
   running: "running",
   unreachable: "unreachable",
-};
-
-const STATE_COLOR: Record<ContainerState, string> = {
-  missing: "var(--fg-3)",
-  stopped: "var(--fg-3)",
-  starting: "var(--wait)",
-  running: "var(--live)",
-  unreachable: "var(--err)",
 };
 
 function fmtGiB(bytes: number): string {
@@ -59,22 +52,40 @@ function TabsStatusBar() {
   const status = useStore((s) => s.status);
   const error = useStore((s) => s.error);
   const active = useStore(activeWorkspace);
-  const focused = (active && activeGroup(active)?.focused) ?? null;
-  const focusedAlias = useStore((s) => (focused ? s.sessionMeta[focused]?.alias : undefined));
   const stats = useRuntimeStats();
 
   const state: ContainerState = error ? "unreachable" : (status?.state ?? "starting");
+  const dotStatus = state === "running" ? "live" : state === "starting" ? "wait" : "off";
+  const runtimeName = active?.containerKey ?? status?.name ?? "—";
+  const runtimeTitle = status?.name ?? active?.containerKey ?? undefined;
 
   return (
     <div style={barStyle}>
-      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+      <span
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          minWidth: 0,
+          maxWidth: 220,
+          flexShrink: 1,
+        }}
+        title={`Runtime: ${STATE_LABEL[state]}`}
+      >
+        <StatusDot status={dotStatus} pulse={state === "running"} />
+        {Ico.container}
         <span
-          style={{ width: 6, height: 6, borderRadius: "50%", background: STATE_COLOR[state] }}
-        />
-        <span style={{ color: "var(--fg-1)" }}>{STATE_LABEL[state]}</span>
+          style={{
+            color: "var(--fg-1)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={runtimeTitle}
+        >
+          {runtimeName}
+        </span>
       </span>
-      <span>session {focusedAlias ?? "—"}</span>
-      <span>tab {active ? active.plate : "—"}</span>
       <span className="tnum" title="CPU">
         cpu {stats ? `${stats.cpuPct.toFixed(0)}%` : "—"}
       </span>
@@ -91,7 +102,7 @@ function TabsStatusBar() {
       </span>
       <BurnRate />
       <span style={{ flex: 1 }} />
-      <span>⌘N new</span>
+      <span>⌘K palette</span>
       <span>⌘\ split</span>
       <span>⌘1–9 jump</span>
     </div>

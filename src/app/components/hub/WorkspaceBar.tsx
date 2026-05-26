@@ -7,11 +7,8 @@ import { workspaceLeaves } from "../../lib/tree";
 // grid → meta strip → actions → status).
 //
 // REAL, git-only: the /workspace working-tree summary from the shared
-// container_git_status poll (branch + ahead/behind + uncommitted count). The
-// design's multi-repo "2 repos" count and CI ✓ / tests / lint badges have NO
-// backend source (CodeHub mounts ONE /workspace, and there's no CI/test runner
-// wired) — they're dropped rather than faked. The right side shows the real
-// agent count for this workspace; per-spend cost lives on the Usage screen.
+// container_git_status poll. This intentionally keeps the design's compact
+// "repos + dirty" shape but drops the CI/tests/lint block per request.
 const AGENT_CLIS = new Set(["claude", "codex", "antigravity"]);
 
 export function WorkspaceBar() {
@@ -40,7 +37,6 @@ export function WorkspaceBar() {
         color: "var(--fg-2)",
       }}
     >
-      {/* /workspace git summary — real, from the shared git poll. */}
       <span
         style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "var(--fg-1)" }}
         title={git?.isRepo ? `/workspace · ${git.branch ?? "detached"}` : "/workspace"}
@@ -48,7 +44,7 @@ export function WorkspaceBar() {
         {Ico.branch}
         {git?.isRepo ? (
           <>
-            <span>{git.branch ?? "detached"}</span>
+            <span>1 repo</span>
             {git.total > 0 ? (
               <span style={{ color: "var(--wait)" }}>+{git.total} uncommitted</span>
             ) : (
@@ -58,7 +54,7 @@ export function WorkspaceBar() {
             {git.behind > 0 && <span style={{ color: "var(--fg-3)" }}>↓{git.behind}</span>}
           </>
         ) : (
-          <span style={{ color: "var(--fg-3)" }}>not a git repository</span>
+          <span style={{ color: "var(--fg-3)" }}>/workspace</span>
         )}
       </span>
 
@@ -67,7 +63,7 @@ export function WorkspaceBar() {
       <span title="Agent panes in this workspace">
         {agentCount} agent{agentCount === 1 ? "" : "s"}
       </span>
-      {groupCount > 1 && <span style={{ color: "var(--fg-3)" }}>{groupCount} groups</span>}
+      {groupCount > 1 && <span style={{ color: "var(--fg-3)" }}>· {groupCount} groups</span>}
     </div>
   );
 }

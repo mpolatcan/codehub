@@ -553,9 +553,9 @@ body.dragging .divider::after {
 }
 
 /* ---- Hub action bar (bottom chrome) ----------------------------------- */
-/* PaneAddBtn — icon-only square toggle for the Files / Diff docked viewers
-   (and the one-shot Shell spawn). Active = tinted with the pane-type accent
-   (--pa-c), ported from design/screens/workspace.jsx. */
+/* PaneAddBtn — icon-only square toggles for the Files / Shell / Diff docked
+   viewers. Active = tinted with the pane-type accent (--pa-c), ported from
+   design/screens/workspace.jsx. */
 .pane-add-btn {
   display: inline-flex;
   align-items: center;
@@ -640,6 +640,115 @@ body.dragging .divider::after {
 .ctx-row[aria-disabled="true"] {
   opacity: 0.4;
   pointer-events: none;
+}
+
+/* Design chrome helpers used by the Hub JSX port. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--bd-soft);
+  border-radius: 5px;
+  background: var(--bg-2);
+  color: var(--fg-1);
+  font: 500 12px / 1 var(--mono);
+  height: 28px;
+  padding: 0 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.btn:hover {
+  background: var(--bg-3);
+  border-color: var(--bd);
+  color: var(--fg-0);
+}
+.btn.sm {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+.btn.xs {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.btn.ghost {
+  background: transparent;
+}
+.btn.pri,
+.btn.pri.solid {
+  background: color-mix(in oklab, var(--pri) 82%, var(--bg-0));
+  border-color: color-mix(in oklab, var(--pri) 82%, var(--bg-0));
+  color: var(--bg-0);
+}
+.btn.pri:hover,
+.btn.pri.solid:hover {
+  background: var(--pri);
+  color: var(--bg-0);
+}
+.btn.ok,
+.btn.ok.solid {
+  border-color: color-mix(in oklab, var(--live) 45%, transparent);
+  background: color-mix(in oklab, var(--live) 18%, transparent);
+  color: var(--live);
+}
+.btn.ok.solid {
+  background: color-mix(in oklab, var(--live) 30%, var(--bg-1));
+}
+.btn .kbd {
+  margin-left: 2px;
+}
+
+.tab-handle {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0;
+  margin-right: 2px;
+  color: var(--fg-3);
+  cursor: grab;
+}
+.tab-handle:hover {
+  color: var(--fg-1);
+}
+.tab-handle::before,
+.tab-handle::after {
+  content: "";
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 4px 0 currentColor;
+}
+.ch-tab:hover {
+  background: var(--bg-3) !important;
+  color: var(--fg-0) !important;
+}
+.ch-tab.active {
+  background: var(--bg-2) !important;
+}
+
+.ch-activity-rail-reveal {
+  width: 32px;
+  align-self: stretch;
+  flex-shrink: 0;
+  border: none;
+  border-left: 1px solid var(--bd-soft);
+  background: var(--bg-1);
+  color: var(--fg-2);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 12px 0;
+  gap: 12px;
+}
+.ch-activity-rail-reveal:hover {
+  background: var(--bg-2);
+  color: var(--fg-0);
 }
 
 /* ---- Welcome launcher ------------------------------------------------- */

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { groupKey, splitKey, useLauncher } from "../lib/launcher";
 import { useOverlay } from "../lib/overlay";
 import { confirmCloseRunningSession, useStore } from "../lib/store";
-import { type SplitDir, activeGroup } from "../lib/tree";
+import { type SplitDir, activeGroup, workspaceLeaves, workspaceTitle } from "../lib/tree";
 
 // Split the focused pane along its longer visible axis — wider panes split into
 // a row (side-by-side), taller ones into a column. Compares the leaf's dataset
@@ -18,16 +18,23 @@ export function autoSplitDir(session: string): SplitDir {
 // Global keyboard shortcuts:
 //   ⌘/Ctrl N  — new tab (opens the launcher); ⌘/Ctrl T kept as an alias
 //   ⌘⇧N       — new-workspace wizard (the Welcome launcher's CTA)
+//   ⌘⇧T       — new workspace tab (same launcher, fresh tab target)
+//   ⌘/Ctrl A  — new agent in the current workspace (same launcher, focused context)
 //   ⌘/Ctrl W  — close the focused session
+//   ⌘⇧W       — close the active workspace tab
+//   ⌘[ / ⌘]   — previous / next workspace tab
 //   ⌘/Ctrl \  — split the focused pane (longer axis); ⌘⇧\ forces a column split
 //   ⌘/Ctrl E  — toggle the Files docked viewer
 //   ⌘/Ctrl D  — toggle the all-changes Diff viewer
 //   ⌘B        — collapse/expand the sidebar (design AppSidebar rail)
-//   ⌘⇧B       — add a Shell pane (split the focused pane, else a new tab)
+//   ⌘⇧B       — toggle the Shell docked panel
+//   ⌘⇧A       — collapse/expand the Activity rail
 //   ⌘G        — spawn a new agent into a fresh group (design SpawnPlacementMenu)
 //   ⌘/Ctrl R  — toggle the Resume drawer (docked over the hub)
+//   ⌘/Ctrl ,  — settings
 //   ⌘/Ctrl K  — command palette
 //   ⌘/Ctrl /  — keyboard-shortcuts cheat sheet
+//   ?          — keyboard-shortcuts cheat sheet when focus is outside an editor/terminal
 //   ⌘/Ctrl 1-9 — switch to tab N
 //
 // Attached at the capture phase so they win over xterm.js, which installs its
@@ -36,8 +43,20 @@ export function autoSplitDir(session: string): SplitDir {
 export function useKeyboard() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      const editable =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable ||
+        target?.getAttribute("role") === "textbox";
+
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey && !editable) {
+        e.preventDefault();
+        useOverlay.getState().toggleShortcuts();
+        return;
+      }
+
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-      const target = e.target as HTMLElement | null;
       if (target?.classList?.contains("pane-name-input")) return;
 
       const store = useStore.getState();
@@ -70,6 +89,17 @@ export function useKeyboard() {
         return;
       }
 
+      if (e.key === "[" || e.key === "]") {
+        if (store.workspaces.length === 0 || !store.activeWorkspaceId) return;
+        const idx = store.workspaces.findIndex((w) => w.id === store.activeWorkspaceId);
+        if (idx === -1) return;
+        e.preventDefault();
+        const dir = e.key === "[" ? -1 : 1;
+        const next = store.workspaces[(idx + dir + store.workspaces.length) % store.workspaces.length];
+        store.switchWorkspace(next.id);
+        return;
+      }
+
       switch (e.key.toLowerCase()) {
         case "n":
           e.preventDefault();
@@ -90,10 +120,26 @@ export function useKeyboard() {
           useOverlay.getState().toggleShortcuts();
           break;
         case "w":
-          if (!focused) return;
           e.preventDefault();
+          if (e.shiftKey) {
+            if (!ws) return;
+            const count = workspaceLeaves(ws).length;
+            const suffix =
+              count > 0
+                ? ` This ends ${count} session${count === 1 ? "" : "s"} in the tab.`
+                : "";
+            if (window.confirm(`Close ${workspaceTitle(ws)}?${suffix}`)) {
+              void store.closeWorkspace(ws.id);
+            }
+            return;
+          }
+          if (!focused) return;
           if (!confirmCloseRunningSession(focused)) return;
           void store.closeSession(focused);
+          break;
+        case ",":
+          e.preventDefault();
+          store.setView("settings");
           break;
         case "e": // toggle the Files docked viewer
           e.preventDefault();
@@ -116,13 +162,27 @@ export function useKeyboard() {
           break;
         case "b":
           e.preventDefault();
-          // ⌘B collapses/expands the sidebar (design AppSidebar); ⌘⇧B adds a Shell pane.
+          // ⌘B collapses/expands the sidebar (design AppSidebar); ⌘⇧B toggles Shell.
           if (!e.shiftKey) {
             store.toggleSidebar();
             return;
           }
-          if (focused) void store.splitSession(focused, autoSplitDir(focused), "shell", "standard");
-          else void store.newPlate("shell", "standard");
+          overlay.setShell(!overlay.shell);
+          break;
+        case "a":
+          e.preventDefault();
+          // ⌘A is the in-workspace new-agent shortcut from the design handoff.
+          // When there is no focused pane, fall back to the same fresh-tab path
+          // as ⌘N so the command is always productive.
+          if (!e.shiftKey) {
+            if (focused) {
+              launcher.open(splitKey(focused), { dir: "row", session: focused });
+            } else {
+              launcher.open("newtab");
+            }
+            return;
+          }
+          overlay.setActivityRail(!overlay.activityRail);
           break;
         case "g": {
           // ⌘G — spawn a new agent into a fresh group of the active workspace.

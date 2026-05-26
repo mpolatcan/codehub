@@ -30,6 +30,7 @@ import { useOverlay } from "./overlay";
 import * as registry from "./panes";
 import {
   type LayoutNode,
+  MAX_GROUP_PANES,
   type SessionMeta,
   type SplitDir,
   type Workspace,
@@ -76,6 +77,10 @@ interface CodeHubState {
   // or null for the normal view. Set from a pane's expand button; any sidebar
   // view switch or closing that session clears it.
   detailSession: string | null;
+  // One docked utility shell per workspace container. These are real tmux
+  // sessions mounted in the Hub's bottom Shell panel, not leaves in the split
+  // pane grid.
+  utilityShells: Record<string, string>;
   // Live per-session working/idle activity (session_activity), keyed by session
   // name. Polled by the Hub while the runtime is up; empty when down.
   sessionActivity: Record<string, SessionActivity>;
@@ -146,12 +151,14 @@ interface CodeHubState {
   setSessionActivity: (list: SessionActivity[]) => void;
   setContainerStats: (s: ContainerStats | null) => void;
   setGitStatus: (g: GitStatus | null) => void;
+  ensureDockedShell: () => Promise<string | null>;
   newPlate: (
     cli: Cli,
     mode: Mode,
     resume?: string,
     initialPrompt?: string,
     account?: string,
+    workspaceMeta?: { title?: string; dir?: string; savedWorkspaceId?: string },
   ) => Promise<void>;
   splitSession: (
     target: string,
@@ -272,6 +279,7 @@ function prefillPrompt(name: string, prompt?: string) {
 
 export const useStore = create<CodeHubState>((set, get) => {
   const isRunning = () => get().status?.state === "running";
+  const pendingUtilityShells = new Map<string, Promise<string | null>>();
 
   const uniqueName = (cli: Cli): string => {
     const next = get().sessionCounter + 1;
@@ -302,6 +310,28 @@ export const useStore = create<CodeHubState>((set, get) => {
     set((s) => ({ sessionMeta: { ...s.sessionMeta, [name]: meta } }));
   };
 
+  const destroySessionRecord = async (name: string, containerKey?: string) => {
+    const meta = get().sessionMeta[name];
+    try {
+      await ipc.killSession(name, containerKey ?? meta?.containerKey);
+    } catch (e) {
+      console.warn(`kill_session(${name}) failed:`, e);
+    }
+    await registry.destroyPane(name);
+    set((s) => {
+      const sessionMeta = { ...s.sessionMeta };
+      delete sessionMeta[name];
+      const utilityShells = Object.fromEntries(
+        Object.entries(s.utilityShells).filter(([, session]) => session !== name),
+      );
+      return {
+        sessionMeta,
+        utilityShells,
+        detailSession: s.detailSession === name ? null : s.detailSession,
+      };
+    });
+  };
+
   // Conversation id to correlate a Claude session with its on-disk transcript:
   // the resumed id when resuming, else a fresh UUID we pin via `--session-id`.
   // Non-Claude CLIs persist no such transcript, so they have none.
@@ -318,6 +348,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     settingsSection: "general",
     sidebarCollapsed: false,
     detailSession: null,
+    utilityShells: {},
     sessionActivity: {},
     containerStats: null,
     gitStatus: null,
@@ -406,8 +437,51 @@ export const useStore = create<CodeHubState>((set, get) => {
 
     setGitStatus: (gitStatus) => set({ gitStatus }),
 
-    newPlate: async (cli, mode, resume, initialPrompt, account) => {
-      if (!isRunning()) return;
+    ensureDockedShell: async () => {
+      if (!isRunning()) return null;
+      const ws = get().workspaces.find((w) => w.id === get().activeWorkspaceId);
+      if (!ws) return null;
+      const existing = get().utilityShells[ws.containerKey];
+      if (existing && get().sessionMeta[existing]) {
+        if (!registry.getPane(existing)) await registry.spawnPane(existing, ws.containerKey);
+        return existing;
+      }
+      const pending = pendingUtilityShells.get(ws.containerKey);
+      if (pending) return pending;
+
+      const create = (async () => {
+        const current = get().utilityShells[ws.containerKey];
+        if (current && get().sessionMeta[current]) {
+          if (!registry.getPane(current)) await registry.spawnPane(current, ws.containerKey);
+          return current;
+        }
+
+        const name = uniqueName("shell");
+        await ipc.createSession(
+          name,
+          "shell",
+          "standard",
+          aliasFor("shell", get().sessionCounter),
+          undefined,
+          undefined,
+          undefined,
+          ws.containerKey,
+        );
+        await registry.spawnPane(name, ws.containerKey);
+        registerMeta(name, "shell", "standard", ws.id, ws.activeGroupId, ws.containerKey);
+        set((s) => ({
+          utilityShells: { ...s.utilityShells, [ws.containerKey]: name },
+        }));
+        return name;
+      })().finally(() => {
+        pendingUtilityShells.delete(ws.containerKey);
+      });
+
+      pendingUtilityShells.set(ws.containerKey, create);
+      return create;
+    },
+
+    newPlate: async (cli, mode, resume, initialPrompt, account, workspaceMeta) => {
       const name = uniqueName(cli);
       const claudeId = claudeIdFor(cli, resume);
       // A resume carries its id via --resume; a fresh Claude session pins a new
@@ -428,6 +502,7 @@ export const useStore = create<CodeHubState>((set, get) => {
         sessionId,
         account,
         containerKey,
+        workspaceMeta?.dir,
       );
       await registry.spawnPane(name, containerKey);
       prefillPrompt(name, initialPrompt);
@@ -436,6 +511,9 @@ export const useStore = create<CodeHubState>((set, get) => {
       const ws: Workspace = {
         id: wsId,
         plate,
+        title: workspaceMeta?.title,
+        dir: workspaceMeta?.dir,
+        savedWorkspaceId: workspaceMeta?.savedWorkspaceId,
         groups: [group],
         activeGroupId: group.id,
         // Container keyed by the workspace id (= what we created/attached with).
@@ -443,12 +521,17 @@ export const useStore = create<CodeHubState>((set, get) => {
         containerKey,
       };
       registerMeta(name, cli, mode, ws.id, group.id, containerKey, claudeId);
+      const status = await ipc.containerStatus(containerKey).catch(() => null);
       // New tab becomes active — clear focus mode / drag from the old workspace.
       resetGridOverlays();
       set((s) => ({
         plateCounter: plate,
         workspaces: [...s.workspaces, ws],
         activeWorkspaceId: ws.id,
+        status: status ?? s.status,
+        error: status ? null : s.error,
+        // Avoid a restore pass duplicating the just-created session/workspace.
+        bootstrapped: status?.state === "running" ? true : s.bootstrapped,
       }));
     },
 
@@ -457,6 +540,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       const ws = get().workspaces.find((w) => w.id === get().sessionMeta[target]?.workspaceId);
       const grp = ws && findGroupOf(ws, target);
       if (!ws || !grp || !grp.root) return;
+      if (leavesList(grp.root).length >= MAX_GROUP_PANES) return;
       const name = uniqueName(cli);
       const claudeId = claudeIdFor(cli);
       // Route to the workspace's container, not `ws.id` — they differ for a
@@ -502,20 +586,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     // dying pane.
     closeSession: async (name) => {
       const meta = get().sessionMeta[name];
-      try {
-        // Kill in the session's own container (its routing key).
-        await ipc.killSession(name, meta?.containerKey);
-      } catch (e) {
-        console.warn(`kill_session(${name}) failed:`, e);
-      }
-      await registry.destroyPane(name);
-
-      set((s) => {
-        const sessionMeta = { ...s.sessionMeta };
-        delete sessionMeta[name];
-        // A closed session can't have an open detail view.
-        return { sessionMeta, detailSession: s.detailSession === name ? null : s.detailSession };
-      });
+      await destroySessionRecord(name, meta?.containerKey);
 
       if (!meta) return;
       const ws = get().workspaces.find((w) => w.id === meta.workspaceId);
@@ -541,6 +612,10 @@ export const useStore = create<CodeHubState>((set, get) => {
       // the ⌘W close-tab contract). Otherwise drop just this group and fall back to
       // a sibling if it was active.
       if (ws.groups.length <= 1) {
+        const utilityShell = get().utilityShells[ws.containerKey];
+        if (utilityShell && utilityShell !== name) {
+          await destroySessionRecord(utilityShell, ws.containerKey);
+        }
         removeWorkspace(get, set, ws.id);
         return;
       }
@@ -565,22 +640,15 @@ export const useStore = create<CodeHubState>((set, get) => {
         removeWorkspace(get, set, id);
         return;
       }
-      for (const session of workspaceLeaves(ws)) {
-        try {
-          await ipc.killSession(session, get().sessionMeta[session]?.containerKey);
-        } catch (e) {
-          console.warn(`kill_session(${session}) failed:`, e);
-        }
-        await registry.destroyPane(session);
-        set((s) => {
-          const sessionMeta = { ...s.sessionMeta };
-          delete sessionMeta[session];
-          // A closed session can't have an open detail view (matches closeSession).
-          return {
-            sessionMeta,
-            detailSession: s.detailSession === session ? null : s.detailSession,
-          };
-        });
+      const utilityShell = get().utilityShells[ws.containerKey];
+      const sessions = [
+        ...new Set([...workspaceLeaves(ws), ...(utilityShell ? [utilityShell] : [])]),
+      ];
+      for (const session of sessions) {
+        await destroySessionRecord(
+          session,
+          get().sessionMeta[session]?.containerKey ?? ws.containerKey,
+        );
       }
       removeWorkspace(get, set, id);
     },
@@ -713,22 +781,11 @@ export const useStore = create<CodeHubState>((set, get) => {
       const grp = ws?.groups.find((g) => g.id === groupId);
       if (!ws || !grp) return;
       for (const session of leavesList(grp.root)) {
-        try {
-          await ipc.killSession(session, get().sessionMeta[session]?.containerKey);
-        } catch (e) {
-          console.warn(`kill_session(${session}) failed:`, e);
-        }
-        await registry.destroyPane(session);
-        set((s) => {
-          const sessionMeta = { ...s.sessionMeta };
-          delete sessionMeta[session];
-          return {
-            sessionMeta,
-            detailSession: s.detailSession === session ? null : s.detailSession,
-          };
-        });
+        await destroySessionRecord(session, get().sessionMeta[session]?.containerKey);
       }
       if (ws.groups.length <= 1) {
+        const utilityShell = get().utilityShells[ws.containerKey];
+        if (utilityShell) await destroySessionRecord(utilityShell, ws.containerKey);
         removeWorkspace(get, set, wsId);
         return;
       }
@@ -789,6 +846,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       const ws = get().workspaces.find((w) => w.id === wsId);
       const grp = ws?.groups.find((g) => g.id === groupId);
       if (!ws || !grp) return;
+      if (leavesList(grp.root).length >= MAX_GROUP_PANES) return;
       const name = uniqueName(cli);
       const claudeId = claudeIdFor(cli);
       // Route to the workspace's container (owned by the workspace), not `ws.id`
@@ -1068,6 +1126,7 @@ function removeWorkspace(get: Get, set: Set, id: string) {
   const list = get().workspaces;
   const idx = list.findIndex((w) => w.id === id);
   if (idx === -1) return;
+  const ws = list[idx];
   const next = list.filter((w) => w.id !== id);
   const wasActive = get().activeWorkspaceId === id;
   const nextActive = wasActive
@@ -1076,7 +1135,11 @@ function removeWorkspace(get: Get, set: Set, id: string) {
   // Closing the active tab falls to a sibling — clear focus mode / drag so they
   // don't carry over into it.
   if (wasActive) resetGridOverlays();
-  set({ workspaces: next, activeWorkspaceId: nextActive });
+  set((s) => {
+    const utilityShells = { ...s.utilityShells };
+    delete utilityShells[ws.containerKey];
+    return { workspaces: next, activeWorkspaceId: nextActive, utilityShells };
+  });
 }
 
 async function bootstrap(
@@ -1139,21 +1202,28 @@ async function bootstrap(
     for (const members of byWorkspace.values()) {
       const containerKey = members[0].workspace;
       for (const s of members) await registry.spawnPane(s.name, containerKey);
+      // Shell sessions restored from a workspace container map back to the
+      // design's docked Shell panel. Agent sessions remain grid leaves.
+      const utilityShell = members.find((s) => s.name.startsWith("shell"));
+      const gridMembers = members.filter((s) => !s.name.startsWith("shell"));
       // Build a default split tree: the saved layout (ratios/dirs) isn't
       // persisted, so stack the members alternating row/col at even ratios.
-      const root = members.slice(1).reduce<LayoutNode>(
-        (acc, s, i) => ({
-          kind: "split",
-          id: nid(),
-          dir: i % 2 === 0 ? "row" : "col",
-          ratio: 0.5,
-          a: acc,
-          b: leafNode(s.name),
-        }),
-        leafNode(members[0].name),
-      );
+      const root =
+        gridMembers.length > 0
+          ? gridMembers.slice(1).reduce<LayoutNode>(
+              (acc, s, i) => ({
+                kind: "split",
+                id: nid(),
+                dir: i % 2 === 0 ? "row" : "col",
+                ratio: 0.5,
+                a: acc,
+                b: leafNode(s.name),
+              }),
+              leafNode(gridMembers[0].name),
+            )
+          : null;
       const plate = get().plateCounter + 1;
-      const group = makeGroup("Group 1", root, members[0].name);
+      const group = makeGroup("Group 1", root, gridMembers[0]?.name ?? null);
       const ws: Workspace = {
         id: `ws-${plate}-${Date.now().toString(36)}`,
         plate,
@@ -1169,12 +1239,16 @@ async function bootstrap(
         sessionCounter: st.sessionCounter + members.length,
         workspaces: [...st.workspaces, ws],
         activeWorkspaceId: st.activeWorkspaceId ?? ws.id,
+        utilityShells: utilityShell
+          ? { ...st.utilityShells, [containerKey]: utilityShell.name }
+          : st.utilityShells,
       }));
       // Mode of a pre-existing tmux session is unknown; show it as Standard.
       for (const s of members) {
         const cli =
-          (["claude", "codex", "antigravity"] as Cli[]).find((c) => s.name.startsWith(c)) ??
-          "claude";
+          (["claude", "codex", "antigravity", "shell"] as Cli[]).find((c) =>
+            s.name.startsWith(c),
+          ) ?? "claude";
         registerMeta(s.name, cli, "standard", ws.id, group.id, containerKey);
       }
     }

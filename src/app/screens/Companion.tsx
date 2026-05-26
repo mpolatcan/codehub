@@ -46,6 +46,16 @@ const TRANSIENT_MS = 6000;
 
 type TransientKind = "done" | "err";
 
+function useWideCompanionPreview() {
+  const [wide, setWide] = useState(() => window.innerWidth >= 900);
+  useEffect(() => {
+    const onResize = () => setWide(window.innerWidth >= 900);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return wide;
+}
+
 export function Companion() {
   const [list, setList] = useState<SessionActivity[]>([]);
   const [prompts, setPrompts] = useState<PendingPrompt[]>([]);
@@ -121,6 +131,9 @@ export function Companion() {
   const respond = useCallback((session: string, allow: boolean) => {
     void ipc.respondPrompt(session, allow).catch(() => {});
   }, []);
+  const widePreview = useWideCompanionPreview();
+
+  if (widePreview) return <CompanionWideShowcase />;
 
   return (
     <div
@@ -193,6 +206,309 @@ export function Companion() {
         {/* ── SHOWCASE: avatar states, radial menu, prefs, characters ───── */}
         <CompanionShowcase />
       </div>
+    </div>
+  );
+}
+
+function CompanionWideShowcase() {
+  return (
+    <div
+      className="ch-root"
+      style={{
+        height: "100vh",
+        width: "100vw",
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--bg-1)",
+        color: "var(--fg-1)",
+        overflow: "hidden",
+      }}
+    >
+      <FauxCompanionDesktopHero />
+      <div className="scroll" style={{ flex: 1, overflow: "auto" }}>
+        <CompanionShowcase wide />
+      </div>
+    </div>
+  );
+}
+
+function FauxCompanionDesktopHero() {
+  return (
+    <div style={{ position: "relative", height: 460, flexShrink: 0, overflow: "hidden" }}>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(ellipse at 70% 30%, oklch(0.32 0.06 280), oklch(0.16 0.04 230) 60%, oklch(0.10 0.03 240) 100%)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundImage: "radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)",
+          backgroundSize: "3px 3px",
+          mixBlendMode: "overlay",
+          opacity: 0.5,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 28,
+          background: "rgba(0,0,0,0.55)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderBottom: "1px solid rgba(255,255,255,0.05)",
+          display: "flex",
+          alignItems: "center",
+          padding: "0 14px",
+          fontSize: 12,
+          color: "rgba(255,255,255,0.85)",
+        }}
+      >
+        <span style={{ fontWeight: 600, marginRight: 18 }}>Code</span>
+        <span style={{ marginRight: 14 }}>File</span>
+        <span style={{ marginRight: 14 }}>Edit</span>
+        <span style={{ marginRight: 14 }}>View</span>
+        <span style={{ flex: 1 }} />
+        <span className="mono" style={{ marginRight: 12, fontSize: 11 }}>
+          21:36
+        </span>
+        <span style={{ fontSize: 11 }}>Wed 22 May</span>
+      </div>
+
+      <FauxEditorWindow />
+      <CompanionDock />
+
+      <div
+        style={{
+          position: "absolute",
+          top: 90,
+          right: 100,
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+          zIndex: 50,
+        }}
+      >
+        <CompanionAvatar agent="codex" status="wait" bubble="needs your approval" expanded />
+      </div>
+      <div style={{ position: "absolute", top: 230, right: 200, zIndex: 50 }}>
+        <CompanionAvatar agent="claude" status="live" />
+      </div>
+      <div style={{ position: "absolute", top: 320, left: 180, zIndex: 50 }}>
+        <CompanionAvatar agent="antigravity" status="idle" />
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          bottom: 80,
+          left: "50%",
+          transform: "translateX(-50%)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "5px 10px",
+          borderRadius: 999,
+          background: "rgba(0,0,0,0.55)",
+          backdropFilter: "blur(10px)",
+          color: "rgba(255,255,255,0.9)",
+          fontSize: 12,
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff" }} />
+        <span>3 companions floating · drag anywhere · always on top · click to jump</span>
+      </div>
+    </div>
+  );
+}
+
+function FauxEditorWindow() {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 50,
+        left: 50,
+        right: 50,
+        bottom: 70,
+        background: "rgba(20,22,28,0.92)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        borderRadius: 10,
+        border: "1px solid rgba(255,255,255,0.06)",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.55)",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        opacity: 0.92,
+      }}
+    >
+      <div
+        style={{
+          height: 28,
+          background: "rgba(0,0,0,0.4)",
+          display: "flex",
+          alignItems: "center",
+          padding: "0 12px",
+          gap: 6,
+          borderBottom: "1px solid rgba(255,255,255,0.04)",
+        }}
+      >
+        <span
+          style={{ width: 9, height: 9, borderRadius: "50%", background: "rgba(255,255,255,0.18)" }}
+        />
+        <span
+          style={{ width: 9, height: 9, borderRadius: "50%", background: "rgba(255,255,255,0.18)" }}
+        />
+        <span
+          style={{ width: 9, height: 9, borderRadius: "50%", background: "rgba(255,255,255,0.18)" }}
+        />
+        <span
+          style={{
+            flex: 1,
+            textAlign: "center",
+            fontSize: 12,
+            color: "rgba(255,255,255,0.55)",
+            fontFamily: "var(--mono)",
+          }}
+        >
+          auth.ts — aurora-api
+        </span>
+      </div>
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          fontFamily: "var(--mono)",
+          fontSize: 11,
+          padding: 12,
+          gap: 10,
+          color: "rgba(255,255,255,0.4)",
+        }}
+      >
+        <div style={{ width: 30, textAlign: "right", lineHeight: 1.6 }}>
+          {Array.from({ length: 14 }, (_, i) => (
+            <div key={i}>{i + 1}</div>
+          ))}
+        </div>
+        <div style={{ flex: 1, lineHeight: 1.6 }}>
+          <div>
+            <span style={{ color: "oklch(0.78 0.10 265)" }}>import</span>{" "}
+            <span style={{ color: "rgba(255,255,255,0.7)" }}>{"{ Middleware }"}</span>{" "}
+            <span style={{ color: "oklch(0.78 0.10 265)" }}>from</span>{" "}
+            <span style={{ color: "oklch(0.78 0.13 35)" }}>'koa'</span>;
+          </div>
+          <div>
+            <span style={{ color: "oklch(0.78 0.10 265)" }}>import</span>{" "}
+            <span style={{ color: "rgba(255,255,255,0.7)" }}>{"{ verifyToken }"}</span>{" "}
+            <span style={{ color: "oklch(0.78 0.10 265)" }}>from</span>{" "}
+            <span style={{ color: "oklch(0.78 0.13 35)" }}>'../auth/verifier'</span>;
+          </div>
+          <div>&nbsp;</div>
+          <div>
+            <span style={{ color: "oklch(0.78 0.10 265)" }}>export const</span>{" "}
+            <span style={{ color: "oklch(0.78 0.13 145)" }}>requireAuth</span>: Middleware{" "}
+            <span style={{ color: "rgba(255,255,255,0.7)" }}>=</span>{" "}
+            <span style={{ color: "oklch(0.78 0.10 265)" }}>async</span> (ctx, next) =&gt; {"{"}
+          </div>
+          <div>
+            &nbsp;&nbsp;<span style={{ color: "oklch(0.78 0.10 265)" }}>const</span> token =
+            ctx.headers.authorization?.replace(/^Bearer /,{" "}
+            <span style={{ color: "oklch(0.78 0.13 35)" }}>''</span>);
+          </div>
+          <div>
+            &nbsp;&nbsp;<span style={{ color: "oklch(0.78 0.10 265)" }}>const</span> r = token{" "}
+            <span style={{ color: "rgba(255,255,255,0.7)" }}>&amp;&amp;</span>{" "}
+            <span style={{ color: "oklch(0.78 0.10 265)" }}>await</span> verifyToken(token, SECRET);
+          </div>
+          <div>
+            &nbsp;&nbsp;<span style={{ color: "oklch(0.78 0.10 265)" }}>if</span> (!r{" "}
+            <span style={{ color: "rgba(255,255,255,0.7)" }}>||</span> !r.ok) ctx.throw(
+            <span style={{ color: "oklch(0.78 0.13 145)" }}>401</span>);
+          </div>
+          <div>&nbsp;&nbsp;ctx.state.user = r.payload;</div>
+          <div>
+            &nbsp;&nbsp;<span style={{ color: "oklch(0.78 0.10 265)" }}>await</span> next();
+          </div>
+          <div>{"};"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompanionDock() {
+  const apps: Array<[string | null, string]> = [
+    ["#FF6B6B", "C"],
+    ["#4ECDC4", "T"],
+    ["#FFD93D", "B"],
+    ["#A78BFA", "F"],
+    [null, "CH"],
+  ];
+  return (
+    <div
+      style={{
+        position: "absolute",
+        bottom: 12,
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: "rgba(0,0,0,0.4)",
+        backdropFilter: "blur(30px)",
+        WebkitBackdropFilter: "blur(30px)",
+        borderRadius: 16,
+        padding: "6px 8px",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        border: "1px solid rgba(255,255,255,0.06)",
+        boxShadow: "0 12px 40px rgba(0,0,0,0.4)",
+      }}
+    >
+      {apps.map(([color, letter], i) => (
+        <div
+          key={`${letter}-${i}`}
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 10,
+            background:
+              color || "linear-gradient(135deg, oklch(0.50 0.10 230), oklch(0.30 0.08 250))",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#fff",
+            fontFamily: "var(--mono)",
+            fontSize: 14,
+            fontWeight: 600,
+            boxShadow: "0 4px 8px rgba(0,0,0,0.3)",
+            position: "relative",
+          }}
+        >
+          {letter}
+          {i === 4 && (
+            <span
+              style={{
+                position: "absolute",
+                bottom: -8,
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: 3,
+                height: 3,
+                borderRadius: "50%",
+                background: "#fff",
+              }}
+            />
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -361,16 +677,23 @@ function Empty() {
 // The design-system gallery (states · radial menu · preferences · characters).
 // Faithful port of design/project/screens/companion.jsx, wired to the real
 // companion-prefs store. Honest sample bubbles are clearly captioned as such.
-function CompanionShowcase() {
+function CompanionShowcase({ wide = false }: { wide?: boolean }) {
   return (
-    <div style={{ borderTop: "1px solid var(--bd-soft)", padding: "16px 14px 20px" }}>
+    <div
+      style={{
+        borderTop: wide ? "none" : "1px solid var(--bd-soft)",
+        padding: wide ? "24px 32px" : "16px 14px 20px",
+      }}
+    >
       <ShowcaseHeading title="States" note="size 56px · pulses with state · right-click for menu" />
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-          gap: 12,
-          marginBottom: 20,
+          gridTemplateColumns: wide
+            ? "repeat(4, minmax(0, 1fr))"
+            : "repeat(auto-fill, minmax(150px, 1fr))",
+          gap: wide ? 14 : 12,
+          marginBottom: wide ? 22 : 20,
         }}
       >
         <CompCard caption="Idle" desc="Gentle float. Status ring at rest.">
@@ -409,17 +732,40 @@ function CompanionShowcase() {
         title="Right-click menu"
         note="radial actions — keeps the screen unblocked"
       />
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
-        <CompanionRadial />
-      </div>
-
-      <CompanionPrefsPanel />
+      {wide ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.2fr 1fr",
+            gap: 14,
+            marginBottom: 22,
+          }}
+        >
+          <CompCard
+            caption="Radial · 6 actions"
+            desc="Right-click or long-press. Esc closes."
+            tone="live"
+          >
+            <CompanionRadial />
+          </CompCard>
+          <CompanionPrefsPanel />
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
+            <CompanionRadial />
+          </div>
+          <CompanionPrefsPanel />
+        </>
+      )}
 
       <ShowcaseHeading title="Characters" note="6 built-in styles · per-agent override" />
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+          gridTemplateColumns: wide
+            ? "repeat(3, minmax(0, 1fr))"
+            : "repeat(auto-fill, minmax(220px, 1fr))",
           gap: 12,
         }}
       >

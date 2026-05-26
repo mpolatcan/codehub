@@ -1,22 +1,17 @@
 import { useState } from "react";
-import { AgentGlyph } from "../components/primitives/AgentGlyph";
+import { ContextGauge } from "../components/primitives/ContextGauge";
 import { IconBtn } from "../components/primitives/IconBtn";
 import { MetricStat } from "../components/primitives/MetricStat";
 import { StatusBadge } from "../components/primitives/StatusBadge";
-import { StatusDot } from "../components/primitives/StatusDot";
 import { Ico } from "../components/primitives/icons";
 import { fmtTokens, useSessionUsage } from "../hooks/useSessionUsage";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
-import { splitKey, useLauncher } from "../lib/launcher";
 import { confirmCloseRunningSession, useStore } from "../lib/store";
-import type { SplitDir } from "../lib/tree";
 
-// Pane header, ported from design/screens/main-hub-a.jsx (TerminalPane*). Two
-// rows: identity (status · glyph · name · agent · mode) + a metric row
-// (ContextGauge + MetricStat ×4). Identity, rename, split and close are wired to
-// the live store. The metric values are placeholders pending a per-session
-// telemetry feed (tokens / cost / turns / context) — see BACKEND_PLAN.md; shown
-// as em-dashes rather than fabricated numbers.
+// Pane header, visually aligned with design/screens/main-hub-a.jsx:
+// index + colored pane title + compact selector chip + expand/more/close, with
+// the metric strip below. Values stay real; unknown telemetry renders as an
+// em-dash rather than copying the mock's sample numbers.
 export function PaneHead({
   session,
   index,
@@ -26,9 +21,6 @@ export function PaneHead({
 }: {
   session: string;
   index?: number;
-  // Drag-to-rearrange (design hub-states HubStateDragging): the header is the
-  // drag handle so the terminal body keeps normal text selection. Wired by the
-  // owning Leaf; absent on the focus-mode header (no rearrange while maximized).
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
@@ -36,147 +28,157 @@ export function PaneHead({
   const meta = useStore((s) => s.sessionMeta[session]);
   const agentVersions = useStore((s) => s.agentVersions);
   const activity = useStore((s) => s.sessionActivity[session]);
-  // Awaiting-input signal for this pane (← pending_prompts / live agent-event,
-  // §7). Real for Claude/Codex; empty for Antigravity + until the BE track
-  // lands. A pending prompt overrides the working/idle dot with "wait".
+  const focused = useStore((s) =>
+    s.workspaces.some((w) => w.groups.some((g) => g.focused === session)),
+  );
   const awaiting = useStore((s) => s.pendingPrompts.some((p) => p.session === session));
   const closeSession = useStore((s) => s.closeSession);
   const renameSession = useStore((s) => s.renameSession);
   const openDetail = useStore((s) => s.openDetail);
-  const openLaunch = useLauncher((s) => s.open);
   const [editing, setEditing] = useState(false);
 
-  // Real per-session token tally, read from this Claude conversation's own
-  // transcript (the --session-id it launched with). Only Claude sessions have a
-  // transcript, so others keep em-dash placeholders; null = no usable data yet
-  // (a session that hasn't responded) → em-dash too. The id prefers the
-  // backend-sourced activity entry (registered at launch, stable across a
-  // reload) and falls back to the in-memory store meta. Called above the `!meta`
-  // guard so the hook count stays constant even as a session is torn down
-  // (closeSession drops meta before the tree drops the leaf).
   const claudeId = activity?.claudeId ?? (meta?.cli === "claude" ? meta.claudeId : undefined);
   const usage = useSessionUsage(claudeId);
 
   if (!meta) return null;
+
   const spec = SPEC_BY_CLI[meta.cli];
   const accent = `var(--a-${meta.cli})`;
   const badge = MODE_BY_ID[meta.mode].badge;
-  // Shell panes have no CLI version to show; agent versions are keyed by agent.
   const version = meta.cli === "shell" ? null : (agentVersions?.[meta.cli]?.version ?? null);
-  const key = splitKey(session);
-  // Real per-session signal from pane output flow (session_activity): the agent
-  // is "working" while producing output, else quiet. The dot reflects that — it
-  // means "is this agent working", independent of which pane you're looking at
-  // (focus is shown by the pane border). Quiet conflates idle/waiting/done; we
-  // don't fabricate which. Absent reading (pre-first-poll) → idle.
   const working = activity?.state === "working";
-  // Awaiting input wins over working/idle — it's a hard "this pane needs you".
-  const status = awaiting ? "wait" : working ? "live" : "idle";
-
-  // Open the shared spawn modal with this pane as the split target; SpawnModal
-  // reads the dir/session from the launch context and calls splitSession.
-  const armSplit = (dir: SplitDir) => openLaunch(key, { dir, session });
+  const statusText = awaiting ? "Awaiting input" : working ? "Working" : "Idle";
 
   return (
     <div
       style={{
         flex: "0 0 auto",
-        background: "var(--bg-1)",
-        borderBottom: "1px solid var(--bd-soft)",
+        background: awaiting ? `color-mix(in oklab, ${accent} 22%, var(--bg-1))` : "var(--bg-1)",
+        borderBottom: awaiting
+          ? `1px solid color-mix(in oklab, ${accent} 40%, var(--bd-soft))`
+          : "1px solid var(--bd-soft)",
         color: "var(--fg-1)",
         userSelect: "none",
       }}
     >
-      {/* identity row — also the drag handle for pane rearrange. Dragging starts
-          on this row only; buttons/rename inside still click normally (dragstart
-          fires only on an actual drag gesture). */}
       <div
+        className="ch-pane-head"
         draggable={draggable}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          padding: "var(--panehead-py, 7px) 12px 5px",
+          gap: 8,
+          padding: "7px 12px",
           cursor: draggable ? "grab" : undefined,
         }}
       >
-        <StatusDot status={status} pulse={working} />
-        {/* pane index badge (design main-hub-a PaneIndex) — the keyboard target
-            number for ⌘1..9 pane focus; omitted when the pane stands alone. */}
         {typeof index === "number" && (
           <span
             className="mono"
+            title={`Jump to pane ${index + 1} (⌘${index + 1})`}
             style={{
-              fontSize: 9.5,
-              color: "var(--fg-3)",
-              background: "var(--bg-3)",
-              borderRadius: 3,
-              minWidth: 14,
-              height: 14,
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
+              width: 18,
+              height: 18,
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 600,
+              lineHeight: 1,
+              color: focused ? "var(--bg-0)" : "var(--fg-2)",
+              background: focused ? "var(--pri)" : "var(--bg-3)",
+              border: `1px solid ${focused ? "var(--pri)" : "var(--bd-soft)"}`,
+              flexShrink: 0,
             }}
           >
             {index + 1}
           </span>
         )}
-        <AgentGlyph agent={meta.cli} size={13} color={accent} />
 
-        {editing ? (
-          <input
-            className="pane-name-input"
-            defaultValue={meta.alias}
-            maxLength={32}
-            // biome-ignore lint/a11y/noAutofocus: rename input is opened by an explicit user action
-            autoFocus
-            onFocus={(e) => e.currentTarget.select()}
-            onBlur={(e) => {
-              renameSession(session, e.currentTarget.value);
-              setEditing(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                renameSession(session, e.currentTarget.value);
-                setEditing(false);
-              } else if (e.key === "Escape") {
-                setEditing(false);
-              }
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+          <span
+            title={statusText}
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              background: accent,
+              border: `1px solid color-mix(in oklab, ${accent} 60%, #000)`,
+              boxShadow:
+                working || awaiting
+                  ? `0 0 0 3px color-mix(in oklab, ${accent} 22%, transparent)`
+                  : "none",
+              animation: working ? "ch-pulse 2s ease-in-out infinite" : "none",
+              flexShrink: 0,
             }}
           />
-        ) : (
-          <span
-            className="mono"
-            title="Double-click to rename"
-            style={{ fontSize: 12, color: "var(--fg-0)", fontWeight: 500 }}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              setEditing(true);
-            }}
-          >
-            {meta.alias}
-          </span>
-        )}
-
-        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
-          {spec.label}
+          {editing ? (
+            <input
+              className="pane-name-input"
+              defaultValue={meta.alias}
+              maxLength={32}
+              // biome-ignore lint/a11y/noAutofocus: rename input is opened by an explicit user action
+              autoFocus
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={(e) => {
+                renameSession(session, e.currentTarget.value);
+                setEditing(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  renameSession(session, e.currentTarget.value);
+                  setEditing(false);
+                } else if (e.key === "Escape") {
+                  setEditing(false);
+                }
+              }}
+            />
+          ) : (
+            <span
+              className="mono"
+              title="Double-click to rename"
+              style={{ fontSize: 13, color: "var(--fg-0)", fontWeight: 500 }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
+            >
+              {meta.alias}
+            </span>
+          )}
         </span>
-        {version && (
-          <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-            {version}
-          </span>
-        )}
+
+        <button
+          type="button"
+          title={`${spec.label}${version ? ` · ${version}` : ""}`}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            fontFamily: "var(--mono)",
+            fontSize: 11,
+            color: "var(--fg-2)",
+            background: "transparent",
+            border: "1px solid transparent",
+            borderRadius: 4,
+            padding: "2px 5px",
+            cursor: "default",
+          }}
+        >
+          <span>{version ?? spec.label}</span>
+          {Ico.chevD}
+        </button>
         {badge && <span className={`mode-badge badge-${meta.mode}`}>{badge}</span>}
+        {awaiting && <StatusBadge status="wait">Awaiting</StatusBadge>}
 
         <span style={{ flex: 1 }} />
 
-        {awaiting && <StatusBadge status="wait">Awaiting</StatusBadge>}
-
         <IconBtn
           title="Open session detail"
-          style={{ width: 20, height: 20 }}
+          style={{ width: 22, height: 22 }}
           onClick={(e) => {
             e.stopPropagation();
             openDetail(session);
@@ -184,35 +186,16 @@ export function PaneHead({
         >
           {Ico.expand}
         </IconBtn>
-
-        {/* split — opens the shared spawn modal targeting this pane */}
-        <span style={{ display: "inline-flex", gap: 2 }}>
-          <IconBtn
-            title="Split below"
-            style={{ width: 20, height: 20 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              armSplit("col");
-            }}
-          >
-            {Ico.splitH}
-          </IconBtn>
-          <IconBtn
-            title="Split right (⌘\)"
-            style={{ width: 20, height: 20 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              armSplit("row");
-            }}
-          >
-            {Ico.splitV}
-          </IconBtn>
-        </span>
-
+        <IconBtn
+          title="More actions — right-click pane for split, copy, fullscreen…"
+          style={{ width: 22, height: 22 }}
+        >
+          {Ico.more}
+        </IconBtn>
         <IconBtn
           title="Close session (⌘W)"
           danger
-          style={{ width: 20, height: 20 }}
+          style={{ width: 22, height: 22 }}
           onClick={(e) => {
             e.stopPropagation();
             if (!confirmCloseRunningSession(session)) return;
@@ -223,50 +206,31 @@ export function PaneHead({
         </IconBtn>
       </div>
 
-      {/* metric row — ctx + turn + tokens + edits are REAL for Claude (read from
-          this session's transcript via --session-id; em-dash for other CLIs or
-          before the first response). ctx is the live context footprint (tokens
-          read last turn) shown as a bare count: the transcript has no window max
-          and it varies by model/version, so no fabricated used/max ratio. cost
-          stays em-dash: an estimate, surfaced on Usage with its disclosure. */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 14,
-          padding: "0 12px var(--panehead-py, 7px)",
+          gap: 10,
+          padding: "4px 10px",
+          background: "var(--bg-1)",
+          borderTop: "1px solid var(--bd-soft)",
+          fontSize: 10,
         }}
       >
-        <MetricStat label="ctx" value={usage ? fmtTokens(usage.contextUsed) : "—"} />
-        <span className="vr" style={{ height: 16 }} />
+        <ContextGauge used={usage?.contextUsed ?? 0} max={0} label="ctx" width={64} />
         <MetricStat label="turn" value={usage ? String(usage.turns) : "—"} />
-        <MetricStat
-          label="tokens"
-          value={usage ? fmtTokens(usage.tokensIn + usage.tokensOut) : "—"}
-        />
-        <MetricStat label="cost" value="—" />
+        <MetricStat label="tok" value={usage ? fmtTokens(usage.tokensIn + usage.tokensOut) : "—"} />
+        <MetricStat label="$" value="—" />
         <MetricStat label="edits" value={usage ? String(usage.edits) : "—"} />
         <span style={{ flex: 1 }} />
         <span
+          className="mono"
           style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
             fontSize: 10.5,
             color: awaiting ? "var(--wait)" : working ? "var(--live)" : "var(--fg-3)",
           }}
         >
-          {(working || awaiting) && (
-            <span
-              style={{
-                width: 4,
-                height: 4,
-                borderRadius: "50%",
-                background: awaiting ? "var(--wait)" : "var(--live)",
-              }}
-            />
-          )}
-          {awaiting ? "awaiting" : working ? "working" : "idle"}
+          {awaiting ? "blocked" : working ? "active" : "idle"}
         </span>
       </div>
     </div>

@@ -37,9 +37,8 @@ export function RuntimeBanner() {
       title="Workspace offline"
       message={message}
       actions={
-        <Button size="sm" onClick={() => void restartRuntime()} title="Restart the runtime (⌘R)">
+        <Button size="sm" onClick={() => void restartRuntime()} title="Reconnect workspace runtime">
           Reconnect
-          <span className="kbd">⌘R</span>
         </Button>
       }
     />

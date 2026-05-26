@@ -303,7 +303,7 @@ export const Ico = {
       <path d="M3 8l3.5 3.5L13 5" />
     </svg>
   ),
-  // Terminal / shell glyph — the ActionBar's Shell pane affordance.
+  // Terminal / shell glyph — the ActionBar's Shell panel affordance.
   terminal: (
     <svg
       aria-hidden="true"

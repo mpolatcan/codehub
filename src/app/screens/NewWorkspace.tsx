@@ -3,10 +3,10 @@
  * design/screens/new-workspace.jsx, adapted to CodeHub's real architecture.
  *
  * A workspace here is a saved name + host directory pointer (config.savedWorkspaces);
- * every workspace shares the ONE runtime container, and only the /workspace mount
- * varies. So the design's fabricated surfaces are corrected to the honest ones:
- *   - Step 2 "Container size / $cost / keychain / sleep-30min" → the real shared
- *     runtime panel (SharedRuntimePanel): one container, host-env keys, no sizing
+ * opening it creates or reuses that workspace's own container. So the design's
+ * fabricated surfaces are corrected to the honest ones:
+ *   - Step 2 "Container size / $cost / keychain / sleep-30min" → the current
+ *     workspace container panel (SharedRuntimePanel): host-env keys, no sizing
  *     to fake. The size/cost/lifecycle rows are dropped, not invented.
  *   - Step 1 "Repositories" (plural, N repos) → one Repository: the real folder
  *     bound at /workspace (RepositoryPicker, the same picker the spawn dialog uses).
@@ -56,7 +56,14 @@ export function NewWorkspace() {
   const [mode, setMode] = useState<Mode>("standard");
   const [prompt, setPrompt] = useState("");
 
-  const dir = workspaceInfo?.effective ?? null;
+  const defaultDir = workspaceInfo?.effective ?? null;
+  const [repoDir, setRepoDir] = useState<string | null>(null);
+  const dir = repoDir ?? defaultDir;
+
+  useEffect(() => {
+    if (!repoDir && defaultDir) setRepoDir(defaultDir);
+  }, [defaultDir, repoDir]);
+
   // Suggest a name from the chosen dir until the user types their own.
   useEffect(() => {
     if (!touchedName) setName(dirName(dir));
@@ -69,14 +76,28 @@ export function NewWorkspace() {
   const modes = modesFor(agent);
 
   const dismiss = () => close(false);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      close(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [close]);
 
   const finish = async () => {
     if (!dir) return;
-    const id = await saveWorkspace(name, dir);
+    const title = name.trim() || dirName(dir) || "Untitled workspace";
+    const id = await saveWorkspace(title, dir);
     await openSavedWorkspace(id); // marks lastOpened + ensures the mount points here
     // Spawns the first agent tab. No-ops if the runtime is down — the workspace is
     // still saved and shows on the launcher, so nothing is lost.
-    await newPlate(agent, mode, undefined, prompt.trim() || undefined);
+    await newPlate(agent, mode, undefined, prompt.trim() || undefined, undefined, {
+      title,
+      dir,
+      savedWorkspaceId: id,
+    });
     dismiss();
   };
 
@@ -128,7 +149,8 @@ export function NewWorkspace() {
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: 640,
+          width: "52rem",
+          maxWidth: "calc(100vw - 48px)",
           maxHeight: "calc(100% - 56px)",
           background: "var(--bg-2)",
           border: "1px solid var(--bd-strong)",
@@ -183,7 +205,7 @@ export function NewWorkspace() {
         <div style={{ padding: "18px", overflow: "auto", flex: 1 }}>
           {step === 1 && (
             <FormRow label="Repository">
-              <RepositoryPicker />
+              <RepositoryPicker value={dir} onChange={setRepoDir} />
               <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 8 }}>
                 The host folder bound at /workspace. Agents in this workspace read and write here.
               </div>

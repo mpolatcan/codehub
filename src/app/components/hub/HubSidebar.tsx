@@ -7,7 +7,12 @@ import { Ico } from "../../components/primitives/icons";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../../lib/catalog";
 import { useOverlay } from "../../lib/overlay";
 import { confirmCloseRunningSession, useStore } from "../../lib/store";
-import { type Group, leavesList, workspaceLeaves } from "../../lib/tree";
+import { type Group, leavesList, workspaceLeaves, workspaceTitle } from "../../lib/tree";
+
+function dirName(path: string | undefined): string | null {
+  if (!path) return null;
+  return path.split("/").filter(Boolean).pop() ?? null;
+}
 
 // Left sidebar — ported 1:1 from design/components.jsx `AppSidebar`. Two forms:
 // an expanded 264px panel and a collapsed 52px icon rail (⌘B / header chevron
@@ -241,9 +246,13 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
   const ws = useStore((s) => s.workspaces.find((w) => w.id === workspaceId));
   const activeId = useStore((s) => s.activeWorkspaceId);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
+  const git = useStore((s) => s.gitStatus);
   if (!ws) return null;
   const open = ws.id === activeId;
   const sessions = workspaceLeaves(ws);
+  const title = workspaceTitle(ws);
+  const repoLabel =
+    open && git?.isRepo ? (git.branch ?? "detached") : (dirName(ws.dir) ?? "workspace");
   // Show a group sublabel only when the workspace has more than one group
   // (a single default group is just noise).
   const showGroupLabels = ws.groups.length > 1;
@@ -290,12 +299,29 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
             whiteSpace: "nowrap",
           }}
         >
-          Tab {ws.plate}
+          {title}
         </span>
         <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
           {sessions.length}
         </span>
       </button>
+
+      <div
+        style={{
+          fontFamily: "var(--mono)",
+          fontSize: 10,
+          color: "var(--fg-3)",
+          padding: "0 6px 4px",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        {Ico.branch}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {repoLabel}
+        </span>
+      </div>
 
       {open && (
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -460,9 +486,18 @@ function SidebarFooter() {
           }}
         />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="mono" style={{ fontSize: 12, color: "var(--fg-0)" }}>
-          {status?.name ?? "—"}
+      <div style={{ flex: 1, minWidth: 0 }} title={status?.name ?? undefined}>
+        <div
+          className="mono"
+          style={{
+            fontSize: 12,
+            color: "var(--fg-0)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          daemon
         </div>
         <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
           {status?.state ?? "—"}

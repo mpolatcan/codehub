@@ -164,7 +164,6 @@ pub async fn serve() {
         tx: tx.clone(),
     };
 
-
     let app = Router::new()
         .route("/status", get(status))
         .route("/container-start", post(container_start))
@@ -244,7 +243,9 @@ async fn status(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     Ok(Json(lifecycle_for(&st, &ws).status().await))
 }
 
@@ -260,7 +261,9 @@ async fn container_start(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     let lc = lifecycle_for(&st, &ws);
     lc.start().await.map_err(err)?;
     let status = lc.status().await;
@@ -272,7 +275,9 @@ async fn container_stop(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     let lc = lifecycle_for(&st, &ws);
     lc.stop().await.map_err(err)?;
     let status = lc.status().await;
@@ -284,7 +289,9 @@ async fn container_restart(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     let lc = lifecycle_for(&st, &ws);
     lc.restart().await.map_err(err)?;
     let status = lc.status().await;
@@ -365,7 +372,9 @@ async fn recreate_runtime(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     let lc = lifecycle_for(&st, &ws);
     lc.recreate().await.map_err(err)?;
     let status = lc.status().await;
@@ -418,7 +427,9 @@ async fn container_stats(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .stats()
         .await
@@ -459,7 +470,9 @@ async fn container_logs(
     State(st): State<AppState>,
     Query(q): Query<LogsQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .logs(q.tail.unwrap_or(200))
         .await
@@ -471,7 +484,9 @@ async fn container_mounts(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .mounts()
         .await
@@ -483,24 +498,28 @@ async fn container_image(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
-    docker_container_for(&st, &ws)
-        .image_info()
-        .await
-        .map(Json)
-        .map_err(err)
+    let docker = match q.workspace {
+        Some(ws) => docker_container_for(&st, &ws),
+        None => st.manager.any_running_docker().await.ok_or((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no running workspace container".into(),
+        ))?,
+    };
+    docker.image_info().await.map(Json).map_err(err)
 }
 
 async fn container_health(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
-    docker_container_for(&st, &ws)
-        .health()
-        .await
-        .map(Json)
-        .map_err(err)
+    let docker = match q.workspace {
+        Some(ws) => docker_container_for(&st, &ws),
+        None => st.manager.any_running_docker().await.ok_or((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no running workspace container".into(),
+        ))?,
+    };
+    docker.health().await.map(Json).map_err(err)
 }
 
 #[derive(Deserialize)]
@@ -515,7 +534,9 @@ async fn container_list_dir(
     State(st): State<AppState>,
     Query(q): Query<PathQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .list_dir(&q.path.unwrap_or_default())
         .await
@@ -527,7 +548,9 @@ async fn container_read_file(
     State(st): State<AppState>,
     Query(q): Query<PathQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .read_file(&q.path.unwrap_or_default())
         .await
@@ -539,7 +562,9 @@ async fn container_git_status(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .git_status()
         .await
@@ -557,7 +582,9 @@ async fn container_git_diff(
     State(st): State<AppState>,
     Query(q): Query<DiffQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .git_diff(&q.path)
         .await
@@ -569,7 +596,9 @@ async fn container_git_diff_all(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .git_diff_all()
         .await
@@ -581,7 +610,9 @@ async fn container_git_diff_staged(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .git_diff_staged()
         .await
@@ -593,7 +624,9 @@ async fn container_git_diff_unstaged(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .git_diff_unstaged()
         .await
@@ -605,7 +638,9 @@ async fn container_git_stage_all(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .git_stage_all()
         .await
@@ -623,7 +658,9 @@ async fn container_git_commit(
     Query(q): Query<WorkspaceQuery>,
     Json(body): Json<CommitBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .git_commit(&body.message)
         .await
@@ -642,7 +679,9 @@ async fn container_git_open_pr(
     Query(q): Query<WorkspaceQuery>,
     Json(body): Json<OpenPrBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .git_open_pr(&body.title, &body.body)
         .await
@@ -654,7 +693,9 @@ async fn container_top(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .top()
         .await
@@ -724,7 +765,9 @@ async fn container_git_log(
     State(st): State<AppState>,
     Query(q): Query<LogQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_container_for(&st, &ws)
         .git_log(q.limit.unwrap_or(12))
         .await
@@ -815,7 +858,9 @@ async fn kill_session(
     Path(name): Path<String>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<StatusCode, ApiError> {
-    let ws = q.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = q
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     // Same ordering as lib.rs: drop pane bookkeeping before killing tmux.
     st.registry.detach_by_session(&name).await;
     st.events.remove_session(&name);
@@ -837,7 +882,9 @@ async fn rename_session(
     Path(name): Path<String>,
     Json(body): Json<RenameBody>,
 ) -> Result<StatusCode, ApiError> {
-    let ws = body.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = body
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     docker_for(&st, &ws)
         .rename_tmux_window(&name, &body.alias)
         .await
@@ -857,7 +904,9 @@ async fn attach(
     State(st): State<AppState>,
     Json(body): Json<AttachBody>,
 ) -> Result<Json<String>, ApiError> {
-    let ws = body.workspace.ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
+    let ws = body
+        .workspace
+        .ok_or((StatusCode::BAD_REQUEST, "workspace required".into()))?;
     let emitter = Arc::new(WsEmitter { tx: st.tx.clone() });
     let docker = docker_for(&st, &ws);
     st.registry

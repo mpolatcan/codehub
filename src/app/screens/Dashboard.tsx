@@ -1,13 +1,14 @@
 /**
- * Dashboard — read-only overview of the shared runtime, laid out to match
+ * Dashboard — read-only overview of the workspace runtime, laid out to match
  * design/screens/dashboard.jsx exactly: a 5-metric row, a sessions table beside
  * an attention queue + runtime resource card, then an activity chart beside a
  * per-agent token-usage card.
  *
  * The design mocks a multi-container fleet with rich per-row telemetry and a
- * multi-account billing card. CodeHub's reality is ONE shared container, N tmux
- * sessions, no billing API — so each design slot is bound to the closest REAL
- * backend read and the truly-unobtainable sub-fields are dropped (never faked):
+ * multi-account billing card. CodeHub's current reads expose workspace
+ * containers, tmux sessions, and no billing API — so each design slot is bound
+ * to the closest REAL backend read and the truly-unobtainable sub-fields are
+ * dropped (never faked):
  *
  *  - Tokens·24h / Cost·24h / their deltas / the metric sparklines  → real, from
  *    claude_usage.byDay + codex_usage.byDay (per-UTC-day token + est-cost rollups).
@@ -15,12 +16,12 @@
  *    a token count. The transcript records no window maximum (ipc.ts:319), so the
  *    design's 42% gauge is impossible — the gauge is dropped, the count kept.
  *  - Sessions table: Session/Status real; Task = the session's latest activity
- *    message; Branch = the shared /workspace branch (one repo, not per-row); Turns
+ *    message; Branch = the active /workspace branch (one repo, not per-row); Turns
  *    + Tokens real for Claude (transcript id), em-dash for Codex/Antigravity; the
- *    per-pane CPU column is dropped (only one container-wide stat exists); $ is
+ *    per-pane CPU column is dropped (only container-wide stats exist); $ is
  *    em-dash (no per-session model split). All/Running filter is real; "Mine" is
  *    dropped (single user).
- *  - Right card: real pending_prompts attention queue + ONE runtime resource bar
+ *  - Right card: real pending_prompts attention queue + runtime resource bar
  *    (container_stats cpu/mem) in place of the design's per-workspace fan-out.
  *  - Activity chart: turns/hour by agent from session_activity_history (Claude +
  *    Codex; Antigravity never emits hook events, so no third series).
@@ -59,13 +60,13 @@ export function Dashboard() {
   const focusSession = useStore((s) => s.focusSession);
   const setView = useStore((s) => s.setView);
   const openLaunch = useLauncher((s) => s.open);
-  // App-wide polls (single source): runtime stats + /workspace git status.
+  // App-wide polls (single source): active runtime stats + /workspace git status.
   const stats = useStore((s) => s.containerStats);
   const git = useStore((s) => s.gitStatus);
 
   const state = status?.state ?? "missing";
   const running = state === "running";
-  const sessions = Object.entries(sessionMeta);
+  const sessions = Object.entries(sessionMeta).filter(([, m]) => m.cli !== "shell");
 
   // Token analytics (~15s — files grow slowly). Counts factual; cost is the
   // backend's estimate, shown verbatim. Live signals (~4s): working/idle, the
@@ -487,7 +488,7 @@ export function Dashboard() {
             )}
           </div>
 
-          {/* attention queue + runtime resource bar (one card, design layout) */}
+          {/* attention queue + workspace resource bar (one card, design layout) */}
           <div
             className="ch-card"
             style={{ display: "flex", flexDirection: "column", minWidth: 0 }}
@@ -599,7 +600,7 @@ export function Dashboard() {
 
             <div style={{ padding: 12, borderTop: "1px solid var(--bd-soft)", marginTop: "auto" }}>
               <div className="lbl" style={{ marginBottom: 8 }}>
-                Runtime
+                Workspaces
               </div>
               {running && stats ? (
                 <ResourceBar
@@ -609,7 +610,7 @@ export function Dashboard() {
                 />
               ) : (
                 <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
-                  {running ? "Reading stats…" : "Runtime not running."}
+                  {running ? "Reading workspace stats…" : "Runtime not running."}
                 </div>
               )}
             </div>
@@ -707,7 +708,7 @@ function FilterBtn({
   );
 }
 
-// ── runtime resource bar (one container, design ContainerBar shape) ──────────
+// ── runtime resource bar (design ContainerBar shape) ─────────────────────────
 
 function ResourceBar({ name, cpu, mem }: { name: string; cpu: number; mem: number }) {
   return (

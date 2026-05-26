@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { Cli } from "./ipc";
 import type { SplitDir } from "./tree";
 
 // Context carried while the spawn modal is open. `session` present → the launch
@@ -6,7 +7,16 @@ import type { SplitDir } from "./tree";
 // (empty) group; absent → it opens a new tab.
 export interface LaunchCtx {
   dir: SplitDir;
+  // Optional preferred agent for launcher surfaces that already name one
+  // (first-run cards, usage empty cards, etc.). Placement still follows the
+  // normal context rules.
+  preferredCli?: Cli;
   session?: string;
+  // When opening a saved workspace from the Welcome launcher, carry its real
+  // name/path into the first live workspace tab.
+  workspaceTitle?: string;
+  workspaceDir?: string;
+  savedWorkspaceId?: string;
   // Target an empty pane group (design GroupGrid empty-state CTA). Carries the
   // owning workspace so the launch can resolve the group without active-tab
   // assumptions.

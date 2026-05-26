@@ -4,8 +4,8 @@
  * cold first run with none shows EmptyHero instead).
  *
  * Honest data model: a saved workspace is a name + host directory pointer
- * (config.savedWorkspaces) — every workspace shares the ONE runtime container, so
- * the design's per-workspace container size / vCPU·RAM / live-agent footer are
+ * (config.savedWorkspaces) — each opens in its own workspace container, so
+ * the design's fabricated container size / vCPU·RAM / live-agent footer are
  * dropped rather than fabricated. Each card shows what's real: the name, the
  * mounted directory, when it was last opened, a pin toggle, and an "open" badge
  * when it's the directory currently bound at /workspace.
@@ -13,7 +13,7 @@
  * Opening a workspace points the /workspace mount at its dir and opens the spawn
  * launcher to start the first agent (the same launcher used everywhere). If the
  * dir differs from what's mounted, the launcher surfaces the existing "restart
- * runtime to apply" affordance — honest about the shared-container constraint.
+ * runtime to apply" affordance.
  */
 import { Ico } from "@/app/components/primitives/icons";
 import { shortPath } from "@/app/components/spawn-form";
@@ -208,7 +208,12 @@ function WorkspaceCard({ ws }: { ws: SavedWorkspace }) {
 
   const open = async () => {
     await openSavedWorkspace(ws.id); // points the mount + marks lastOpened
-    openLaunch("newtab"); // start the first agent in it (launcher surfaces any recreate)
+    openLaunch("newtab", {
+      dir: "row",
+      workspaceTitle: ws.name,
+      workspaceDir: ws.dir,
+      savedWorkspaceId: ws.id,
+    }); // start the first agent in it (launcher surfaces any recreate)
   };
 
   return (
@@ -318,7 +323,7 @@ function WorkspaceCard({ ws }: { ws: SavedWorkspace }) {
         </span>
       </div>
 
-      {/* meta: shared runtime + last opened */}
+      {/* meta: workspace container + last opened */}
       <div
         style={{
           display: "flex",

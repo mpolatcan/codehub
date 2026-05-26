@@ -1,23 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import { AgentGlyph } from "../../components/primitives/AgentGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
-import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
 import { useLauncher } from "../../lib/launcher";
 import { useOverlay } from "../../lib/overlay";
 import { useStore } from "../../lib/store";
-import { activeGroup, workspaceLeaves } from "../../lib/tree";
+import { workspaceLeaves, workspaceTitle } from "../../lib/tree";
 
 // Workspace tab strip, ported from design/screens/main-hub-a.jsx. Each tab is a
-// live workspace; the agent glyphs reflect its panes. The trailing area carries
-// only the awaiting-input bell — Files/Shell/Diff toggles + the spawn CTA live
-// in the bottom ActionBar (design contract). The "+" opens the shared launcher.
+// live workspace. The visual anatomy mirrors the design: drag handle, workspace
+// color dot, name/repo stack, one state-count chip, close button. The repo label
+// is intentionally conservative because CodeHub has one mounted /workspace, not
+// the design mock's multi-repo model.
 const NEW_KEY = "tabbar";
+
+function dirName(path: string | undefined): string | null {
+  if (!path) return null;
+  return path.split("/").filter(Boolean).pop() ?? null;
+}
 
 export function HubTabs() {
   const workspaces = useStore((s) => s.workspaces);
   const activeId = useStore((s) => s.activeWorkspaceId);
-  const sessionMeta = useStore((s) => s.sessionMeta);
+  const git = useStore((s) => s.gitStatus);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const closeWorkspace = useStore((s) => s.closeWorkspace);
   const openLaunch = useLauncher((s) => s.open);
@@ -74,19 +78,32 @@ export function HubTabs() {
         {workspaces.map((ws) => {
           const sessions = workspaceLeaves(ws);
           const active = ws.id === activeId;
-          const focused = activeGroup(ws)?.focused;
-          const primary = focused && sessions.includes(focused) ? focused : sessions[0];
-          const meta = primary ? sessionMeta[primary] : undefined;
-          const title = meta && sessions.length === 1 ? meta.alias : `Tab ${ws.plate}`;
+          const waits = sessions.filter((session) => pendingSessions.includes(session)).length;
+          const state = waits > 0 ? "wait" : sessions.length > 0 ? "live" : "idle";
+          const chipLabel =
+            waits > 0 ? `${waits} wait` : sessions.length > 0 ? String(sessions.length) : "—";
+          const chipBg =
+            state === "wait"
+              ? "var(--wait)"
+              : state === "live"
+                ? "color-mix(in oklab, var(--live) 18%, transparent)"
+                : "transparent";
+          const chipFg =
+            state === "wait" ? "var(--bg-0)" : state === "live" ? "var(--live)" : "var(--fg-3)";
+          const color = ws.groups[0]?.color ?? "var(--pri)";
+          const repoLabel = active && git?.isRepo ? "1 repo" : (dirName(ws.dir) ?? "workspace");
+          const title = workspaceTitle(ws);
           return (
             <div
               key={ws.id}
+              className={`ch-tab${active ? " active" : ""}`}
+              title={`${title} · ${sessions.length} session${sessions.length === 1 ? "" : "s"}${waits > 0 ? ` · ${waits} awaiting input` : ""}`}
               onClick={() => switchWorkspace(ws.id)}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 9,
-                padding: "0 12px",
+                padding: "0 10px 0 6px",
                 height: "100%",
                 borderRight: "1px solid var(--bd-soft)",
                 background: active ? "var(--bg-2)" : "transparent",
@@ -97,47 +114,65 @@ export function HubTabs() {
                 minWidth: 0,
               }}
             >
-              {active && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 2,
-                    background: "var(--pri)",
-                  }}
-                />
-              )}
-              <StatusDot status={active ? "live" : "idle"} pulse={active} />
+              <span className="tab-handle" title="Drag to reorder / dock" />
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  background: color,
+                  border: `1px solid color-mix(in oklab, ${color} 60%, #000)`,
+                  flexShrink: 0,
+                }}
+              />
               <div
                 style={{ display: "flex", flexDirection: "column", lineHeight: 1.15, minWidth: 0 }}
               >
                 <span
-                  className="mono"
                   style={{
                     fontSize: 12,
                     fontWeight: 500,
                     color: active ? "var(--fg-0)" : "var(--fg-1)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
                   }}
                 >
                   {title}
                 </span>
                 <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-                  {sessions.length} {sessions.length === 1 ? "session" : "sessions"}
+                  {repoLabel}
                 </span>
               </div>
-              <span style={{ display: "inline-flex", gap: 3, alignItems: "center", marginLeft: 4 }}>
-                {sessions.map((session) => {
-                  const m = sessionMeta[session];
-                  if (!m) return null;
-                  return (
-                    <AgentGlyph key={session} agent={m.cli} size={11} color={`var(--a-${m.cli})`} />
-                  );
-                })}
+              <span
+                className="mono"
+                style={{
+                  fontSize: 10,
+                  fontWeight: state === "wait" ? 600 : 500,
+                  color: chipFg,
+                  background: chipBg,
+                  padding: "1px 5px",
+                  borderRadius: 999,
+                  lineHeight: 1,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  flexShrink: 0,
+                }}
+              >
+                {state === "live" && (
+                  <span
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: "50%",
+                      background: "var(--live)",
+                    }}
+                  />
+                )}
+                {chipLabel}
               </span>
               <IconBtn
-                title="Close tab"
+                title="Close workspace"
                 style={{ width: 18, height: 18, marginLeft: 4 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -150,10 +185,10 @@ export function HubTabs() {
           );
         })}
 
-        {/* new tab — opens the shared spawn modal */}
+        {/* new workspace tab — opens the shared spawn modal targeted at a fresh tab */}
         <button
           type="button"
-          title="New tab (⌘N)"
+          title="New workspace tab (⌘⇧T)"
           onClick={() => openLaunch(NEW_KEY)}
           style={{
             alignSelf: "center",
@@ -264,10 +299,7 @@ export function HubTabs() {
               {workspaces.map((ws) => {
                 const sessions = workspaceLeaves(ws);
                 const waits = sessions.filter((s) => pendingSessions.includes(s)).length;
-                const focused = activeGroup(ws)?.focused;
-                const primary = focused && sessions.includes(focused) ? focused : sessions[0];
-                const meta = primary ? sessionMeta[primary] : undefined;
-                const name = meta && sessions.length === 1 ? meta.alias : `Tab ${ws.plate}`;
+                const color = ws.groups[0]?.color ?? "var(--pri)";
                 return (
                   <div
                     key={ws.id}
@@ -278,7 +310,16 @@ export function HubTabs() {
                     }}
                     style={{ display: "flex", alignItems: "center", gap: 8 }}
                   >
-                    <StatusDot status={ws.id === activeId ? "live" : "idle"} />
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        background: color,
+                        border: `1px solid color-mix(in oklab, ${color} 60%, #000)`,
+                        flexShrink: 0,
+                      }}
+                    />
                     <div
                       style={{
                         display: "flex",
@@ -299,10 +340,12 @@ export function HubTabs() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {name}
+                        {workspaceTitle(ws)}
                       </span>
                       <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-                        {sessions.length} {sessions.length === 1 ? "session" : "sessions"}
+                        {ws.id === activeId && git?.isRepo
+                          ? "1 repo"
+                          : (dirName(ws.dir) ?? "workspace")}
                       </span>
                     </div>
                     {waits > 0 && (

@@ -108,6 +108,9 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
       >
         <span style={{ color: "var(--idle)", display: "inline-flex" }}>{Ico.files}</span>
         <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>Files</span>
+        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+          {entries === null ? "…" : `${rows.length}`}
+        </span>
         <span style={{ flex: 1 }} />
         <IconBtn title="Hide files panel (⌘E)" onClick={onClose}>
           {Ico.close}
@@ -240,6 +243,29 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
           </div>
         </>
       )}
+      <div
+        style={{
+          padding: "7px 10px",
+          borderTop: "1px solid var(--bd-soft)",
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          fontFamily: "var(--mono)",
+          fontSize: 10,
+          color: "var(--fg-3)",
+          minHeight: 28,
+        }}
+      >
+        <span style={{ color: containerKey ? "var(--live)" : "var(--fg-3)" }}>
+          {containerKey ? "● live" : "no workspace"}
+        </span>
+        <span>{entries === null ? "reading" : `${rows.length} visible`}</span>
+        {entries !== null && q && <span style={{ color: "var(--wait)" }}>filtered</span>}
+        <span style={{ flex: 1 }} />
+        <span title={cwd} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {cwd}
+        </span>
+      </div>
     </aside>
   );
 }

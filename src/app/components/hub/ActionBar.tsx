@@ -1,40 +1,25 @@
 import { PaneAddBtn } from "../../components/primitives/PaneAddBtn";
 import { SpawnSplitBtn } from "../../components/primitives/SpawnSplitBtn";
 import { Ico } from "../../components/primitives/icons";
-import { autoSplitDir } from "../../hooks/useKeyboard";
 import { useOverlay } from "../../lib/overlay";
-import { activeWorkspace, useStore } from "../../lib/store";
-import { activeGroup } from "../../lib/tree";
 import { Button } from "../../ui/button";
 
 // Bottom action bar of the Hub, ported from design/screens/hub-states.jsx
 // `ActionBar`. Left: Files / Shell / Diff pane affordances. Right: a Resume
 // shortcut + the primary SpawnSplitBtn CTA.
 //
-// REAL wiring: Files / Diff toggle the docked viewers via the overlay store
-// (the chip's active fill mirrors their open state); Shell spawns a real bash
-// pane (split off the focused pane, or a fresh tab when empty); Resume toggles
-// the docked Resume drawer (its fill mirrors the open state). Nothing here
-// fabricates data.
+// REAL wiring: Files / Shell / Diff toggle docked workspace utility panels via
+// the overlay store (the chip's active fill mirrors their open state); Resume
+// toggles the docked Resume drawer. Nothing here fabricates data.
 export function ActionBar() {
   const filesOpen = useOverlay((s) => s.files);
   const setFiles = useOverlay((s) => s.setFiles);
+  const shellOpen = useOverlay((s) => s.shell);
+  const setShell = useOverlay((s) => s.setShell);
   const diffOpen = useOverlay((s) => s.diff) !== null;
   const setDiff = useOverlay((s) => s.setDiff);
   const resumeOpen = useOverlay((s) => s.resume);
   const setResume = useOverlay((s) => s.setResume);
-  const active = useStore(activeWorkspace);
-  const focused = (active && activeGroup(active)?.focused) ?? null;
-  const splitSession = useStore((s) => s.splitSession);
-  const newPlate = useStore((s) => s.newPlate);
-
-  // Shell is a one-shot spawn: split the focused pane along its longer axis, or
-  // open a fresh tab with a shell when nothing is focused. Both store actions
-  // already no-op when the runtime is down, so no extra guard is needed.
-  const addShell = () => {
-    if (focused) void splitSession(focused, autoSplitDir(focused), "shell", "standard");
-    else void newPlate("shell", "standard");
-  };
 
   return (
     <div
@@ -50,7 +35,7 @@ export function ActionBar() {
       }}
     >
       <PaneAddBtn kind="files" kbd="⌘E" active={filesOpen} onClick={() => setFiles(!filesOpen)} />
-      <PaneAddBtn kind="shell" kbd="⌘⇧B" onClick={addShell} />
+      <PaneAddBtn kind="shell" kbd="⌘⇧B" active={shellOpen} onClick={() => setShell(!shellOpen)} />
       <PaneAddBtn
         kind="diff"
         kbd="⌘D"

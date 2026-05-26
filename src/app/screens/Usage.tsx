@@ -51,7 +51,7 @@ import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
 
-type AgentFilter = "all" | "claude" | "codex";
+type AgentFilter = "all" | "claude" | "codex" | "antigravity";
 
 export function Usage() {
   const status = useStore((s) => s.status);
@@ -133,6 +133,7 @@ export function Usage() {
 
   const showClaude = filter === "all" || filter === "claude";
   const showCodex = filter === "all" || filter === "codex";
+  const showAntigravity = filter === "all" || filter === "antigravity";
 
   // Per-agent session counts for the filter pills (real).
   const claudeCount = claude?.sessions ?? 0;
@@ -232,8 +233,16 @@ export function Usage() {
             { key: "all", label: `All · ${claudeCount + codexCount}` },
             { key: "claude", label: `Claude · ${claudeCount}` },
             { key: "codex", label: `Codex · ${codexCount}` },
+            { key: "antigravity", label: "Antigravity · 0" },
           ]}
         />
+        <div style={{ height: 18, width: 1, background: "var(--bd-soft)", margin: "0 2px" }} />
+        <Button size="xs" variant="ghost" disabled>
+          Subscriptions unavailable
+        </Button>
+        <Button size="xs" variant="ghost" disabled>
+          API · estimates only
+        </Button>
         <span style={{ flex: 1 }} />
         <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
           {running ? `updated ${fmtSince(updatedAt)}` : "runtime offline"}
@@ -278,6 +287,8 @@ export function Usage() {
                       ? "Reading transcripts…"
                       : "No Claude turns recorded yet. Usage appears once an agent responds."
                   }
+                  source="on-disk transcripts"
+                  onNew={() => openLaunch("newtab")}
                 />
               ))}
 
@@ -300,32 +311,21 @@ export function Usage() {
                       ? "Reading rollout files…"
                       : "No Codex turns recorded yet. Usage appears once an agent responds."
                   }
+                  source="rollout files"
+                  rateNote={rates === null ? "No rate-limit data on disk yet." : rateHeadlineSub(rates)}
+                  onNew={() => openLaunch("newtab")}
                 />
               ))}
 
             {/* Antigravity — not installed → honest, never charted. */}
-            {filter === "all" && (
-              <div
-                className="ch-card"
-                style={{
-                  padding: "14px 18px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 11,
-                  opacity: 0.7,
-                }}
-              >
-                <AgentGlyph agent="antigravity" size={20} color="var(--a-antigravity)" />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: "var(--fg-1)" }}>
-                    {AGENT_META.antigravity.name}
-                  </div>
-                  <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
-                    Not installed in the runtime image — no readable usage data.
-                  </div>
-                </div>
-                <Tag>not installed</Tag>
-              </div>
+            {showAntigravity && (
+              <EmptyAgentCard
+                agent="antigravity"
+                note="Not installed in the runtime image — no readable usage data."
+                source="runtime image"
+                rateNote="No local Antigravity reader is available."
+                disabled
+              />
             )}
           </>
         )}
@@ -718,17 +718,161 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 // An agent with a real reader but no recorded turns yet — honest empty.
-function EmptyAgentCard({ agent, note }: { agent: "claude" | "codex"; note: string }) {
+function EmptyAgentCard({
+  agent,
+  note,
+  source,
+  rateNote,
+  onNew,
+  disabled,
+}: {
+  agent: "claude" | "codex" | "antigravity";
+  note: string;
+  source: string;
+  rateNote?: string;
+  onNew?: () => void;
+  disabled?: boolean;
+}) {
+  const accent = `var(--a-${agent})`;
   return (
     <div
       className="ch-card"
-      style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 11 }}
+      style={{
+        padding: 0,
+        display: "flex",
+        overflow: "hidden",
+        opacity: disabled ? 0.74 : 1,
+      }}
     >
-      <AgentGlyph agent={agent} size={20} color={`var(--a-${agent})`} />
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, color: "var(--fg-1)" }}>{AGENT_META[agent].name}</div>
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+      <div
+        style={{
+          flex: "0 0 260px",
+          padding: "16px 18px",
+          borderRight: "1px solid var(--bd-soft)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <AgentGlyph agent={agent} size={28} color={accent} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg-0)" }}>
+              {AGENT_META[agent].name}
+            </div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+              waiting for recorded usage
+            </div>
+          </div>
+          {disabled ? <Tag>not installed</Tag> : <StatusBadge status="idle">Ready</StatusBadge>}
+        </div>
+
+        <div
+          style={{
+            marginTop: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            fontSize: 11,
+            color: "var(--fg-2)",
+            fontFamily: "var(--mono)",
+          }}
+        >
+          <div>
+            <span style={{ color: "var(--fg-3)" }}>source</span>{" "}
+            <span style={{ color: "var(--fg-1)" }}>{source}</span>
+          </div>
+          <div>
+            <span style={{ color: "var(--fg-3)" }}>cost</span>{" "}
+            <span style={{ color: "var(--fg-1)" }}>not estimated yet</span>
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          flex: 1,
+          padding: "16px 22px",
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+        }}
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+          <Stat label="Input" value="—" />
+          <Stat label="Output" value="—" />
+          <Stat label="Cache" value="—" />
+          <Stat label={agent === "codex" ? "Reasoning" : "Tokens"} value="—" />
+        </div>
+
+        <div
+          className="mono"
+          style={{
+            padding: "12px 0",
+            borderTop: "1px solid var(--bd-soft)",
+            borderBottom: "1px solid var(--bd-soft)",
+            color: "var(--fg-2)",
+            fontSize: 12,
+          }}
+        >
           {note}
+        </div>
+
+        <div
+          style={{
+            marginTop: "auto",
+            padding: "10px 0 0",
+            borderTop: "1px dashed var(--bd-soft)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontSize: 12,
+            color: "var(--fg-2)",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--mono)",
+              fontSize: 10.5,
+              color: "var(--fg-3)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}
+          >
+            forecast
+          </span>
+          <span>{rateNote ?? "No quota window is available from local data."}</span>
+        </div>
+      </div>
+
+      <div
+        style={{
+          flex: "0 0 160px",
+          padding: "16px 18px",
+          borderLeft: "1px solid var(--bd-soft)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
+        <Button
+          size="sm"
+          style={{ width: "100%", justifyContent: "center" }}
+          onClick={onNew}
+          disabled={disabled || !onNew}
+        >
+          New {AGENT_META[agent].name}
+        </Button>
+        <Button size="sm" variant="ghost" style={{ width: "100%", justifyContent: "center" }} disabled>
+          Export CSV
+        </Button>
+        <span style={{ flex: 1 }} />
+        <div
+          className="mono"
+          style={{ fontSize: 10, color: "var(--fg-3)", lineHeight: 1.5, textAlign: "center" }}
+        >
+          usage appears after a recorded turn
         </div>
       </div>
     </div>

@@ -887,7 +887,8 @@ impl DockerClient {
         cols: u16,
         rows: u16,
     ) -> Result<(), DockerError> {
-        self.docker
+        match self
+            .docker
             .resize_exec(
                 exec_id,
                 ResizeExecOptions {
@@ -895,8 +896,18 @@ impl DockerClient {
                     width: cols,
                 },
             )
-            .await?;
-        Ok(())
+            .await
+        {
+            Ok(()) => Ok(()),
+            // Fast-exiting CLIs can finish between attach and the first xterm fit.
+            // Resizing an already-gone exec is harmless and should not surface as
+            // a UI/backend error.
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404,
+                message,
+            }) if message.contains("process does not exist") => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// One-shot CPU / memory / net / disk snapshot. `stream: false` returns a

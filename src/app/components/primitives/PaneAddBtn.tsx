@@ -6,10 +6,9 @@ import { Ico } from "./icons";
 // label; the title carries the affordance), color-coded per pane type via the
 // `--pa-c` custom prop so the types stay recognizable across the chrome.
 //
-// Files / Diff are docked-viewer TOGGLES (active = the viewer is open); Shell is
-// a one-shot spawn (no agent picker — shell has a single mode), so it never gets
-// the active fill. The design's `kind="agent"` is intentionally absent: spawning
-// an agent goes through the SpawnSplitBtn + rich launcher, not a bare chip.
+// Files / Shell / Diff are docked-viewer TOGGLES (active = the viewer is open).
+// The design's `kind="agent"` is intentionally absent: spawning an agent goes
+// through the SpawnSplitBtn + rich launcher, not a bare chip.
 export type PaneAddKind = "files" | "shell" | "diff";
 
 const MAP: Record<
@@ -17,7 +16,7 @@ const MAP: Record<
   { label: string; color: string; icon: keyof typeof Ico; toggle: boolean }
 > = {
   files: { label: "Files", color: "var(--idle)", icon: "files", toggle: true },
-  shell: { label: "Shell", color: "var(--live)", icon: "terminal", toggle: false },
+  shell: { label: "Shell", color: "var(--live)", icon: "terminal", toggle: true },
   diff: { label: "Diff", color: "var(--wait)", icon: "diff", toggle: true },
 };
 

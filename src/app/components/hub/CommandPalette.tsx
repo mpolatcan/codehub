@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { CLIS, SPEC_BY_CLI } from "../../lib/catalog";
 import { type Cli, ipc } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
-import { type HubView, useStore } from "../../lib/store";
+import { activeWorkspace, type HubView, useStore } from "../../lib/store";
+import { workspaceTitle } from "../../lib/tree";
 import {
   CommandDialog,
   CommandEmpty,
@@ -16,8 +17,8 @@ import {
  * Command palette (⌘K). Ported from design/screens/command-palette.jsx onto the
  * shadcn CommandDialog (cmdk). Every row is a REAL action wired to the live store
  * — go to a view, focus a running session (with its live metadata), spawn an
- * agent, broadcast a prompt, open the diff / files viewer, restart the runtime,
- * or open a recent / connected repo.
+ * agent, open the diff / files viewer, restart the runtime, or open a recent /
+ * connected repo.
  *
  * Honesty (binding): rows whose action doesn't exist are omitted, NOT shown as
  * dead entries. The design's "mute notifications" and "search transcripts" rows
@@ -28,11 +29,12 @@ import { AgentGlyph } from "../primitives/AgentGlyph";
 import { Ico } from "../primitives/icons";
 import { shortPath } from "../spawn-form";
 
-const VIEWS: { id: HubView; label: string; icon: keyof typeof Ico }[] = [
+const VIEWS: { id: HubView; label: string; icon: keyof typeof Ico; section?: string }[] = [
   { id: "hub", label: "Hub", icon: "hub" },
   { id: "dashboard", label: "Dashboard", icon: "grid" },
   { id: "usage", label: "Usage", icon: "cpu" },
   { id: "containers", label: "Workspaces", icon: "container" },
+  { id: "settings", label: "Integrations", icon: "branch", section: "integrations" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 
@@ -45,7 +47,9 @@ export function CommandPalette() {
   const sessionMeta = useStore((s) => s.sessionMeta);
   const sessionActivity = useStore((s) => s.sessionActivity);
   const workspaces = useStore((s) => s.workspaces);
+  const active = useStore(activeWorkspace);
   const view = useStore((s) => s.view);
+  const settingsSection = useStore((s) => s.settingsSection);
   const setView = useStore((s) => s.setView);
   const setSettingsSection = useStore((s) => s.setSettingsSection);
   const focusSession = useStore((s) => s.focusSession);
@@ -69,7 +73,8 @@ export function CommandPalette() {
     if (!open) setQuery("");
   }, [open]);
 
-  const sessions = Object.entries(sessionMeta);
+  const sessions = Object.entries(sessionMeta).filter(([, meta]) => meta.cli !== "shell");
+  const workspaceName = active ? workspaceTitle(active) : "current workspace";
 
   // Total registered actions (honest count — the palette's command surface, not
   // a per-keystroke filtered tally; cmdk's filtered count isn't exposed without
@@ -79,7 +84,8 @@ export function CommandPalette() {
   const commandCount =
     VIEWS.length + 1 + sessions.length + (runtimeLive ? 4 + CLIS.length : 0) + repoCount;
 
-  const goView = (id: HubView) => {
+  const goView = (id: HubView, section?: string) => {
+    if (section) setSettingsSection(section);
     setView(id);
     setPalette(false);
   };
@@ -130,6 +136,8 @@ export function CommandPalette() {
         if (!v) setQuery("");
         setPalette(v);
       }}
+      className="top-[90px] w-[min(680px,calc(100vw-32px))] max-w-[calc(100vw-32px)] translate-y-0 gap-0 rounded-xl border-[var(--bd-strong)] bg-[var(--bg-2)] p-0 shadow-[0_30px_80px_rgba(0,0,0,.6)] sm:max-w-none"
+      showCloseButton={false}
       title="Command palette"
     >
       <CommandInput
@@ -137,22 +145,22 @@ export function CommandPalette() {
         onValueChange={setQuery}
         placeholder="Go to a view, focus a session, or spawn an agent…"
       />
-      <CommandList>
+      <CommandList className="max-h-[520px]">
         <CommandEmpty>No matches.</CommandEmpty>
 
         <CommandGroup heading={`Go to · ${VIEWS.length}`}>
           {VIEWS.map((v) => (
             <CommandItem
-              key={v.id}
+              key={`${v.id}:${v.section ?? v.label}`}
               value={`view ${v.label}`}
-              onSelect={() => goView(v.id)}
-              disabled={v.id === view}
+              onSelect={() => goView(v.id, v.section)}
+              disabled={v.id === view && (!v.section || v.section === settingsSection)}
             >
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico[v.icon]}</span>
               <span style={{ flex: 1 }}>
                 <Hi text={v.label} q={query} />
               </span>
-              {v.id === view && (
+              {v.id === view && (!v.section || v.section === settingsSection) && (
                 <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                   current
                 </span>
@@ -180,7 +188,7 @@ export function CommandPalette() {
         </CommandGroup>
 
         {sessions.length > 0 && (
-          <CommandGroup heading={`Sessions · ${sessions.length}`}>
+          <CommandGroup heading={`Agents · ${sessions.length}`}>
             {sessions.map(([session, meta]) => {
               const ws = workspaces.find((w) => w.id === meta.workspaceId);
               // Live working/idle from the real output-flow activity signal —
@@ -263,10 +271,11 @@ export function CommandPalette() {
               <CommandItem key={c.id} value={`spawn ${c.label}`} onSelect={() => spawn(c.id)}>
                 <AgentGlyph agent={c.id} size={13} color={`var(--a-${c.id})`} />
                 <span style={{ flex: 1 }}>
-                  <Hi text={`New ${c.label} session`} q={query} />
+                  <span style={{ color: "var(--fg-2)" }}>{c.label} in </span>
+                  <Hi text={workspaceName} q={query} />
                 </span>
                 <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                  ⌘N
+                  standard · ⌘N
                 </span>
               </CommandItem>
             ))}
@@ -304,7 +313,7 @@ export function CommandPalette() {
                 // connected account + repo list live) rather than a fake action.
                 onSelect={() => {
                   setSettingsSection("integrations");
-                  goView("settings");
+                  goView("settings", "integrations");
                 }}
               >
                 <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.branch}</span>

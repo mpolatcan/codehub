@@ -127,11 +127,11 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
             <h1
               style={{
                 margin: 0,
-                fontSize: "clamp(22px, 3vw, 36px)",
+                fontSize: 36,
                 fontWeight: 600,
                 letterSpacing: "-0.02em",
                 color: "var(--fg-0)",
-                whiteSpace: "nowrap",
+                lineHeight: 1.12,
               }}
             >
               Run coding agents,
@@ -173,7 +173,7 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
                 <div style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
                   {starting
                     ? "Agents become available once it's running."
-                    : "Start the shared container to launch agents."}
+                    : "Start the workspace container to launch agents."}
                 </div>
               </div>
               <Button size="sm" disabled={starting} onClick={() => void startRuntime()}>

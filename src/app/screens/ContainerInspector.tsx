@@ -29,6 +29,7 @@ import {
   type WorkspaceContainer,
   ipc,
 } from "@/app/lib/ipc";
+import { useLauncher } from "@/app/lib/launcher";
 import { useOverlay } from "@/app/lib/overlay";
 import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
@@ -70,7 +71,10 @@ export function ContainerInspector() {
   const workspaces = useStore((s) => s.workspaces);
   const focusSession = useStore((s) => s.focusSession);
   const setView = useStore((s) => s.setView);
+  const switchWorkspace = useStore((s) => s.switchWorkspace);
+  const openLauncher = useLauncher((s) => s.open);
   const setNewWorkspace = useOverlay((s) => s.setNewWorkspace);
+  const setShell = useOverlay((s) => s.setShell);
 
   // Fleet of per-workspace containers. Polled ~3s so a lifecycle action
   // (start/stop/restart/remove) shows up without a manual refresh. Each entry
@@ -96,6 +100,7 @@ export function ContainerInspector() {
   // workspace containers exist yet). Switching clears the live stats + sparkline
   // window so two containers' series never splice together.
   const [selected, setSelected] = useState<string | null>(null);
+  const [fleetFilter, setFleetFilter] = useState<"all" | "running" | "stopped">("all");
   const [wsStats, setWsStats] = useState<ContainerStats | null>(null);
   const [history, setHistory] = useState<ContainerStats[]>([]);
   const selectContainer = (key: string | null) => {
@@ -121,17 +126,24 @@ export function ContainerInspector() {
   // the fleet is empty (no workspace containers exist yet).
   const vmStatus = selectedWs?.status ?? null;
   const name = vmStatus?.name ?? selected ?? "—";
+  const compactName = compactContainerName(name, selected ?? undefined);
   const state: ContainerState = vmStatus?.state ?? "missing";
   const dot = STATE_DOT[state];
   const image = vmStatus?.image ?? "—";
   const id = vmStatus?.id ?? null;
   const running = state === "running";
 
-  // Sessions attached to the container in view, filtered by containerKey.
-  const sessions = useMemo(
+  // Sessions attached to the container in view, filtered by containerKey. Agent
+  // lists exclude the docked bash shell; lifecycle confirms still count every
+  // tmux session because restart/stop affects utilities too.
+  const attachedSessions = useMemo(
     () =>
       selected ? Object.entries(sessionMeta).filter(([, m]) => m.containerKey === selected) : [],
     [sessionMeta, selected],
+  );
+  const sessions = useMemo(
+    () => attachedSessions.filter(([, m]) => m.cli !== "shell"),
+    [attachedSessions],
   );
 
   useEffect(() => {
@@ -290,6 +302,30 @@ export function ContainerInspector() {
     setView("hub");
   };
 
+  const workspaceLabels = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const ws of workspaces) labels[ws.containerKey] = `Workspace ${ws.plate}`;
+    return labels;
+  }, [workspaces]);
+  const selectedWorkspaceLabel = selected
+    ? (workspaceLabels[selected] ?? labelWorkspaceKey(selected))
+    : "No workspace";
+  const selectedAppWorkspace = selected
+    ? (workspaces.find((w) => w.containerKey === selected) ?? null)
+    : null;
+  const openSelectedWorkspace = () => {
+    if (selectedAppWorkspace) switchWorkspace(selectedAppWorkspace.id);
+    setView("hub");
+  };
+  const openShell = () => {
+    openSelectedWorkspace();
+    setShell(true);
+  };
+  const attachAgent = () => {
+    openSelectedWorkspace();
+    openLauncher("inspector-attach");
+  };
+
   // Lifecycle routing: hits the selected workspace's container by key (the ~3s
   // fleet poll reflects the new state). Refetch the fleet immediately for snappy
   // feedback instead of waiting for the ~3s poll.
@@ -320,12 +356,30 @@ export function ContainerInspector() {
 
   // Fleet counts for the header line.
   const runningCount = fleet.filter((c) => c.status.state === "running").length;
-  const totalCount = fleet.length;
-
+  const stoppedCount = fleet.filter((c) => c.status.state !== "running").length;
+  const visibleFleet = useMemo(
+    () =>
+      fleet.filter((c) => {
+        if (fleetFilter === "running") return c.status.state === "running";
+        if (fleetFilter === "stopped") return c.status.state !== "running";
+        return true;
+      }),
+    [fleet, fleetFilter],
+  );
   // Per-card session groupings for the left list (each card shows ITS container's
   // attached agents, independent of which card is selected).
   const sessionsFor = (key: string) =>
-    Object.entries(sessionMeta).filter(([, m]) => m.containerKey === key);
+    Object.entries(sessionMeta).filter(([, m]) => m.containerKey === key && m.cli !== "shell");
+
+  const pruneStopped = async () => {
+    const stopped = fleet.filter((c) => c.status.state !== "running");
+    if (stopped.length === 0) return;
+    await Promise.all(stopped.map((c) => ipc.removeWorkspaceContainer(c.key)));
+    if (selected && stopped.some((c) => c.key === selected)) {
+      selectContainer(fleet.find((c) => c.status.state === "running")?.key ?? null);
+    }
+    await loadFleet();
+  };
 
   return (
     <main
@@ -345,62 +399,107 @@ export function ContainerInspector() {
             Workspaces
           </h1>
           <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
-            {`${runningCount}/${totalCount} running`}
+            {`${runningCount} running · ${stoppedCount} stopped · 1 container per workspace`}
             {dockerInfo?.version && ` · docker ${dockerInfo.version}`}
           </span>
           <span style={{ flex: 1 }} />
+          {stoppedCount > 0 && (
+            <Button size="sm" variant="outline" onClick={() => void pruneStopped()}>
+              Prune stopped
+            </Button>
+          )}
           <Button size="sm" onClick={() => setNewWorkspace(true)}>
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {Ico.plus}New workspace
             </span>
           </Button>
         </div>
-        <p className="mono" style={{ margin: "6px 0 0", fontSize: 11, color: "var(--fg-3)" }}>
-          Each workspace runs in its own container.
-        </p>
       </div>
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* list — one card per per-workspace container */}
         <div
-          className="scroll"
           style={{
-            flex: "0 0 320px",
+            flex: "0 0 380px",
             borderRight: "1px solid var(--bd-soft)",
             display: "flex",
             flexDirection: "column",
-            gap: 6,
-            overflow: "auto",
-            padding: 8,
           }}
         >
-          {fleet.length === 0 && (
-            <div
-              className="mono"
-              style={{
-                padding: "28px 14px",
-                textAlign: "center",
-                fontSize: 11.5,
-                color: "var(--fg-3)",
-              }}
-            >
-              No workspace containers yet. Create one from the hub.
-            </div>
-          )}
-          {fleet.map((c) => (
-            <ContainerCard
-              key={c.key}
-              active={selected === c.key}
-              onSelect={() => selectContainer(c.key)}
-              state={c.status.state}
-              name={c.status.name}
-              image={c.status.image}
-              agents={sessionsFor(c.key).map(([, m]) => m.cli)}
-              // Only the selected workspace polls live stats; others show em-dash
-              // rather than a fabricated number.
-              stats={selected === c.key ? wsStats : null}
-            />
-          ))}
+          <div
+            style={{
+              padding: "10px 14px",
+              display: "flex",
+              gap: 6,
+              borderBottom: "1px solid var(--bd-soft)",
+            }}
+          >
+            {(["all", "running", "stopped"] as const).map((f) => (
+              <Button
+                key={f}
+                size="xs"
+                variant={fleetFilter === f ? "outline" : "ghost"}
+                onClick={() => setFleetFilter(f)}
+                style={{ textTransform: "capitalize" }}
+              >
+                {f}
+              </Button>
+            ))}
+          </div>
+          <div
+            className="scroll"
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              overflow: "auto",
+              padding: 8,
+            }}
+          >
+            {fleet.length === 0 && (
+              <div
+                className="mono"
+                style={{
+                  padding: "28px 14px",
+                  textAlign: "center",
+                  fontSize: 11.5,
+                  color: "var(--fg-3)",
+                }}
+              >
+                No workspace containers yet. Create one from the hub.
+              </div>
+            )}
+            {fleet.length > 0 && visibleFleet.length === 0 && (
+              <div
+                className="mono"
+                style={{
+                  padding: "28px 14px",
+                  textAlign: "center",
+                  fontSize: 11.5,
+                  color: "var(--fg-3)",
+                }}
+              >
+                No containers match this filter.
+              </div>
+            )}
+            {visibleFleet.map((c) => (
+              <ContainerCard
+                key={c.key}
+                active={selected === c.key}
+                onSelect={() => selectContainer(c.key)}
+                state={c.status.state}
+                workspace={workspaceLabels[c.key] ?? labelWorkspaceKey(c.key)}
+                containerKey={c.key}
+                name={c.status.name}
+                image={c.status.image}
+                agents={sessionsFor(c.key).map(([, m]) => m.cli)}
+                // Only the selected workspace polls live stats; others show em-dash
+                // rather than a fabricated number.
+                stats={selected === c.key ? wsStats : null}
+              />
+            ))}
+          </div>
         </div>
 
         {/* detail */}
@@ -424,12 +523,22 @@ export function ContainerInspector() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                 <h2 className="mono" style={{ margin: 0, fontSize: 17, fontWeight: 500 }}>
-                  {name}
+                  {compactName}
                 </h2>
                 <StatusBadge status={dot} />
               </div>
-              <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
-                {image}
+              <div
+                className="mono"
+                title={name}
+                style={{
+                  fontSize: 11.5,
+                  color: "var(--fg-2)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {selectedWorkspaceLabel} · {image}
                 {id && ` · ${id.slice(0, 12)}`}
                 {(() => {
                   const up = health?.startedAt ? fmtUptime(health.startedAt) : null;
@@ -445,8 +554,9 @@ export function ContainerInspector() {
             </div>
             <RuntimeControls
               state={state}
-              sessionCount={sessions.length}
+              sessionCount={attachedSessions.length}
               kind="workspace"
+              onShell={running && selectedAppWorkspace ? openShell : undefined}
               onStart={doStart}
               onStop={doStop}
               onRestart={doRestart}
@@ -504,14 +614,21 @@ export function ContainerInspector() {
           >
             <div className="ch-card" style={{ padding: 14 }}>
               <div style={{ display: "flex", alignItems: "center", marginBottom: 8, gap: 8 }}>
-                <span className="lbl">Attached sessions · {sessions.length}</span>
+                <span className="lbl">Attached agents · {sessions.length}</span>
+                <span style={{ flex: 1 }} />
+                {selectedAppWorkspace && (
+                  <Button size="xs" variant="outline" onClick={attachAgent}>
+                    {Ico.plus}
+                    Attach agent
+                  </Button>
+                )}
               </div>
               {sessions.length === 0 ? (
                 <div
                   className="mono"
                   style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "6px 0" }}
                 >
-                  No sessions attached. Press ⌘N to start one.
+                  No agents attached. Press ⌘N or use Attach agent to start one.
                 </div>
               ) : (
                 sessions.map(([session, meta]) => {
@@ -1057,6 +1174,7 @@ function RuntimeControls({
   state,
   sessionCount,
   kind = "workspace",
+  onShell,
   onStart,
   onStop,
   onRestart,
@@ -1066,6 +1184,7 @@ function RuntimeControls({
   sessionCount: number;
   // The container kind, for the confirm copy.
   kind?: string;
+  onShell?: () => void;
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
@@ -1116,6 +1235,11 @@ function RuntimeControls({
   if (state === "running") {
     return (
       <div style={{ display: "flex", gap: 8 }}>
+        {onShell && (
+          <Button size="sm" variant="outline" onClick={onShell}>
+            Exec shell
+          </Button>
+        )}
         <Button size="sm" variant="outline" onClick={confirmRestart}>
           Restart
         </Button>
@@ -1132,10 +1256,37 @@ function RuntimeControls({
 // (selectable); the active one gets an accent border. Stats are passed in
 // (null → em-dash) rather than fetched here so each card stays a pure render
 // of data the parent already owns.
+function labelWorkspaceKey(key: string) {
+  const m = /^ws-(\d+)-/.exec(key);
+  return m ? `Workspace ${m[1]}` : truncateMiddle(key, 24);
+}
+
+function compactContainerName(name: string, key?: string) {
+  const raw = name && name !== "—" ? name : (key ?? name);
+  const stripped = raw.replace(/^codehub-ws-/, "");
+  return truncateMiddle(stripped || raw, 24);
+}
+
+function compactContainerSuffix(name: string, key: string) {
+  const raw = (name || key).replace(/^codehub-ws-/, "");
+  const parts = raw.split("-");
+  const suffix = parts[parts.length - 1] || raw;
+  return suffix.length > 8 ? suffix.slice(-8) : suffix;
+}
+
+function truncateMiddle(value: string, max: number) {
+  if (value.length <= max) return value;
+  const head = Math.ceil((max - 3) * 0.58);
+  const tail = max - 3 - head;
+  return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
+
 function ContainerCard({
   active,
   onSelect,
   state,
+  workspace,
+  containerKey,
   name,
   image,
   agents,
@@ -1144,37 +1295,78 @@ function ContainerCard({
   active: boolean;
   onSelect: () => void;
   state: ContainerState;
+  workspace: string;
+  containerKey: string;
   name: string;
   image: string;
   agents: Cli[];
   stats: ContainerStats | null;
 }) {
   const dot = STATE_DOT[state];
+  const compactName = compactContainerName(name, containerKey);
+  const suffix = compactContainerSuffix(name, containerKey);
+  const imageLabel = image.replace(/:([^:/]+)$/, " $1");
+  const dim = state !== "running" && state !== "starting";
   return (
     <button
       type="button"
       onClick={onSelect}
+      title={`${workspace} · ${name}`}
       style={{
         all: "unset",
         cursor: "pointer",
         display: "block",
+        width: "100%",
+        boxSizing: "border-box",
         padding: "10px 12px",
         borderRadius: 7,
-        background: active ? "var(--bg-4, var(--bg-3))" : "var(--bg-3)",
-        border: `1px solid ${active ? "var(--accent)" : "var(--bd-strong)"}`,
+        background: active ? "var(--bg-3)" : "var(--bg-1)",
+        border: `1px solid ${active ? "var(--bd-strong)" : "var(--bd-soft)"}`,
+        opacity: dim ? 0.62 : 1,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
         <StatusDot status={dot} pulse={dot === "live"} />
         <span
           className="mono"
-          style={{ fontSize: 11.5, color: "var(--fg-0)", fontWeight: 500, flex: 1, minWidth: 0 }}
+          style={{
+            fontSize: 12,
+            color: "var(--fg-0)",
+            fontWeight: 500,
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
         >
-          {name}
+          {workspace}
         </span>
-        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-          {/* split only the final :tag so a registry port (host:443/img) is safe */}
-          {image.replace(/:([^:/]+)$/, " $1")}
+        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)", flexShrink: 0 }}>
+          {suffix}
+        </span>
+      </div>
+      <div
+        className="mono"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          minWidth: 0,
+          fontSize: 10.5,
+          color: "var(--fg-2)",
+          marginBottom: 5,
+        }}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, minWidth: 0 }}>
+          {Ico.branch}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {labelWorkspaceKey(containerKey)}
+          </span>
+        </span>
+        <span style={{ color: "var(--fg-3)" }}>·</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {compactName}
         </span>
       </div>
       <div
@@ -1202,11 +1394,27 @@ function ContainerCard({
             ))
           )}
         </div>
-        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+        <span
+          className="mono"
+          style={{ fontSize: 10.5, color: "var(--fg-3)", whiteSpace: "nowrap" }}
+        >
           {stats
             ? `cpu ${stats.cpuPct.toFixed(0)}% · mem ${fmtBytes(stats.memUsed)}`
             : "cpu — · mem —"}
         </span>
+      </div>
+      <div
+        className="mono"
+        style={{
+          marginTop: 5,
+          fontSize: 9.5,
+          color: "var(--fg-3)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {imageLabel}
       </div>
     </button>
   );

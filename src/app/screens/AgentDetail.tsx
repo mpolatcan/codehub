@@ -238,12 +238,83 @@ export function AgentDetail({
             )}
           </Section>
 
-          {/* Active model + permission mode */}
-          <Section label="Active model & permissions">
+          {/* Providers + active model — same visual structure as the design, but
+              backed only by the model/provider facts the Claude CLI exposes. */}
+          <Section label="Model providers · 1">
+            <ProviderRow
+              name="Claude CLI config"
+              sub="Native Claude Code provider · read from runtime config"
+              model={config?.model ?? null}
+              active
+            />
+            <div style={{ display: "flex", gap: 8, margin: "10px 0 28px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn sm"
+                disabled
+                title="Provider writes need backend support"
+              >
+                {Ico.plus}Add provider
+              </button>
+              <ProviderTemplate label="OpenAI-compatible" />
+              <ProviderTemplate label="AWS Bedrock" />
+              <ProviderTemplate label="Vertex AI" />
+              <ProviderTemplate label="Ollama" />
+            </div>
+          </Section>
+
+          <Section label="Active model">
             <Card>
-              <div style={{ display: "flex", gap: 28 }}>
-                <Field label="Model" value={config?.model ?? "—"} />
-                <Field label="Default permission mode" value={config?.permissionMode ?? "—"} />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 10,
+                  marginBottom: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+                  Active model
+                </span>
+                <span style={{ fontSize: 12, color: "var(--fg-2)" }}>
+                  used by new Claude agents; managed in Claude's own config
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 12px",
+                  background: "var(--bg-1)",
+                  border: "1px solid var(--bd)",
+                  borderRadius: 7,
+                }}
+              >
+                <Badge text="CL" accent="var(--a-claude)" />
+                <span className="mono" style={{ fontSize: 13, color: "var(--fg-0)" }}>
+                  {config?.model ?? "Claude CLI default"}
+                </span>
+                <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                  permission {config?.permissionMode ?? "default"}
+                </span>
+                <span style={{ flex: 1 }} />
+                <span style={{ color: "var(--fg-2)" }}>{Ico.chevD}</span>
+              </div>
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <span className="lbl" style={{ fontSize: 11, marginRight: 4 }}>
+                  quick switch
+                </span>
+                <ModelChip text={config?.model ?? "CLI default"} active />
               </div>
             </Card>
           </Section>
@@ -395,6 +466,27 @@ export function AgentDetail({
               </div>
             )}
           </Section>
+
+          <Section label="Auto behaviors">
+            <Card>
+              <SettingLine
+                label="Auto mode at start"
+                desc="Claude Code owns this behavior; CodeHub only reports the default permission mode."
+                value={config?.permissionMode ?? "default"}
+              />
+              <SettingLine
+                label="Plan before edit"
+                desc="No readable CodeHub setting yet. Add backend support before making this editable."
+                value="not exposed"
+              />
+              <SettingLine
+                label="Self-review diff"
+                desc="No readable CodeHub setting yet. Kept as an honest disabled design affordance."
+                value="not exposed"
+                last
+              />
+            </Card>
+          </Section>
         </>
       )}
     </div>
@@ -478,13 +570,111 @@ function Card({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function ProviderRow({
+  name,
+  sub,
+  model,
+  active,
+}: {
+  name: string;
+  sub: string;
+  model: string | null;
+  active?: boolean;
+}) {
   return (
-    <div>
-      <div style={{ fontSize: 11, color: "var(--fg-3)", marginBottom: 3 }}>{label}</div>
-      <div className="mono" style={{ fontSize: 13, color: "var(--fg-0)" }}>
-        {value}
+    <Card>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Badge text="CL" accent="var(--a-claude)" />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{name}</span>
+            {active && <Chip text="default" />}
+          </div>
+          <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+            {sub}
+          </div>
+        </div>
+        <span
+          className="mono"
+          style={{ fontSize: 11, color: model ? "var(--fg-1)" : "var(--fg-3)" }}
+        >
+          {model ?? "CLI default"}
+        </span>
       </div>
+    </Card>
+  );
+}
+
+function ProviderTemplate({ label }: { label: string }) {
+  return (
+    <span
+      className="mono"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "5px 8px",
+        borderRadius: 6,
+        background: "var(--bg-2)",
+        border: "1px solid var(--bd)",
+        color: "var(--fg-3)",
+        fontSize: 10.5,
+      }}
+      title="Provider template needs backend support before it can be configured"
+    >
+      {label}
+    </span>
+  );
+}
+
+function ModelChip({ text, active }: { text: string; active?: boolean }) {
+  return (
+    <span
+      className="mono"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "4px 8px",
+        borderRadius: 5,
+        background: active ? "var(--bg-3)" : "transparent",
+        border: `1px solid ${active ? "var(--pri)" : "var(--bd)"}`,
+        color: active ? "var(--fg-0)" : "var(--fg-2)",
+        fontSize: 11,
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function SettingLine({
+  label,
+  desc,
+  value,
+  last,
+}: {
+  label: string;
+  desc: string;
+  value: string;
+  last?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        padding: "10px 0",
+        borderBottom: last ? "none" : "1px solid var(--bd-soft)",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, color: "var(--fg-0)", marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: 11.5, color: "var(--fg-2)" }}>{desc}</div>
+      </div>
+      <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+        {value}
+      </span>
     </div>
   );
 }

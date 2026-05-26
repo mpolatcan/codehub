@@ -5,14 +5,14 @@
  * `initialPrompt` textarea, the Tier-3 account picker (label-only profiles +
  * host-env presence), and the Tier-2 repository picker (the real /workspace
  * mount + native folder change + MRU recents + a "restart runtime to apply"
- * affordance). The shared container is still a single runtime (per-session reuse
- * / sizing remain Tier-3). Cost estimate stays omitted (no usage capture).
+ * affordance). Sessions run in the active workspace container; sizing remains
+ * Tier-3. Cost estimate stays omitted (no usage capture).
  *
  * Copy note: the design said "secrets stay in the keychain". CodeHub forwards
  * keys from the host environment instead (see BACKEND_PLAN.md), so that wording
  * is corrected throughout. Account profiles store an env var NAME, never a value.
  *
- * The form pieces (agent/account cards, the /workspace picker, the shared-runtime
+ * The form pieces (agent/account cards, the /workspace picker, the container
  * panel) live in `components/spawn-form` so the new-workspace wizard reuses the
  * exact same honest surfaces — no copy-paste drift.
  */
@@ -29,6 +29,7 @@ import {
 import { CLIS, MODE_BY_ID, modesFor } from "@/app/lib/catalog";
 import type { AgentCli, Cli, Mode } from "@/app/lib/ipc";
 import { useStore } from "@/app/lib/store";
+import { MAX_GROUP_PANES } from "@/app/lib/tree";
 import { Button } from "@/app/ui/button";
 import { useState } from "react";
 
@@ -38,6 +39,7 @@ export interface GroupChoice {
   name: string;
   color: string;
   count: number;
+  full?: boolean;
 }
 
 /** Sentinel target → create a fresh group in the active workspace, then spawn into it. */
@@ -76,6 +78,8 @@ export interface SpawnDialogProps {
    * through the blur (design spawn-dialog.jsx: blur over the actual MainHubA).
    */
   standalone?: boolean;
+  /** User-facing active workspace name, shown beside the design's dialog title. */
+  workspaceName?: string;
 }
 
 export function SpawnDialog({
@@ -85,6 +89,7 @@ export function SpawnDialog({
   splitting,
   groups,
   standalone,
+  workspaceName,
 }: SpawnDialogProps) {
   const [agent, setAgentRaw] = useState<Cli>(defaultCli);
   const [mode, setMode] = useState<Mode>("standard");
@@ -166,8 +171,17 @@ export function SpawnDialog({
           }}
         >
           <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg-0)" }}>
-            {splitting ? "Split — new agent in this tab" : "New agent session"}
+            {splitting
+              ? "Split — new agent in this tab"
+              : workspaceName
+                ? "Add agent to workspace"
+                : "New agent session"}
           </span>
+          {workspaceName && (
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+              {workspaceName}
+            </span>
+          )}
           <span style={{ flex: 1 }} />
           <span className="kbd">esc</span>
         </div>
@@ -233,7 +247,7 @@ export function SpawnDialog({
           </FormRow>
 
           {/* Repository — the real host directory bound at /workspace (Tier-2). */}
-          <FormRow label="Repository">
+          <FormRow label="Repo binding" optional>
             <RepositoryPicker />
           </FormRow>
 
@@ -260,9 +274,13 @@ export function SpawnDialog({
                     key={g.id}
                     label={g.name}
                     count={g.count}
+                    full={g.full}
                     dot={g.color}
-                    selected={target === g.id}
-                    onSelect={() => setTarget(g.id)}
+                    selected={target === g.id && !g.full}
+                    disabled={g.full}
+                    onSelect={() => {
+                      if (!g.full) setTarget(g.id);
+                    }}
                   />
                 ))}
                 <GroupTargetChip
@@ -271,6 +289,15 @@ export function SpawnDialog({
                   onSelect={() => setTarget(NEW_GROUP)}
                 />
               </div>
+              {groups.some((g) => g.full) && (
+                <div
+                  className="mono"
+                  style={{ marginTop: 6, fontSize: 10.5, color: "var(--fg-3)" }}
+                >
+                  Full groups are capped at {MAX_GROUP_PANES} panes. Add a new group to keep the
+                  grid readable.
+                </div>
+              )}
             </FormRow>
           )}
 
@@ -329,7 +356,7 @@ export function SpawnDialog({
         >
           {/* Cost estimate is Tier 3 (no usage capture yet). Omitted rather than faked. */}
           <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
-            spawns a fresh tmux session in the workspace container
+            attaches to workspace container · fresh tmux session
           </span>
           <span style={{ flex: 1 }} />
           <Button variant="outline" size="sm" onClick={onCancel}>
@@ -340,7 +367,7 @@ export function SpawnDialog({
             style={{ padding: "6px 14px" }}
             onClick={() => onLaunch?.(agent, mode, prompt, account, target || undefined)}
           >
-            Launch agent
+            Add agent
             <span className="kbd" style={{ marginLeft: 6 }}>
               ⏎
             </span>
@@ -356,19 +383,24 @@ export function SpawnDialog({
 function GroupTargetChip({
   label,
   count,
+  full,
   dot,
   selected,
+  disabled,
   onSelect,
 }: {
   label: string;
   count?: number;
+  full?: boolean;
   dot?: string;
   selected: boolean;
+  disabled?: boolean;
   onSelect: () => void;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onSelect}
       style={{
         display: "inline-flex",
@@ -377,10 +409,17 @@ function GroupTargetChip({
         padding: "4px 9px",
         borderRadius: 5,
         background: selected ? "var(--bg-3)" : "transparent",
-        border: `1px solid ${selected ? "var(--pri)" : "var(--bd)"}`,
+        border: `1px solid ${
+          selected
+            ? "var(--pri)"
+            : full
+              ? "color-mix(in oklab, var(--wait) 30%, var(--bd))"
+              : "var(--bd)"
+        }`,
         fontSize: 12,
-        color: selected ? "var(--fg-0)" : "var(--fg-2)",
-        cursor: "pointer",
+        color: disabled ? "var(--fg-3)" : selected ? "var(--fg-0)" : "var(--fg-2)",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.7 : 1,
       }}
     >
       {dot && (
@@ -391,8 +430,11 @@ function GroupTargetChip({
       )}
       <span>{label}</span>
       {count !== undefined && (
-        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-          · {count}
+        <span
+          className="mono"
+          style={{ fontSize: 10, color: full ? "var(--wait)" : "var(--fg-3)" }}
+        >
+          · {full ? `${count}/${MAX_GROUP_PANES}` : count}
         </span>
       )}
     </button>

@@ -1,25 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { groupKey, splitKey, useLauncher } from "../../lib/launcher";
 import { activeWorkspace, useStore } from "../../lib/store";
-import { type SplitDir, activeGroup } from "../../lib/tree";
+import {
+  MAX_GROUP_PANES,
+  type SplitDir,
+  activeGroup,
+  leavesList,
+} from "../../lib/tree";
 import { Ico } from "./icons";
 
 // THE primary spawn CTA for the Hub ActionBar — one button replacing the old
 // "Split right + Split down + New agent" trio (design/components.jsx
-// `SpawnSplitBtn`). Left half opens the launcher for a new tab; the chevron half
-// opens a placement popover for splitting the focused pane.
+// `SpawnSplitBtn`). Left half opens the launcher at the default placement; the
+// chevron half opens a placement popover for explicit targets.
 //
-// Honest deviation from the design (which spawns split-right by default on the
-// left half): CodeHub's established model is ⌘N = new tab / ⌘\ = split, and every
-// spawn flows through the rich launcher (SpawnModal). So the default click stays
-// "new tab" — matching ⌘N and the sidebar New-agent button — and split is an
-// explicit menu choice. No keyboard hint lies. The placement menu also offers
-// "In new group" (⌘G) — creates a fresh pane group and lands the agent in it.
+// Default click follows the design: split right from the focused pane. When no
+// pane is focused (empty workspace / no tab), it falls back to the new-tab
+// launcher. The placement menu also offers "In new group" (⌘G) — creates a
+// fresh pane group and lands the agent in it.
 export function SpawnSplitBtn() {
   const openLaunch = useLauncher((s) => s.open);
   const addGroup = useStore((s) => s.addGroup);
   const active = useStore(activeWorkspace);
-  const focused = (active && activeGroup(active)?.focused) ?? null;
+  const group = active ? activeGroup(active) : null;
+  const focused = group?.focused ?? null;
+  const groupFull = group ? leavesList(group.root).length >= MAX_GROUP_PANES : false;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -37,9 +42,14 @@ export function SpawnSplitBtn() {
     openLaunch("newtab");
   };
   const split = (dir: SplitDir) => {
-    if (!focused) return;
+    if (!focused || groupFull) return;
     setOpen(false);
     openLaunch(splitKey(focused), { dir, session: focused });
+  };
+  const primary = () => {
+    if (groupFull) newGroup();
+    else if (focused) split("row");
+    else newTab();
   };
   // Spawn into a fresh group: create the empty group (becomes active), then open
   // the launcher targeting it so the new agent lands as that group's first pane.
@@ -55,12 +65,18 @@ export function SpawnSplitBtn() {
       <button
         type="button"
         className="spawn-half spawn-main"
-        title="New agent — new tab (⌘N)"
-        onClick={newTab}
+        title={
+          groupFull
+            ? `Group full (${MAX_GROUP_PANES}/${MAX_GROUP_PANES}) — add agent in a new group (⌘G)`
+            : focused
+              ? "New agent — split right (⌘A)"
+              : "New agent — new tab (⌘N)"
+        }
+        onClick={primary}
       >
         {Ico.plus}
-        New agent
-        <span className="kbd">⌘N</span>
+        {groupFull ? "New group" : "New agent"}
+        <span className="kbd">{groupFull ? "⌘G" : focused ? "⌘A" : "⌘N"}</span>
       </button>
       <button
         type="button"
@@ -74,6 +90,7 @@ export function SpawnSplitBtn() {
       {open && (
         <SpawnPlacementMenu
           focused={focused}
+          groupFull={groupFull}
           hasWorkspace={!!active}
           onSplit={split}
           onNewGroup={newGroup}
@@ -88,12 +105,14 @@ export function SpawnSplitBtn() {
 // are disabled when nothing is focused (an empty workspace can't be split).
 function SpawnPlacementMenu({
   focused,
+  groupFull,
   hasWorkspace,
   onSplit,
   onNewGroup,
   onNewTab,
 }: {
   focused: string | null;
+  groupFull: boolean;
   hasWorkspace: boolean;
   onSplit: (dir: SplitDir) => void;
   onNewGroup: () => void;
@@ -132,16 +151,24 @@ function SpawnPlacementMenu({
         icon={Ico.splitV}
         label="Split right"
         kbd="⌘\"
-        disabled={!focused}
+        disabled={!focused || groupFull}
         onClick={() => onSplit("row")}
       />
       <SpawnMenuRow
         icon={Ico.splitH}
         label="Split down"
         kbd="⌘⇧\"
-        disabled={!focused}
+        disabled={!focused || groupFull}
         onClick={() => onSplit("col")}
       />
+      {groupFull && (
+        <div
+          className="mono"
+          style={{ padding: "5px 8px", fontSize: 10.5, color: "var(--fg-3)" }}
+        >
+          Active group is full ({MAX_GROUP_PANES}/{MAX_GROUP_PANES}).
+        </div>
+      )}
       <div style={{ height: 1, background: "var(--bd-soft)", margin: "4px 0" }} />
       <SpawnMenuRow
         icon={Ico.grid}

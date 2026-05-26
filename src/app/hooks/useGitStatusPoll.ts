@@ -18,7 +18,7 @@ export function useGitStatusPoll() {
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
 
   useEffect(() => {
-    if (!running) {
+    if (!running || !containerKey) {
       setGitStatus(null);
       return;
     }

@@ -21,6 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DiffBody, SplitDiffBody, diffCounts, parseDiff } from "../components/hub/DiffBody";
+import { HubTabs } from "../components/hub/HubTabs";
 import { AgentGlyph } from "../components/primitives/AgentGlyph";
 import { IconBtn } from "../components/primitives/IconBtn";
 import { StatusDot } from "../components/primitives/StatusDot";
@@ -204,6 +205,11 @@ export function SessionDetail({ session }: { session: string }) {
   // doesn't hijack select-all while typing in the commit/PR inputs.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeDetail();
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey)) return;
       const inField = (e.target as HTMLElement)?.tagName === "INPUT";
       if (e.key === "Enter") {
@@ -220,7 +226,7 @@ export function SessionDetail({ session }: { session: string }) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [commitOpen, doCommit, stageAll]);
+  }, [closeDetail, commitOpen, doCommit, stageAll]);
 
   if (!meta) return null;
   const spec = SPEC_BY_CLI[meta.cli];
@@ -248,6 +254,8 @@ export function SessionDetail({ session }: { session: string }) {
         color: "var(--fg-1)",
       }}
     >
+      <HubTabs />
+
       {/* context strip — INSPECT · DIFF + session identity + branch + metrics */}
       <div
         style={{
@@ -342,15 +350,29 @@ export function SessionDetail({ session }: { session: string }) {
           </span>
         )}
 
-        <IconBtn
-          title="Stop session"
-          danger
+        <button
+          type="button"
+          title="Stop this agent"
           onClick={() => {
             void closeSession(session);
           }}
+          className="mono"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 9px",
+            borderRadius: 6,
+            border: "1px solid color-mix(in oklab, var(--err) 42%, var(--bd))",
+            background: "color-mix(in oklab, var(--err) 9%, transparent)",
+            color: "var(--err)",
+            fontSize: 11.5,
+            cursor: "pointer",
+          }}
         >
           {Ico.close}
-        </IconBtn>
+          Stop
+        </button>
       </div>
 
       {/* diff body — full-width single column */}
