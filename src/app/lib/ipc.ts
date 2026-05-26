@@ -636,34 +636,45 @@ export const ipc = {
   // Liveness of a container (started-at/restart count/status/OOM).
   containerHealth: (workspace?: string) => invoke<RuntimeHealth>("container_health", { workspace }),
   // Non-recursive listing of a /workspace directory (empty path → root).
-  containerListDir: (path: string) => invoke<FileEntry[]>("container_list_dir", { path }),
+  // `workspace` targets a per-workspace container (omit → shared runtime).
+  containerListDir: (path: string, workspace?: string) =>
+    invoke<FileEntry[]>("container_list_dir", { path, workspace }),
   // First 256 KiB of a /workspace file, UTF-8-lossy (Files browser preview).
-  containerReadFile: (path: string) => invoke<string>("container_read_file", { path }),
+  containerReadFile: (path: string, workspace?: string) =>
+    invoke<string>("container_read_file", { path, workspace }),
   // Working-tree status of /workspace (branch + changed files).
-  containerGitStatus: () => invoke<GitStatus>("container_git_status"),
+  containerGitStatus: (workspace?: string) =>
+    invoke<GitStatus>("container_git_status", { workspace }),
   // Unified diff for one /workspace path (raw `git diff` text).
-  containerGitDiff: (path: string) => invoke<string>("container_git_diff", { path }),
+  containerGitDiff: (path: string, workspace?: string) =>
+    invoke<string>("container_git_diff", { path, workspace }),
   // Combined diff of every tracked /workspace change (`git diff HEAD`); the
   // "review all" view. Empty string when the tree is clean.
-  containerGitDiffAll: () => invoke<string>("container_git_diff_all"),
+  containerGitDiffAll: (workspace?: string) =>
+    invoke<string>("container_git_diff_all", { workspace }),
   // Staged-only diff (`git diff --cached`) — session-detail "Staged" filter.
-  containerGitDiffStaged: () => invoke<string>("container_git_diff_staged"),
+  containerGitDiffStaged: (workspace?: string) =>
+    invoke<string>("container_git_diff_staged", { workspace }),
   // Unstaged diff of tracked files (`git diff`) — "Unstaged" filter.
-  containerGitDiffUnstaged: () => invoke<string>("container_git_diff_unstaged"),
+  containerGitDiffUnstaged: (workspace?: string) =>
+    invoke<string>("container_git_diff_unstaged", { workspace }),
   // Stage every /workspace change (`git add -A`). Throws git's message on failure.
-  containerGitStageAll: () => invoke<void>("container_git_stage_all"),
+  containerGitStageAll: (workspace?: string) =>
+    invoke<void>("container_git_stage_all", { workspace }),
   // Commit staged changes (`git commit -m`); resolves to git's summary line, or
   // rejects with git's verbatim message (nothing staged / no identity / not a repo).
-  containerGitCommit: (message: string) => invoke<string>("container_git_commit", { message }),
+  containerGitCommit: (message: string, workspace?: string) =>
+    invoke<string>("container_git_commit", { message, workspace }),
   // Push the current branch + open a GitHub PR; resolves to the PR URL, or
   // rejects with an honest reason (no token/remote/branch, or GitHub's message).
-  containerGitOpenPr: (title: string, body: string) =>
-    invoke<string>("container_git_open_pr", { title, body }),
+  containerGitOpenPr: (title: string, body: string, workspace?: string) =>
+    invoke<string>("container_git_open_pr", { title, body, workspace }),
   // Processes running inside a container (`docker top`). `workspace` targets a
   // per-workspace container (omit / undefined → shared runtime).
   containerTop: (workspace?: string) => invoke<ProcessInfo[]>("container_top", { workspace }),
   // Recent commits on /workspace (`git log`); defaults to 12 server-side.
-  containerGitLog: (limit?: number) => invoke<CommitInfo[]>("container_git_log", { limit }),
+  containerGitLog: (limit?: number, workspace?: string) =>
+    invoke<CommitInfo[]>("container_git_log", { limit, workspace }),
   // Per-session working/idle activity from output flow (polled by the Hub).
   sessionActivity: () => invoke<SessionActivity[]>("session_activity"),
   // Token analytics from Claude Code session transcripts (Usage view): real

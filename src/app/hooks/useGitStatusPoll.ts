@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { ipc } from "../lib/ipc";
-import { useStore } from "../lib/store";
+import { activeWorkspace, useStore } from "../lib/store";
 
 // Single app-wide poll of container_git_status (/workspace branch + ahead/behind
 // + uncommitted count) into the store while the runtime is up. Centralized for
@@ -13,6 +13,9 @@ const GIT_POLL_MS = 5000;
 export function useGitStatusPoll() {
   const running = useStore((s) => s.status?.state === "running");
   const setGitStatus = useStore((s) => s.setGitStatus);
+  // The /workspace shown belongs to the ACTIVE workspace's container; re-poll
+  // when it changes. undefined → shared runtime (per-workspace off, or no tab).
+  const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
 
   useEffect(() => {
     if (!running) {
@@ -22,7 +25,7 @@ export function useGitStatusPoll() {
     let alive = true;
     const tick = () => {
       ipc
-        .containerGitStatus()
+        .containerGitStatus(containerKey)
         .then((g) => alive && setGitStatus(g))
         .catch(() => alive && setGitStatus(null));
     };
@@ -32,5 +35,5 @@ export function useGitStatusPoll() {
       alive = false;
       clearInterval(h);
     };
-  }, [running, setGitStatus]);
+  }, [running, setGitStatus, containerKey]);
 }

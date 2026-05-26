@@ -515,13 +515,15 @@ async fn container_health(
 struct PathQuery {
     /// Empty / absent → the workspace root.
     path: Option<String>,
+    /// Per-workspace container key (absent → shared runtime).
+    workspace: Option<String>,
 }
 
 async fn container_list_dir(
     State(st): State<AppState>,
     Query(q): Query<PathQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .list_dir(&q.path.unwrap_or_default())
         .await
         .map(Json)
@@ -532,49 +534,79 @@ async fn container_read_file(
     State(st): State<AppState>,
     Query(q): Query<PathQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .read_file(&q.path.unwrap_or_default())
         .await
         .map(Json)
         .map_err(err)
 }
 
-async fn container_git_status(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_status().await.map(Json).map_err(err)
+async fn container_git_status(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_status()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 #[derive(Deserialize)]
 struct DiffQuery {
     path: String,
+    workspace: Option<String>,
 }
 
 async fn container_git_diff(
     State(st): State<AppState>,
     Query(q): Query<DiffQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_diff(&q.path).await.map(Json).map_err(err)
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_diff(&q.path)
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
-async fn container_git_diff_all(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_diff_all().await.map(Json).map_err(err)
+async fn container_git_diff_all(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_diff_all()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 async fn container_git_diff_staged(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_diff_staged().await.map(Json).map_err(err)
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_diff_staged()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 async fn container_git_diff_unstaged(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker.git_diff_unstaged().await.map(Json).map_err(err)
+    docker_container_for(&st, q.workspace.as_deref())
+        .git_diff_unstaged()
+        .await
+        .map(Json)
+        .map_err(err)
 }
 
 async fn container_git_stage_all(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .git_stage_all()
         .await
         .map(|()| StatusCode::NO_CONTENT)
@@ -588,9 +620,10 @@ struct CommitBody {
 
 async fn container_git_commit(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
     Json(body): Json<CommitBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .git_commit(&body.message)
         .await
         .map(Json)
@@ -605,9 +638,10 @@ struct OpenPrBody {
 
 async fn container_git_open_pr(
     State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
     Json(body): Json<OpenPrBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .git_open_pr(&body.title, &body.body)
         .await
         .map(Json)
@@ -660,13 +694,14 @@ async fn claude_session_usage(
 #[derive(Deserialize)]
 struct LogQuery {
     limit: Option<u32>,
+    workspace: Option<String>,
 }
 
 async fn container_git_log(
     State(st): State<AppState>,
     Query(q): Query<LogQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    st.docker
+    docker_container_for(&st, q.workspace.as_deref())
         .git_log(q.limit.unwrap_or(12))
         .await
         .map(Json)

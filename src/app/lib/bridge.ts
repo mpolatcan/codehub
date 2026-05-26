@@ -41,6 +41,8 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
   // `?workspace=<key>` targets a per-workspace container; empty when absent (→
   // the shared runtime). Mirrors the kill route's query convention.
   const wsq = args.workspace ? `?workspace=${encodeURIComponent(String(args.workspace))}` : "";
+  // Same key as `&workspace=…` for routes that already own a `?` (path/limit).
+  const wsAmp = args.workspace ? `&workspace=${encodeURIComponent(String(args.workspace))}` : "";
   switch (cmd) {
     case "container_status":
       return jget(`/status${wsq}`) as Promise<T>;
@@ -75,17 +77,17 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       return jget(`/container-health${wsq}`) as Promise<T>;
     case "container_list_dir":
       return jget(
-        `/container-list-dir?path=${encodeURIComponent(String(args.path ?? ""))}`,
+        `/container-list-dir?path=${encodeURIComponent(String(args.path ?? ""))}${wsAmp}`,
       ) as Promise<T>;
     case "container_read_file":
       return jget(
-        `/container-read-file?path=${encodeURIComponent(String(args.path ?? ""))}`,
+        `/container-read-file?path=${encodeURIComponent(String(args.path ?? ""))}${wsAmp}`,
       ) as Promise<T>;
     case "container_git_status":
-      return jget("/container-git-status") as Promise<T>;
+      return jget(`/container-git-status${wsq}`) as Promise<T>;
     case "container_git_diff":
       return jget(
-        `/container-git-diff?path=${encodeURIComponent(String(args.path))}`,
+        `/container-git-diff?path=${encodeURIComponent(String(args.path))}${wsAmp}`,
       ) as Promise<T>;
     case "app_info":
       return jget("/app-info") as Promise<T>;
@@ -120,24 +122,24 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
         `/account-profiles/${encodeURIComponent(String(args.id))}`,
       ) as Promise<T>;
     case "container_git_diff_all":
-      return jget("/container-git-diff-all") as Promise<T>;
+      return jget(`/container-git-diff-all${wsq}`) as Promise<T>;
     case "container_git_diff_staged":
-      return jget("/container-git-diff-staged") as Promise<T>;
+      return jget(`/container-git-diff-staged${wsq}`) as Promise<T>;
     case "container_git_diff_unstaged":
-      return jget("/container-git-diff-unstaged") as Promise<T>;
+      return jget(`/container-git-diff-unstaged${wsq}`) as Promise<T>;
     case "container_git_stage_all":
-      return jsend("POST", "/container-git-stage-all") as Promise<T>;
+      return jsend("POST", `/container-git-stage-all${wsq}`) as Promise<T>;
     case "container_git_commit":
-      return jsend("POST", "/container-git-commit", { message: args.message }) as Promise<T>;
+      return jsend("POST", `/container-git-commit${wsq}`, { message: args.message }) as Promise<T>;
     case "container_git_open_pr":
-      return jsend("POST", "/container-git-open-pr", {
+      return jsend("POST", `/container-git-open-pr${wsq}`, {
         title: args.title,
         body: args.body,
       }) as Promise<T>;
     case "container_top":
       return jget(`/container-top${wsq}`) as Promise<T>;
     case "container_git_log":
-      return jget(`/container-git-log?limit=${args.limit ?? 12}`) as Promise<T>;
+      return jget(`/container-git-log?limit=${args.limit ?? 12}${wsAmp}`) as Promise<T>;
     case "session_activity":
       return jget("/session-activity") as Promise<T>;
     // Phase-0 completion contract (stub backend; mirrors devserver.rs routes).

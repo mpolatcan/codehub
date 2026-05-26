@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Ico } from "../../components/primitives/icons";
 import { ipc } from "../../lib/ipc";
+import { activeWorkspace, useStore } from "../../lib/store";
 import { DiffBody, diffCounts, parseDiff } from "./DiffBody";
 
 // A unified diff docked on the right (design/screens/hub-states.jsx DiffPanel),
@@ -20,17 +21,22 @@ const WIDTH = 352;
 
 export function DiffViewer({ path, onClose }: { path: string; onClose: () => void }) {
   const [diff, setDiff] = useState<string | null>(null);
+  // The diff is for the active workspace's container; undefined → shared runtime.
+  const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
 
   useEffect(() => {
     let alive = true;
     setDiff(null);
     // Empty-string sentinel → combined diff of every change; a path → that file.
-    const load = path === "" ? ipc.containerGitDiffAll() : ipc.containerGitDiff(path);
+    const load =
+      path === ""
+        ? ipc.containerGitDiffAll(containerKey)
+        : ipc.containerGitDiff(path, containerKey);
     load.then((d) => alive && setDiff(d)).catch(() => alive && setDiff(""));
     return () => {
       alive = false;
     };
-  }, [path]);
+  }, [path, containerKey]);
 
   const counts = diff ? diffCounts(parseDiff(diff)) : null;
 

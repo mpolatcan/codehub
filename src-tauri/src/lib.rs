@@ -438,9 +438,9 @@ async fn container_health(
 async fn container_list_dir(
     state: tauri::State<'_, AppState>,
     path: String,
+    workspace: Option<String>,
 ) -> Result<Vec<FileEntry>, String> {
-    state
-        .docker
+    docker_container_for(&state, workspace.as_deref())
         .list_dir(&path)
         .await
         .map_err(|e| e.to_string())
@@ -452,9 +452,9 @@ async fn container_list_dir(
 async fn container_read_file(
     state: tauri::State<'_, AppState>,
     path: String,
+    workspace: Option<String>,
 ) -> Result<String, String> {
-    state
-        .docker
+    docker_container_for(&state, workspace.as_deref())
         .read_file(&path)
         .await
         .map_err(|e| e.to_string())
@@ -464,8 +464,14 @@ async fn container_read_file(
 /// Reports branch + ahead/behind + changed files; `is_repo: false` when
 /// /workspace is not a git repo. Errs only when the container is down.
 #[tauri::command]
-async fn container_git_status(state: tauri::State<'_, AppState>) -> Result<GitStatus, String> {
-    state.docker.git_status().await.map_err(|e| e.to_string())
+async fn container_git_status(
+    state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
+) -> Result<GitStatus, String> {
+    docker_container_for(&state, workspace.as_deref())
+        .git_status()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Unified diff for one `/workspace` path (rail "Changes" → diff viewer).
@@ -473,9 +479,9 @@ async fn container_git_status(state: tauri::State<'_, AppState>) -> Result<GitSt
 async fn container_git_diff(
     path: String,
     state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
 ) -> Result<String, String> {
-    state
-        .docker
+    docker_container_for(&state, workspace.as_deref())
         .git_diff(&path)
         .await
         .map_err(|e| e.to_string())
@@ -484,16 +490,24 @@ async fn container_git_diff(
 /// Combined diff of all tracked `/workspace` changes (rail "Review all" → diff
 /// viewer). Empty string when the tree is clean.
 #[tauri::command]
-async fn container_git_diff_all(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    state.docker.git_diff_all().await.map_err(|e| e.to_string())
+async fn container_git_diff_all(
+    state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
+) -> Result<String, String> {
+    docker_container_for(&state, workspace.as_deref())
+        .git_diff_all()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Staged-only diff of `/workspace` (`git diff --cached`) — the session-detail
 /// inspector's "Staged" filter. Empty string when nothing is staged.
 #[tauri::command]
-async fn container_git_diff_staged(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    state
-        .docker
+async fn container_git_diff_staged(
+    state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
+) -> Result<String, String> {
+    docker_container_for(&state, workspace.as_deref())
         .git_diff_staged()
         .await
         .map_err(|e| e.to_string())
@@ -502,9 +516,11 @@ async fn container_git_diff_staged(state: tauri::State<'_, AppState>) -> Result<
 /// Unstaged diff of tracked `/workspace` files (`git diff`) — the "Unstaged"
 /// filter. Empty string when the tracked tree matches the index.
 #[tauri::command]
-async fn container_git_diff_unstaged(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    state
-        .docker
+async fn container_git_diff_unstaged(
+    state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
+) -> Result<String, String> {
+    docker_container_for(&state, workspace.as_deref())
         .git_diff_unstaged()
         .await
         .map_err(|e| e.to_string())
@@ -512,9 +528,11 @@ async fn container_git_diff_unstaged(state: tauri::State<'_, AppState>) -> Resul
 
 /// Stage every `/workspace` change (`git add -A`) — session-detail "Stage all".
 #[tauri::command]
-async fn container_git_stage_all(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    state
-        .docker
+async fn container_git_stage_all(
+    state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
+) -> Result<(), String> {
+    docker_container_for(&state, workspace.as_deref())
         .git_stage_all()
         .await
         .map_err(|e| e.to_string())
@@ -526,9 +544,9 @@ async fn container_git_stage_all(state: tauri::State<'_, AppState>) -> Result<()
 async fn container_git_commit(
     message: String,
     state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
 ) -> Result<String, String> {
-    state
-        .docker
+    docker_container_for(&state, workspace.as_deref())
         .git_commit(&message)
         .await
         .map_err(|e| e.to_string())
@@ -542,9 +560,9 @@ async fn container_git_open_pr(
     title: String,
     body: String,
     state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
 ) -> Result<String, String> {
-    state
-        .docker
+    docker_container_for(&state, workspace.as_deref())
         .git_open_pr(&title, &body)
         .await
         .map_err(|e| e.to_string())
@@ -653,9 +671,9 @@ async fn claude_agent_config(state: tauri::State<'_, AppState>) -> Result<AgentC
 async fn container_git_log(
     limit: Option<u32>,
     state: tauri::State<'_, AppState>,
+    workspace: Option<String>,
 ) -> Result<Vec<CommitInfo>, String> {
-    state
-        .docker
+    docker_container_for(&state, workspace.as_deref())
         .git_log(limit.unwrap_or(12))
         .await
         .map_err(|e| e.to_string())
