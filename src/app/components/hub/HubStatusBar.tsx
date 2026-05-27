@@ -86,6 +86,7 @@ function TabsStatusBar() {
           {runtimeName}
         </span>
       </span>
+      <span className="vr" style={{ height: 14 }} />
       <span className="tnum" title="CPU">
         cpu {stats ? `${stats.cpuPct.toFixed(0)}%` : "—"}
       </span>
@@ -102,9 +103,10 @@ function TabsStatusBar() {
       </span>
       <BurnRate />
       <span style={{ flex: 1 }} />
-      <span>⌘K palette</span>
-      <span>⌘\ split</span>
-      <span>⌘1–9 jump</span>
+      <span className="vr" style={{ height: 14 }} />
+      <span style={{ color: "var(--fg-3)" }}>⌘K palette</span>
+      <span style={{ color: "var(--fg-3)" }}>⌘\ split</span>
+      <span style={{ color: "var(--fg-3)" }}>⌘1–9 jump</span>
     </div>
   );
 }

@@ -92,15 +92,16 @@ sequenceDiagram
 
 ## Using it
 
-- **New session** — the `+` popover (or ⌘T) picks an agent and a permission mode.
+- **Workspaces** — the welcome screen lists saved workspaces (name, directory, last-opened time) with search/filter. Each runs in its own container (`codehub-ws-<key>`) with repos mounted under `/workspace/<repo-name>`. Create new workspaces via the `+` tab button or ⌘⇧N — the 3-step wizard picks repos (local folders + GitHub), container resources (CPU/memory), and the first agent.
+- **New agent** — the "New agent" button (⌘A) in the action bar spawns an agent into the current workspace. Choose agent (Claude Code / Codex / Antigravity), permission mode, and placement (split / new tab / new group).
 - **Permission modes** — *Standard* (agent asks first), *Auto* (auto-accepts edits, still sandboxed), *YOLO* (skips all approvals; the container is the boundary). Antigravity is Standard-only until its flags are verified.
-- **Splits** — split any pane (its head controls, or ⌘\) into a binary tree; drag the divider to resize.
-- **Workspaces** — the welcome screen pins and reopens saved workspaces (name + directory, persisted); each runs in its own container (`codehub-ws-<key>`) with `/workspace` bound to its directory. New-workspace wizard via ⌘⇧N.
+- **Splits** — split any pane (its head controls, or ⌘\) into a binary tree; drag the divider to resize. Groups organize splits; each tab holds one or more groups.
 - **Hub panels** — a Files browser (⌘E), a workspace Diff viewer (⌘D), and a Resume drawer (⌘R) of past Claude/Codex sessions, docked beside the panes.
 - **Command palette** (⌘K) — jump to a view, focus a running session, spawn an agent, or open a recent/connected repo.
-- **Views** — Hub, Dashboard, Workspaces (container inspector), Usage (token/cost rollup read from session transcripts), and Settings (agents · runtime · integrations · appearance). Dark and light themes.
+- **Views** — Hub, Dashboard, Workspaces (container inspector), Usage (token/cost rollup from session transcripts), Settings (agents · runtime · integrations · appearance · keyboard shortcuts). Three themes: dark, gray, light.
+- **GitHub integration** — connect a PAT or sign in via OAuth in Settings → Integrations. Browse repos, see scopes and permissions. Repos appear in the workspace wizard for cloning.
 - **Companion** — an always-on-top monitor window mirroring live agent status (working / awaiting input / done / failed) with inline approve/deny. On macOS a native notch "dynamic island" variant exists (experimental).
-- **Keyboard** — ⌘N/⌘T new session · ⌘⇧N new workspace · ⌘W close focused · ⌘\ split · ⌘⇧\ split column · ⌘⇧B shell pane · ⌘E files · ⌘D diff · ⌘R resume · ⌘1–9 switch tab · ⌘K palette · ⌘/ all shortcuts.
+- **Keyboard** — ⌘N new agent · ⌘⇧N new workspace · ⌘⇧T new workspace tab · ⌘A add agent (split) · ⌘W close focused · ⌘⇧W close workspace · ⌘\ split · ⌘⇧\ split column · ⌘⇧B shell · ⌘E files · ⌘D diff · ⌘R resume · ⌘1–9 jump tab · ⌘K palette · ⌘/ shortcuts.
 
 ## Runtime image
 
@@ -171,9 +172,11 @@ configured in `src-tauri/tauri.conf.json`.
 
 ## Roadmap
 
-- macOS Keychain for OAuth token storage (`security-framework` crate).
-- Native OS notifications when an agent finishes (today surfaced in the always-on-top companion).
-- Copy-mode keybindings.
-- Auto-update via Tauri updater plugin.
-- App icon set.
-- Code-split the frontend bundle.
+- [ ] Multiple bind mounts per workspace (frontend ready, backend `lifecycle.rs` needs multi `-v` flags)
+- [ ] Git clone inside container for GitHub repos (`docker exec git clone`)
+- [ ] Container resource limits enforcement (`--cpus`, `--memory` flags in `lifecycle.rs`)
+- [ ] macOS Keychain for OAuth token storage (`security-framework` crate)
+- [ ] Native OS notifications when an agent finishes
+- [ ] Auto-update via Tauri updater plugin
+- [ ] App icon set
+- [ ] Code-split the frontend bundle

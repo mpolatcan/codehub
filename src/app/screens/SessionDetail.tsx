@@ -586,12 +586,16 @@ export function SessionDetail({ session }: { session: string }) {
               <span style={{ color: "var(--err)" }}>−{counts.removed}</span>
             </span>
             <span style={{ flex: 1 }} />
-            <FooterBtn onClick={() => void stageAll()} disabled={busy || !running} kbd="⌘A">
+            <FooterBtn
+              onClick={() => void stageAll()}
+              disabled={busy || !running || !diffs.all}
+              kbd="⌘A"
+            >
               Stage all
             </FooterBtn>
             <FooterBtn
               onClick={() => setCommitOpen((v) => !v)}
-              disabled={busy || !running}
+              disabled={busy || !running || !diffs.staged}
               kbd="⌘⏎"
             >
               Commit…

@@ -1,7 +1,9 @@
+import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Ico } from "../../components/primitives/icons";
+import { slideLeft } from "../../hooks/useSlideIn";
 import { fmtBytes, joinPath as join, orderEntries as order } from "../../lib/fs";
 import { type FileEntry, ipc } from "../../lib/ipc";
 import { activeWorkspace, useStore } from "../../lib/store";
@@ -85,7 +87,8 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
   const rows = entries ? order(entries).filter((e) => !q || e.name.toLowerCase().includes(q)) : [];
 
   return (
-    <aside
+    <motion.aside
+      {...slideLeft}
       style={{
         width: WIDTH,
         flexShrink: 0,
@@ -269,7 +272,7 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
           {cwd}
         </span>
       </div>
-    </aside>
+    </motion.aside>
   );
 }
 

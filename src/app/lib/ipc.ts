@@ -194,6 +194,9 @@ export interface SavedWorkspace {
   lastOpened: number | null;
   // Per-workspace container resource limits override.
   sizing?: ContainerSizing | null;
+  // Additional host directories to mount alongside /workspace. Each mounts at
+  // /workspace/<basename>. Requires backend multi-mount support (lifecycle.rs).
+  additionalDirs?: string[];
 }
 
 // An account profile (config::AccountProfile). Supports two credential models:
@@ -762,8 +765,12 @@ export const ipc = {
       "vault_initiate_oauth",
       { provider, profileId },
     ),
-  vaultCompleteLogin: (provider: string, profileId: string, workspace: string, sessionName: string) =>
-    invoke<void>("vault_complete_login", { provider, profileId, workspace, sessionName }),
+  vaultCompleteLogin: (
+    provider: string,
+    profileId: string,
+    workspace: string,
+    sessionName: string,
+  ) => invoke<void>("vault_complete_login", { provider, profileId, workspace, sessionName }),
   // Agent-only maps (the backend probes claude/codex/antigravity; shell has no
   // version or key to report). The backend ALWAYS emits exactly these three
   // AgentCli keys (lifecycle::agent_key_status / docker::agent_versions build a

@@ -34,13 +34,26 @@ export function ActionBar() {
         borderTop: "1px solid var(--bd-soft)",
       }}
     >
-      <PaneAddBtn kind="files" kbd="⌘E" active={filesOpen} onClick={() => setFiles(!filesOpen)} />
-      <PaneAddBtn kind="shell" kbd="⌘⇧B" active={shellOpen} onClick={() => setShell(!shellOpen)} />
+      <PaneAddBtn
+        kind="files"
+        kbd="⌘E"
+        active={filesOpen}
+        onClick={() => setFiles(!filesOpen)}
+        showLabel
+      />
+      <PaneAddBtn
+        kind="shell"
+        kbd="⌘⇧B"
+        active={shellOpen}
+        onClick={() => setShell(!shellOpen)}
+        showLabel
+      />
       <PaneAddBtn
         kind="diff"
         kbd="⌘D"
         active={diffOpen}
         onClick={() => setDiff(diffOpen ? null : "")}
+        showLabel
       />
 
       <span style={{ flex: 1 }} />

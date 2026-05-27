@@ -18,14 +18,9 @@
  * the spawn dialog.
  */
 import { Segmented } from "@/app/components/primitives/Segmented";
+import { StatusDot } from "@/app/components/primitives/StatusDot";
 import { Ico } from "@/app/components/primitives/icons";
-import {
-  AccountCard,
-  AgentCard,
-  FormRow,
-  RepositoryPicker,
-  SharedRuntimePanel,
-} from "@/app/components/spawn-form";
+import { AccountCard, AgentCard, FormRow, RepositoryPicker } from "@/app/components/spawn-form";
 import {
   AUTO_ACCOUNT,
   HOST_ACCOUNT,
@@ -65,13 +60,15 @@ export function NewWorkspace() {
   const [agent, setAgentRaw] = useState<Cli>(defaultAgent);
   const [mode, setMode] = useState<Mode>("standard");
   const [accountChoice, setAccountChoice] = useState<string>(AUTO_ACCOUNT);
-  const [prompt, setPrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const savedWorkspaceIdRef = useRef<string | null>(null);
 
   const defaultDir = workspaceInfo?.effective ?? null;
   const [repoDir, setRepoDir] = useState<string | null>(null);
+  const [extraDirs, setExtraDirs] = useState<string[]>([]);
+  const [cpus, setCpus] = useState(2);
+  const [memGiB, setMemGiB] = useState(4);
   const dir = repoDir ?? defaultDir;
 
   useEffect(() => {
@@ -89,13 +86,13 @@ export function NewWorkspace() {
     setAccountChoice(AUTO_ACCOUNT);
   };
   const modes = modesFor(agent);
-  const { agentAccounts, defaultKey, effectiveAccountChoice, selectedAccount } =
-    agentAccountState(agent, accountProfiles, keyStatus, accountChoice);
+  const { selectedAccount } = agentAccountState(agent, accountProfiles, keyStatus, accountChoice);
 
   useEffect(() => {
     void loadAccountProfiles();
   }, [loadAccountProfiles]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally clears error when ANY input changes.
   useEffect(() => {
     setLaunchError(null);
   }, [agent, mode, accountChoice, dir]);
@@ -120,7 +117,7 @@ export function NewWorkspace() {
       const id = savedWorkspaceIdRef.current ?? (await saveWorkspace(title, dir));
       savedWorkspaceIdRef.current = id;
       await openSavedWorkspace(id); // marks lastOpened + ensures the mount points here
-      await newPlate(agent, mode, undefined, prompt.trim() || undefined, selectedAccount, {
+      await newPlate(agent, mode, undefined, undefined, selectedAccount, {
         title,
         dir,
         savedWorkspaceId: id,
@@ -185,7 +182,7 @@ export function NewWorkspace() {
           transform: "translate(-50%, -50%)",
           width: "52rem",
           maxWidth: "calc(100vw - 48px)",
-          maxHeight: "calc(100% - 56px)",
+          height: "min(38rem, calc(100vh - 56px))",
           background: "var(--bg-2)",
           border: "1px solid var(--bd-strong)",
           borderRadius: 14,
@@ -238,19 +235,22 @@ export function NewWorkspace() {
         {/* body */}
         <div style={{ padding: "18px", overflow: "auto", flex: 1 }}>
           {step === 1 && (
-            <FormRow label="Repository">
-              <RepositoryPicker value={dir} onChange={setRepoDir} />
-              <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 8 }}>
-                The host folder bound at /workspace. Agents in this workspace read and write here.
-              </div>
-            </FormRow>
+            <RepoStep
+              dir={dir}
+              setRepoDir={setRepoDir}
+              extraDirs={extraDirs}
+              setExtraDirs={setExtraDirs}
+            />
           )}
 
           {step === 2 && (
             <>
-              <FormRow label="Container">
-                <SharedRuntimePanel />
-              </FormRow>
+              <ContainerResourceStep
+                cpus={cpus}
+                setCpus={setCpus}
+                memGiB={memGiB}
+                setMemGiB={setMemGiB}
+              />
               <FormRow label="Base image">
                 <BaseImagePanel />
               </FormRow>
@@ -270,13 +270,14 @@ export function NewWorkspace() {
                   spellCheck={false}
                   // biome-ignore lint/a11y/noAutofocus: first field of the final step
                   autoFocus
+                  className="mono"
                   style={{
                     width: "100%",
                     background: "var(--bg-0)",
                     border: "1px solid var(--bd)",
                     borderRadius: 8,
-                    padding: "9px 12px",
-                    fontSize: 13,
+                    padding: "10px 14px",
+                    fontSize: 14,
                     color: "var(--fg-0)",
                     outline: "none",
                     boxSizing: "border-box",
@@ -285,89 +286,72 @@ export function NewWorkspace() {
               </FormRow>
 
               <FormRow label="First agent">
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                  {CLIS.map((c) => (
-                    <AgentCard
-                      key={c.id}
-                      agent={c.id}
-                      selected={agent === c.id}
-                      onSelect={() => setAgent(c.id)}
-                    />
-                  ))}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <div className="lbl" style={{ marginBottom: 6 }}>
+                      Agent
+                    </div>
+                    <select
+                      value={agent}
+                      onChange={(e) => setAgent(e.target.value as Cli)}
+                      className="mono"
+                      style={{
+                        width: "100%",
+                        padding: "9px 12px",
+                        borderRadius: 8,
+                        border: "1px solid var(--bd)",
+                        background: "var(--bg-0)",
+                        color: "var(--fg-0)",
+                        fontSize: 13,
+                        outline: "none",
+                        cursor: "pointer",
+                        appearance: "none",
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236a6f79' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: "right 12px center",
+                        paddingRight: 32,
+                      }}
+                    >
+                      {CLIS.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <div className="lbl" style={{ marginBottom: 6 }}>
+                      Mode
+                    </div>
+                    <select
+                      value={mode}
+                      onChange={(e) => setMode(e.target.value as Mode)}
+                      className="mono"
+                      style={{
+                        width: "100%",
+                        padding: "9px 12px",
+                        borderRadius: 8,
+                        border: "1px solid var(--bd)",
+                        background: "var(--bg-0)",
+                        color: "var(--fg-0)",
+                        fontSize: 13,
+                        outline: "none",
+                        cursor: "pointer",
+                        appearance: "none",
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236a6f79' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: "right 12px center",
+                        paddingRight: 32,
+                      }}
+                    >
+                      {modes.map((m) => (
+                        <option key={m} value={m}>
+                          {MODE_BY_ID[m].label} — {MODE_BY_ID[m].hint}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </FormRow>
-
-              <FormRow label="Mode">
-                <Segmented
-                  value={mode}
-                  onChange={setMode}
-                  options={modes.map((m) => ({ key: m, label: MODE_BY_ID[m].label }))}
-                />
-                <div
-                  className="mono"
-                  style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 6 }}
-                >
-                  {MODE_BY_ID[mode].hint}
-                </div>
-              </FormRow>
-
-              <FormRow label="Account">
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                  <AccountCard
-                    title="Host environment"
-                    sub={
-                      defaultKey?.present
-                        ? `${defaultKey.varName} · present`
-                        : defaultKey
-                          ? "no key on host"
-                          : "default credential"
-                    }
-                    present={defaultKey?.present ?? true}
-                    selected={effectiveAccountChoice === HOST_ACCOUNT}
-                    onSelect={() => setAccountChoice(HOST_ACCOUNT)}
-                  />
-                  {agentAccounts.map((p) => (
-                    <AccountCard
-                      key={p.id}
-                      title={p.label}
-                      sub={accountProfileSubtitle(p)}
-                      present={p.present}
-                      disabled={!p.present}
-                      selected={effectiveAccountChoice === p.id}
-                      onSelect={() => setAccountChoice(p.id)}
-                    />
-                  ))}
-                </div>
-                <div
-                  className="mono"
-                  style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 6 }}
-                >
-                  Used for the first agent in this workspace. Manage saved accounts in Settings.
-                </div>
-              </FormRow>
-
-              <FormRow label="Initial prompt" optional>
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Describe the first task for the agent…"
-                  spellCheck={false}
-                  style={{
-                    width: "100%",
-                    resize: "vertical",
-                    background: "var(--bg-0)",
-                    border: "1px solid var(--bd)",
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                    minHeight: 64,
-                    fontFamily: "var(--mono)",
-                    fontSize: 12,
-                    color: "var(--fg-1)",
-                    lineHeight: 1.5,
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                />
               </FormRow>
             </>
           )}
@@ -394,10 +378,10 @@ export function NewWorkspace() {
               : saving
                 ? "Saving workspace and launching the first agent..."
                 : step === 3
-              ? running
-                ? "Saves the workspace and spawns the first agent"
-                : "Saves the workspace — start the runtime to launch agents"
-              : `Step ${step} of ${STEPS.length}`}
+                  ? running
+                    ? "Saves the workspace and spawns the first agent"
+                    : "Saves the workspace — start the runtime to launch agents"
+                  : `Step ${step} of ${STEPS.length}`}
           </span>
           <span style={{ flex: 1 }} />
           <Button
@@ -408,7 +392,12 @@ export function NewWorkspace() {
           >
             {step > 1 ? "Back" : "Cancel"}
           </Button>
-          <Button size="sm" style={{ padding: "6px 14px" }} disabled={!dir || saving} onClick={next}>
+          <Button
+            size="sm"
+            style={{ padding: "6px 14px" }}
+            disabled={!dir || saving}
+            onClick={next}
+          >
             {saving ? "Launching..." : step < 3 ? "Continue" : "Save & launch"}
             <span className="kbd" style={{ marginLeft: 6 }}>
               {step < 3 ? "⏎" : "⌘⏎"}
@@ -575,5 +564,345 @@ function Bar({ done }: { done?: boolean }) {
         borderRadius: 1,
       }}
     />
+  );
+}
+
+function ResourceSlider({
+  label,
+  unit,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  unit: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div
+      style={{
+        padding: "14px 16px",
+        background: "var(--bg-1)",
+        border: "1px solid var(--bd-soft)",
+        borderRadius: 10,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{label}</span>
+        <span style={{ flex: 1 }} />
+        <span className="mono tnum" style={{ fontSize: 20, fontWeight: 500, color: "var(--fg-0)" }}>
+          {value}
+        </span>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+          {unit}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="ch-slider"
+        style={{ width: "100%" }}
+      />
+      <div
+        className="mono"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 10,
+          color: "var(--fg-3)",
+          marginTop: 4,
+        }}
+      >
+        <span>{min}</span>
+        <span>{max}</span>
+      </div>
+    </div>
+  );
+}
+
+function ContainerResourceStep({
+  cpus,
+  setCpus,
+  memGiB,
+  setMemGiB,
+}: {
+  cpus: number;
+  setCpus: (n: number) => void;
+  memGiB: number;
+  setMemGiB: (n: number) => void;
+}) {
+  return (
+    <FormRow label="Container resources">
+      <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)", marginBottom: 12 }}>
+        local Docker resources for this workspace
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <ResourceSlider label="CPU" unit="vCPU" value={cpus} min={1} max={8} onChange={setCpus} />
+        <ResourceSlider
+          label="Memory"
+          unit="GiB"
+          value={memGiB}
+          min={1}
+          max={16}
+          onChange={setMemGiB}
+        />
+      </div>
+    </FormRow>
+  );
+}
+
+function RepoStep({
+  dir,
+  setRepoDir,
+  extraDirs,
+  setExtraDirs,
+}: {
+  dir: string | null;
+  setRepoDir: (d: string | null) => void;
+  extraDirs: string[];
+  setExtraDirs: (d: string[]) => void;
+}) {
+  const githubStatus = useStore((s) => s.githubStatus);
+  const githubRepos = useStore((s) => s.githubRepos);
+  const loadGithubRepos = useStore((s) => s.loadGithubRepos);
+  const connected = githubStatus?.connected ?? false;
+  const [localPath, setLocalPath] = useState("");
+
+  useEffect(() => {
+    if (connected) void loadGithubRepos();
+  }, [connected, loadGithubRepos]);
+
+  const allDirs = dir ? [dir, ...extraDirs] : [];
+  const addDir = (d: string) => {
+    if (!d || allDirs.includes(d)) return;
+    if (!dir) setRepoDir(d);
+    else setExtraDirs([...extraDirs, d]);
+  };
+  const removeDir = (d: string) => {
+    if (d === dir) {
+      const next = extraDirs[0] ?? null;
+      setRepoDir(next);
+      setExtraDirs(extraDirs.slice(1));
+    } else {
+      setExtraDirs(extraDirs.filter((x) => x !== d));
+    }
+  };
+  const browseLocal = async () => {
+    const path = await ipc.pickDirectory().catch(() => null);
+    if (path) {
+      setLocalPath(path);
+      addDir(path);
+    }
+  };
+  const submitLocal = () => {
+    const p = localPath.trim();
+    if (p) addDir(p);
+    setLocalPath("");
+  };
+
+  return (
+    <>
+      {/* selected repos — fixed header, scrollable list */}
+      {allDirs.length > 0 && (
+        <FormRow label={`Selected · ${allDirs.length}`}>
+          <div
+            className="scroll"
+            style={{
+              maxHeight: 140,
+              overflow: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
+          >
+            {allDirs.map((d) => {
+              const basename = d.split("/").filter(Boolean).pop() ?? d;
+              const isGh = d.startsWith("/tmp/codehub-gh-");
+              return (
+                <div
+                  key={d}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "7px 10px",
+                    background: "var(--bg-2)",
+                    border: "1px solid var(--bd-soft)",
+                    borderRadius: 6,
+                    fontFamily: "var(--mono)",
+                    fontSize: 11,
+                    color: "var(--fg-1)",
+                    flexShrink: 0,
+                  }}
+                >
+                  {isGh ? Ico.search : Ico.branch}
+                  <span
+                    style={{
+                      flex: 1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {basename}
+                  </span>
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 9,
+                      padding: "1px 5px",
+                      borderRadius: 3,
+                      background: "var(--bg-3)",
+                      border: "1px solid var(--bd-soft)",
+                      color: "var(--fg-3)",
+                    }}
+                  >
+                    {isGh ? "github" : "local"}
+                  </span>
+                  <span style={{ color: "var(--fg-3)", flexShrink: 0 }}>
+                    → /workspace/{basename}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeDir(d)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--fg-3)",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      padding: 2,
+                    }}
+                  >
+                    {Ico.close}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </FormRow>
+      )}
+
+      {/* local folder — input + browse button */}
+      <FormRow label="Local folder">
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            className="mono"
+            value={localPath}
+            onChange={(e) => setLocalPath(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submitLocal();
+              }
+            }}
+            placeholder="/path/to/project"
+            spellCheck={false}
+            style={{
+              flex: 1,
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid var(--bd)",
+              background: "var(--bg-0)",
+              color: "var(--fg-0)",
+              fontSize: 12,
+              outline: "none",
+            }}
+          />
+          <Button variant="outline" size="sm" onClick={() => void browseLocal()}>
+            {Ico.files} Browse…
+          </Button>
+          {localPath.trim() && (
+            <Button size="sm" onClick={submitLocal}>
+              Add
+            </Button>
+          )}
+        </div>
+      </FormRow>
+
+      {/* GitHub repos */}
+      <FormRow label="GitHub">
+        {!connected ? (
+          <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "6px 0" }}>
+            Not connected. Set up GitHub in Settings → Integrations to browse repos here.
+          </div>
+        ) : githubRepos.length === 0 ? (
+          <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "6px 0" }}>
+            No repos found for this token.
+          </div>
+        ) : (
+          <div
+            className="scroll"
+            style={{
+              maxHeight: 160,
+              overflow: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
+          >
+            {githubRepos.map((repo) => {
+              const [owner, name] = repo.nameWithOwner.includes("/")
+                ? repo.nameWithOwner.split(/\/(.+)/)
+                : ["", repo.nameWithOwner];
+              const ghDir = `/tmp/codehub-gh-${name}`;
+              const already = allDirs.includes(ghDir);
+              return (
+                <button
+                  type="button"
+                  key={repo.nameWithOwner}
+                  disabled={already}
+                  onClick={() => addDir(ghDir)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 12px",
+                    background: already ? "var(--bg-3)" : "var(--bg-2)",
+                    border: `1px solid ${already ? "var(--bd)" : "var(--bd-soft)"}`,
+                    borderRadius: 6,
+                    cursor: already ? "default" : "pointer",
+                    opacity: already ? 0.6 : 1,
+                    color: "inherit",
+                    font: "inherit",
+                    textAlign: "left",
+                    width: "100%",
+                    flexShrink: 0,
+                  }}
+                >
+                  {Ico.files}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                      {owner ? `${owner}/` : ""}
+                    </span>
+                    <span
+                      className="mono"
+                      style={{ fontSize: 12, color: "var(--fg-0)", fontWeight: 500 }}
+                    >
+                      {name}
+                    </span>
+                  </div>
+                  <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                    {already ? "added" : "add"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </FormRow>
+
+      <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", padding: "0 4px" }}>
+        Each repo mounts at /workspace/&#123;repo-name&#125; inside the container.
+      </div>
+    </>
   );
 }

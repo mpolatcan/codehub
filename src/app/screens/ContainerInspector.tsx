@@ -68,6 +68,9 @@ export function ContainerInspector() {
   const dockerInfo = useStore((s) => s.dockerInfo);
   const keyStatus = useStore((s) => s.keyStatus);
   const sessionMeta = useStore((s) => s.sessionMeta);
+  const sessionActivity = useStore((s) => s.sessionActivity);
+  const pendingPrompts = useStore((s) => s.pendingPrompts);
+  const pendingSet = useMemo(() => new Set(pendingPrompts.map((p) => p.session)), [pendingPrompts]);
   const workspaces = useStore((s) => s.workspaces);
   const focusSession = useStore((s) => s.focusSession);
   const setView = useStore((s) => s.setView);
@@ -326,32 +329,47 @@ export function ContainerInspector() {
     openLauncher("inspector-attach");
   };
 
-  // Lifecycle routing: hits the selected workspace's container by key (the ~3s
-  // fleet poll reflects the new state). Refetch the fleet immediately for snappy
-  // feedback instead of waiting for the ~3s poll.
+  // Per-container busy tracking so lifecycle actions only disable the affected container.
+  const [busyKeys, setBusyKeys] = useState<Set<string>>(new Set());
+  const lifecycleBusy = selected ? busyKeys.has(selected) : false;
   const loadFleet = () =>
     ipc
       .listWorkspaceContainers()
       .then(setFleet)
       .catch(() => setFleet([]));
-  const doStart = () => {
-    if (!selected) return;
-    void ipc.containerStart(selected).then(loadFleet);
+  const lifecycle = (key: string, action: () => Promise<unknown>) => {
+    if (busyKeys.has(key)) return;
+    setBusyKeys((s) => new Set(s).add(key));
+    void action()
+      .then(loadFleet)
+      .finally(() =>
+        setBusyKeys((s) => {
+          const n = new Set(s);
+          n.delete(key);
+          return n;
+        }),
+      );
   };
-  const doStop = () => {
-    if (!selected) return;
-    void ipc.containerStop(selected).then(loadFleet);
-  };
-  const doRestart = () => {
-    if (!selected) return;
-    void ipc.containerRestart(selected).then(loadFleet);
-  };
+  const doStart = () => selected && lifecycle(selected, () => ipc.containerStart(selected));
+  const doStop = () => selected && lifecycle(selected, () => ipc.containerStop(selected));
+  const doRestart = () => selected && lifecycle(selected, () => ipc.containerRestart(selected));
   const doRemove = () => {
-    if (!selected) return;
-    void ipc.removeWorkspaceContainer(selected).then(() => {
-      selectContainer(fleet.find((c) => c.key !== selected)?.key ?? null);
-      void loadFleet();
-    });
+    if (!selected || busyKeys.has(selected)) return;
+    const key = selected;
+    setBusyKeys((s) => new Set(s).add(key));
+    void ipc
+      .removeWorkspaceContainer(key)
+      .then(() => {
+        selectContainer(fleet.find((c) => c.key !== key)?.key ?? null);
+        return loadFleet();
+      })
+      .finally(() =>
+        setBusyKeys((s) => {
+          const n = new Set(s);
+          n.delete(key);
+          return n;
+        }),
+      );
   };
 
   // Fleet counts for the header line.
@@ -556,6 +574,7 @@ export function ContainerInspector() {
               state={state}
               sessionCount={attachedSessions.length}
               kind="workspace"
+              busy={lifecycleBusy}
               onShell={running && selectedAppWorkspace ? openShell : undefined}
               onStart={doStart}
               onStop={doStop}
@@ -600,10 +619,7 @@ export function ContainerInspector() {
             />
           </div>
 
-          {/* runtime image identity — real `docker image inspect` */}
-          <ImageCard image={imageInfo} />
-
-          {/* attached sessions + mounts */}
+          {/* attached agents + mounts (side by side) */}
           <div
             style={{
               display: "grid",
@@ -632,8 +648,20 @@ export function ContainerInspector() {
                 </div>
               ) : (
                 sessions.map(([session, meta]) => {
+                  const act = sessionActivity[session];
+                  const awaiting = pendingSet.has(session);
                   const ws = workspaces.find((w) => w.id === meta.workspaceId);
                   const badge = MODE_BY_ID[meta.mode].badge;
+                  const stLabel = awaiting
+                    ? "awaiting"
+                    : act?.state === "working"
+                      ? "working"
+                      : "idle";
+                  const stColor = awaiting
+                    ? "var(--wait)"
+                    : act?.state === "working"
+                      ? "var(--live)"
+                      : "var(--fg-3)";
                   return (
                     <div
                       key={session}
@@ -647,15 +675,20 @@ export function ContainerInspector() {
                         marginBottom: 4,
                       }}
                     >
+                      <StatusDot
+                        status={awaiting ? "wait" : act?.state === "working" ? "live" : "idle"}
+                        pulse={act?.state === "working"}
+                      />
                       <AgentGlyph agent={meta.cli} size={13} color={`var(--a-${meta.cli})`} />
                       <span className="mono" style={{ fontSize: 12, color: "var(--fg-0)" }}>
                         {meta.alias}
                       </span>
                       {badge && <span className={`mode-badge badge-${meta.mode}`}>{badge}</span>}
                       <span style={{ flex: 1 }} />
-                      <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
+                      <span className="mono" style={{ fontSize: 10.5, color: stColor }}>
                         {SPEC_BY_CLI[meta.cli].label}
                         {ws && ` · tab ${ws.plate}`}
+                        {` · ${stLabel}`}
                       </span>
                       <IconBtn title="Open in Hub" onClick={() => open(session)}>
                         {Ico.arrowR}
@@ -664,10 +697,33 @@ export function ContainerInspector() {
                   );
                 })
               )}
+              {/* image info inline (design layout) */}
+              {imageInfo && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 0 0",
+                    marginTop: 6,
+                    borderTop: "1px solid var(--bd-soft)",
+                    fontFamily: "var(--mono)",
+                    fontSize: 11,
+                    color: "var(--fg-2)",
+                  }}
+                >
+                  <span className="lbl" style={{ letterSpacing: "0.08em" }}>
+                    Image
+                  </span>
+                  <span style={{ color: "var(--fg-1)" }}>{imageInfo.tag ?? "—"}</span>
+                  <span style={{ flex: 1 }} />
+                  {imageInfo.size != null && (
+                    <span style={{ color: "var(--fg-3)" }}>{fmtBytes(imageInfo.size)}</span>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* minWidth:0 so a long host path can ellipsize instead of widening
-                the grid track past the card. */}
             <div className="ch-card" style={{ padding: 14, minWidth: 0 }}>
               <div className="lbl" style={{ marginBottom: 8 }}>
                 Mounts{mounts && mounts.length > 0 && ` · ${mounts.length}`}
@@ -694,6 +750,9 @@ export function ContainerInspector() {
               </p>
             </div>
           </div>
+
+          {/* runtime image detail — real `docker image inspect` */}
+          <ImageCard image={imageInfo} />
 
           {/* forwarded credentials — presence only, never values */}
           <div className="ch-card" style={{ padding: 0, marginBottom: 18 }}>
@@ -771,6 +830,19 @@ export function ContainerInspector() {
               {logs && logs.length > 0 && (
                 <span className="mono tnum" style={{ fontSize: 10, color: "var(--fg-3)" }}>
                   last {logs.length} lines
+                </span>
+              )}
+              {running && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    fontSize: 11,
+                    color: "var(--live)",
+                  }}
+                >
+                  <StatusDot status="live" pulse /> Live
                 </span>
               )}
             </div>
@@ -889,7 +961,7 @@ function GaugeCard({
       <div className="lbl" style={{ fontSize: 10 }}>
         {label}
       </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap" }}>
         <span
           className="mono tnum"
           style={{ fontSize: 18, color: value ? "var(--fg-0)" : "var(--fg-3)", fontWeight: 500 }}
@@ -1174,6 +1246,7 @@ function RuntimeControls({
   state,
   sessionCount,
   kind = "workspace",
+  busy,
   onShell,
   onStart,
   onStop,
@@ -1182,13 +1255,12 @@ function RuntimeControls({
 }: {
   state: ContainerState;
   sessionCount: number;
-  // The container kind, for the confirm copy.
   kind?: string;
+  busy?: boolean;
   onShell?: () => void;
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
-  // Remove (prune) — offered while stopped.
   onRemove?: () => void;
 }) {
   const sessionsClause =
@@ -1211,10 +1283,10 @@ function RuntimeControls({
       onRemove();
   };
 
-  if (state === "starting") {
+  if (state === "starting" || busy) {
     return (
       <Button size="sm" variant="outline" disabled>
-        Starting…
+        {busy ? "Working…" : "Starting…"}
       </Button>
     );
   }
@@ -1323,6 +1395,19 @@ function ContainerCard({
         background: active ? "var(--bg-3)" : "var(--bg-1)",
         border: `1px solid ${active ? "var(--bd-strong)" : "var(--bd-soft)"}`,
         opacity: dim ? 0.62 : 1,
+        transition: "background .12s, border-color .12s, box-shadow .12s",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.currentTarget.style.background = "var(--bg-2)";
+          e.currentTarget.style.borderColor = "var(--bd)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          e.currentTarget.style.background = "var(--bg-1)";
+          e.currentTarget.style.borderColor = "var(--bd-soft)";
+        }
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>

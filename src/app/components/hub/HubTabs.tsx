@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Ico } from "../../components/primitives/icons";
-import { useLauncher } from "../../lib/launcher";
 import { useOverlay } from "../../lib/overlay";
-import { useStore } from "../../lib/store";
+import { confirmCloseWorkspace, useStore } from "../../lib/store";
 import { workspaceLeaves, workspaceTitle } from "../../lib/tree";
 
 // Workspace tab strip, ported from design/screens/main-hub-a.jsx. Each tab is a
@@ -11,8 +10,6 @@ import { workspaceLeaves, workspaceTitle } from "../../lib/tree";
 // color dot, name/repo stack, one state-count chip, close button. The repo label
 // is intentionally conservative because CodeHub has one mounted /workspace, not
 // the design mock's multi-repo model.
-const NEW_KEY = "tabbar";
-
 function dirName(path: string | undefined): string | null {
   if (!path) return null;
   return path.split("/").filter(Boolean).pop() ?? null;
@@ -24,8 +21,8 @@ export function HubTabs() {
   const git = useStore((s) => s.gitStatus);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const closeWorkspace = useStore((s) => s.closeWorkspace);
-  const openLaunch = useLauncher((s) => s.open);
   const setPalette = useOverlay((s) => s.setPalette);
+  const setNewWorkspace = useOverlay((s) => s.setNewWorkspace);
   // Awaiting-input signal for the bell dot: any session with a pending prompt
   // (← pending_prompts / live agent-event, §7). Real for Claude/Codex; empty
   // (no dot) for Antigravity and until the BE track lands.
@@ -176,7 +173,8 @@ export function HubTabs() {
                 style={{ width: 18, height: 18, marginLeft: 4 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  void closeWorkspace(ws.id);
+                  const result = confirmCloseWorkspace(ws.id);
+                  if (result) void closeWorkspace(ws.id);
                 }}
               >
                 {Ico.close}
@@ -185,11 +183,11 @@ export function HubTabs() {
           );
         })}
 
-        {/* new workspace tab — opens the shared spawn modal targeted at a fresh tab */}
+        {/* new workspace — opens the workspace wizard */}
         <button
           type="button"
-          title="New workspace tab (⌘⇧T)"
-          onClick={() => openLaunch(NEW_KEY)}
+          title="New workspace (⌘⇧N)"
+          onClick={() => setNewWorkspace(true)}
           style={{
             alignSelf: "center",
             marginLeft: 6,

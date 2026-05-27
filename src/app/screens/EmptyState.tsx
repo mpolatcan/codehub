@@ -20,22 +20,21 @@ import { StatusDot } from "@/app/components/primitives/StatusDot";
 import { Ico } from "@/app/components/primitives/icons";
 import { CLIS } from "@/app/lib/catalog";
 import type { AgentCli, Cli } from "@/app/lib/ipc";
-import { useStore } from "@/app/lib/store";
+import { useOverlay } from "@/app/lib/overlay";
+import { type HubView, useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
 
 export interface EmptyStateProps {
   onNew?: (cli?: Cli) => void;
 }
 
-// Static per-agent prose; version + key presence come from the store. Describes
-// each agent's character — no fabricated metrics, just what the agent is good at.
 const AGENT_DESC: Record<AgentCli, string> = {
   claude:
-    "Long-context refactors and planned edits. Reads deeply across a codebase before it touches anything, and explains its reasoning as it goes.",
+    "Long-context refactors and planned edits. Reads deeply across a codebase before it touches anything.",
   codex:
-    "Snappy, iterative coding with safe shell tools. Best for focused diffs and quick turnarounds where you stay in the loop.",
+    "Snappy, iterative coding with safe shell tools. Best for focused diffs and quick turnarounds.",
   antigravity:
-    "Multi-step automations and longer-running analyses. Built for profiling and tasks that span many tool calls.",
+    "Multi-step automations and longer-running analyses. Built for profiling and multi-tool tasks.",
 };
 
 export function EmptyHero({ onNew }: EmptyStateProps) {
@@ -44,17 +43,19 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
   const agentVersions = useStore((s) => s.agentVersions);
   const status = useStore((s) => s.status);
   const startRuntime = useStore((s) => s.startRuntime);
+  const setView = useStore((s) => s.setView);
+  const setSettingsSection = useStore((s) => s.setSettingsSection);
+  const openWizard = useOverlay((s) => s.setNewWorkspace);
+  const goToKeys = () => {
+    setSettingsSection("agents");
+    setView("settings");
+  };
 
   const daemonUp = dockerInfo?.reachable ?? status?.state === "running";
-  // The runtime auto-starts at launch, but if it's stopped/missing afterwards
-  // (manual `docker stop`, a stop from the Containers screen) offer to bring it
-  // back in-app. "starting" disables the button while it spins up. The daemon
-  // itself being down is a separate, host-level fix (start Docker Desktop).
   const state = status?.state;
   const canStart = daemonUp && (state === "stopped" || state === "missing");
   const starting = state === "starting";
 
-  // Setup checklist progress — count of completed steps out of 4 (daemon + 3 keys).
   const setupDone =
     (daemonUp ? 1 : 0) +
     (keyStatus?.claude?.present ? 1 : 0) +
@@ -73,7 +74,6 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
         color: "var(--fg-1)",
       }}
     >
-      {/* subtle ambient backdrop — radial soft glow only (design empty-state.jsx) */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
         <div
           style={{
@@ -85,10 +85,11 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
       </div>
 
       <div
+        className="scroll"
         style={{
           flex: 1,
           overflow: "auto",
-          padding: "60px 60px 30px",
+          padding: "36px 48px 30px",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -96,19 +97,20 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
         }}
       >
         <div style={{ maxWidth: 880, width: "100%" }}>
-          <div style={{ textAlign: "center", marginBottom: 36 }}>
+          {/* hero header */}
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 8,
-                padding: "5px 10px",
+                padding: "4px 10px",
                 border: "1px solid var(--bd)",
                 borderRadius: 999,
                 fontSize: 11,
                 color: "var(--fg-2)",
                 fontFamily: "var(--mono)",
-                marginBottom: 22,
+                marginBottom: 18,
               }}
             >
               <span
@@ -127,11 +129,11 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
             <h1
               style={{
                 margin: 0,
-                fontSize: 36,
+                fontSize: 30,
                 fontWeight: 600,
                 letterSpacing: "-0.02em",
                 color: "var(--fg-0)",
-                lineHeight: 1.12,
+                lineHeight: 1.15,
               }}
             >
               Run coding agents,
@@ -140,17 +142,24 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
             </h1>
             <p
               style={{
-                margin: "14px auto 0",
-                maxWidth: 520,
-                fontSize: 14,
+                margin: "10px auto 0",
+                maxWidth: 480,
+                fontSize: 13,
                 color: "var(--fg-2)",
                 lineHeight: 1.55,
               }}
             >
-              Each session spawns a fresh tmux in a per-workspace container — your repo is mounted,
-              your API keys are forwarded from the host environment, and you can compare agents in
-              split panes.
+              Each session spawns a fresh tmux in a per-workspace container — your repo is mounted
+              and your API keys are forwarded from the host.
             </p>
+            <div style={{ marginTop: 16 }}>
+              <Button onClick={() => openWizard(true)}>
+                {Ico.plus}New workspace
+                <span className="kbd" style={{ marginLeft: 6 }}>
+                  ⌘⇧N
+                </span>
+              </Button>
+            </div>
           </div>
 
           {(canStart || starting) && (
@@ -161,7 +170,7 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
                 alignItems: "center",
                 gap: 14,
                 padding: "12px 16px",
-                marginBottom: 20,
+                marginBottom: 16,
                 borderColor: "color-mix(in oklab, var(--wait) 35%, var(--bd))",
                 background: "color-mix(in oklab, var(--wait) 5%, var(--bg-2))",
               }}
@@ -182,29 +191,9 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
             </div>
           )}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: 12,
-              marginBottom: 28,
-            }}
-          >
-            {CLIS.map((c) => (
-              <BigAgentCard
-                key={c.id}
-                agent={c.id}
-                name={c.label}
-                desc={AGENT_DESC[c.id]}
-                version={agentVersions?.[c.id]?.version ?? "—"}
-                keySet={keyStatus?.[c.id]?.present ?? false}
-                onStart={() => onNew?.(c.id)}
-              />
-            ))}
-          </div>
-
-          <div className="ch-card" style={{ padding: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          {/* setup checklist — above agent cards for first-run discoverability */}
+          <div className="ch-card" style={{ padding: 16, marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <span className="lbl">Setup · {setupDone} of 4</span>
               <div
                 style={{
@@ -240,6 +229,7 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
                   : "Set CLAUDE_CODE_OAUTH_TOKEN in your host environment."
               }
               action={keyStatus?.claude?.present ? undefined : "How to"}
+              onAction={goToKeys}
             />
             <ChecklistItem
               done={keyStatus?.codex?.present ?? false}
@@ -250,6 +240,7 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
                   : "Set OPENAI_API_KEY in your host environment."
               }
               action={keyStatus?.codex?.present ? undefined : "How to"}
+              onAction={goToKeys}
             />
             <ChecklistItem
               done={keyStatus?.antigravity?.present ?? false}
@@ -260,17 +251,33 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
                   : "Set GOOGLE_API_KEY to enable the Antigravity agent."
               }
               action={keyStatus?.antigravity?.present ? undefined : "How to"}
+              onAction={goToKeys}
             />
           </div>
 
-          <div style={{ textAlign: "center", marginTop: 28, fontSize: 12, color: "var(--fg-2)" }}>
-            <span>
-              Press <span className="kbd">⌘</span>
-              <span className="kbd" style={{ marginLeft: 2 }}>
-                N
-              </span>{" "}
-              to start your first agent.
-            </span>
+          {/* agent cards */}
+          <div className="lbl" style={{ marginBottom: 10 }}>
+            Agents
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 10,
+              marginBottom: 20,
+            }}
+          >
+            {CLIS.map((c) => (
+              <AgentCard
+                key={c.id}
+                agent={c.id}
+                name={c.label}
+                desc={AGENT_DESC[c.id]}
+                version={agentVersions?.[c.id]?.version ?? "—"}
+                keySet={keyStatus?.[c.id]?.present ?? false}
+                onStart={() => onNew?.(c.id)}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -278,7 +285,6 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
   );
 }
 
-// Standalone variant (dev preview) — hero plus a self-contained aside.
 export function EmptyState({ onNew }: EmptyStateProps) {
   return (
     <div style={{ flex: 1, display: "flex", minHeight: 0, height: "100%", color: "var(--fg-1)" }}>
@@ -333,7 +339,7 @@ export function EmptyState({ onNew }: EmptyStateProps) {
   );
 }
 
-function BigAgentCard({
+function AgentCard({
   agent,
   name,
   desc,
@@ -350,48 +356,68 @@ function BigAgentCard({
 }) {
   const meta = AGENT_META[agent];
   return (
-    <div
+    <button
+      type="button"
+      className="ch-card-interactive"
+      disabled={!keySet}
+      onClick={keySet ? onStart : undefined}
       style={{
-        padding: 20,
-        borderRadius: 12,
+        padding: 16,
+        borderRadius: 10,
         background: "var(--bg-2)",
         border: "1px solid var(--bd)",
         display: "flex",
         flexDirection: "column",
-        gap: 10,
+        gap: 8,
         position: "relative",
-        minHeight: 200,
+        cursor: keySet ? "pointer" : "default",
+        color: "inherit",
+        font: "inherit",
+        textAlign: "left",
+        width: "100%",
       }}
     >
-      <div
-        style={{
-          width: 44,
-          height: 44,
-          borderRadius: 10,
-          background: `color-mix(in oklab, ${meta.accent} 16%, var(--bg-1))`,
-          border: `1px solid color-mix(in oklab, ${meta.accent} 35%, var(--bd))`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <span style={{ transform: "scale(1.6)" }}>
-          <AgentGlyph agent={agent} size={14} color={meta.accent} />
-        </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            background: `color-mix(in oklab, ${meta.accent} 16%, var(--bg-1))`,
+            border: `1px solid color-mix(in oklab, ${meta.accent} 35%, var(--bd))`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ transform: "scale(1.4)" }}>
+            <AgentGlyph agent={agent} size={14} color={meta.accent} />
+          </span>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--fg-0)" }}>{name}</span>
+            <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+              {version}
+            </span>
+          </div>
+        </div>
       </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg-0)" }}>{name}</span>
-        <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
-          {version}
-        </span>
-      </div>
-      <p style={{ margin: 0, fontSize: 12.5, color: "var(--fg-2)", lineHeight: 1.5 }}>{desc}</p>
-      <div style={{ flex: 1 }} />
+      <p style={{ margin: 0, fontSize: 12, color: "var(--fg-2)", lineHeight: 1.5 }}>{desc}</p>
       {keySet ? (
-        <Button variant="outline" size="sm" style={{ alignSelf: "flex-start" }} onClick={onStart}>
-          Start with {name}
-          <span style={{ marginLeft: 4 }}>{Ico.arrowR}</span>
-        </Button>
+        <div
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--pri)",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          Start with {name} {Ico.arrowR}
+        </div>
       ) : (
         <div
           style={{
@@ -399,13 +425,13 @@ function BigAgentCard({
             alignItems: "center",
             gap: 6,
             color: "var(--wait)",
-            fontSize: 11.5,
+            fontSize: 11,
           }}
         >
           <StatusDot status="wait" /> Add API key to enable
         </div>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -414,11 +440,13 @@ function ChecklistItem({
   label,
   sub,
   action,
+  onAction,
 }: {
   done?: boolean;
   label: string;
   sub: string;
   action?: string;
+  onAction?: () => void;
 }) {
   return (
     <div
@@ -426,7 +454,7 @@ function ChecklistItem({
         display: "flex",
         alignItems: "center",
         gap: 12,
-        padding: "8px 0",
+        padding: "7px 0",
         borderTop: "1px solid var(--bd-soft)",
       }}
     >
@@ -454,7 +482,7 @@ function ChecklistItem({
         </div>
       </div>
       {action && (
-        <Button variant="outline" size="xs">
+        <Button variant="outline" size="xs" onClick={onAction}>
           {action}
         </Button>
       )}

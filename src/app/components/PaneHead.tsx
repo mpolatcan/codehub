@@ -230,7 +230,7 @@ export function PaneHead({
             color: awaiting ? "var(--wait)" : working ? "var(--live)" : "var(--fg-3)",
           }}
         >
-          {awaiting ? "blocked" : working ? "active" : "idle"}
+          {awaiting ? "awaiting" : working ? "active" : "idle"}
         </span>
       </div>
     </div>

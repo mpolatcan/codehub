@@ -274,7 +274,17 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: 24 }}>
+      <div
+        className="scroll"
+        style={{
+          flex: 1,
+          overflow: "auto",
+          padding: 24,
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+        }}
+      >
         {/* TOP METRICS — auto-fit so the row reflows when narrow */}
         <div
           style={{
@@ -400,7 +410,7 @@ export function Dashboard() {
                     return (
                       <tr
                         key={session}
-                        className="rail-file"
+                        className="session-row"
                         style={{ borderBottom: "1px solid var(--bd-soft)", cursor: "pointer" }}
                         onClick={() => open(session)}
                       >
@@ -519,8 +529,11 @@ export function Dashboard() {
               <div
                 className="mono"
                 style={{
-                  padding: "18px 14px",
-                  textAlign: "center",
+                  flex: 1,
+                  padding: "24px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   fontSize: 11,
                   color: "var(--fg-3)",
                 }}
@@ -1064,7 +1077,7 @@ function Metric({
   const sparkColor = accentColor ?? "var(--fg-1)";
   return (
     <div
-      className="ch-card"
+      className="ch-card ch-card-interactive"
       style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6 }}
     >
       <div className="lbl">{label}</div>

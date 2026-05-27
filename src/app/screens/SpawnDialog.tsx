@@ -17,6 +17,7 @@
  */
 import { Segmented } from "@/app/components/primitives/Segmented";
 import { Tag } from "@/app/components/primitives/Tag";
+import { Ico } from "@/app/components/primitives/icons";
 import {
   AccountCard,
   AgentCard,
@@ -106,6 +107,7 @@ export function SpawnDialog({
   // surface behaviour); a group id → into that group of the active workspace;
   // NEW_GROUP → a fresh group in the active workspace.
   const [target, setTarget] = useState<string>("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const showGroups = !splitting && !!groups && groups.length > 0;
 
   const keyStatus = useStore((s) => s.keyStatus);
@@ -120,8 +122,12 @@ export function SpawnDialog({
     setAccountChoice(AUTO_ACCOUNT);
   };
   const modes = modesFor(agent);
-  const { agentAccounts, defaultKey, effectiveAccountChoice, selectedAccount } =
-    agentAccountState(agent, accountProfiles, keyStatus, accountChoice);
+  const { agentAccounts, defaultKey, effectiveAccountChoice, selectedAccount } = agentAccountState(
+    agent,
+    accountProfiles,
+    keyStatus,
+    accountChoice,
+  );
 
   useEffect(() => {
     void loadAccountProfiles();
@@ -222,51 +228,92 @@ export function SpawnDialog({
             </div>
           </FormRow>
 
-          {/* Account — label-only profiles (Tier-3). The default forwards the
-              canonical host-env key; each profile remaps the CLI's credential var
-              onto another host env var BY NAME (no secret stored). */}
-          <FormRow label="Account">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-              <AccountCard
-                title="Host environment"
-                sub={
-                  defaultKey?.present
-                    ? `${defaultKey.varName} · present`
-                    : defaultKey
-                      ? "no key on host"
-                      : "default credential"
-                }
-                present={defaultKey?.present ?? true}
-                selected={effectiveAccountChoice === HOST_ACCOUNT}
-                onSelect={() => setAccountChoice(HOST_ACCOUNT)}
-              />
-              {agentAccounts.map((p) => (
-                <AccountCard
-                  key={p.id}
-                  title={p.label}
-                  sub={accountProfileSubtitle(p)}
-                  present={p.present}
-                  disabled={!p.present}
-                  selected={effectiveAccountChoice === p.id}
-                  onSelect={() => setAccountChoice(p.id)}
-                />
-              ))}
-            </div>
-            <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 6 }}>
-              Accounts use host env vars or keychain-backed profiles. Manage them in Settings →
-              Agents.
-            </div>
-          </FormRow>
+          {/* Advanced — collapsed by default to reduce cognitive load */}
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "none",
+              border: "none",
+              color: "var(--fg-2)",
+              fontSize: 11,
+              fontFamily: "var(--mono)",
+              cursor: "pointer",
+              padding: "6px 0",
+              margin: "2px 0 6px",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              transition: "color .12s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--fg-0)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--fg-2)";
+            }}
+          >
+            <span
+              style={{
+                transform: showAdvanced ? "rotate(90deg)" : "rotate(0deg)",
+                transition: "transform .15s",
+                display: "inline-flex",
+              }}
+            >
+              {Ico.arrowR}
+            </span>
+            Advanced options
+          </button>
 
-          {/* Repository — the real host directory bound at /workspace (Tier-2). */}
-          <FormRow label="Repo binding" optional>
-            <RepositoryPicker />
-          </FormRow>
+          {showAdvanced && (
+            <>
+              <FormRow label="Account">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                  <AccountCard
+                    title="Host environment"
+                    sub={
+                      defaultKey?.present
+                        ? `${defaultKey.varName} · present`
+                        : defaultKey
+                          ? "no key on host"
+                          : "default credential"
+                    }
+                    present={defaultKey?.present ?? true}
+                    selected={effectiveAccountChoice === HOST_ACCOUNT}
+                    onSelect={() => setAccountChoice(HOST_ACCOUNT)}
+                  />
+                  {agentAccounts.map((p) => (
+                    <AccountCard
+                      key={p.id}
+                      title={p.label}
+                      sub={accountProfileSubtitle(p)}
+                      present={p.present}
+                      disabled={!p.present}
+                      selected={effectiveAccountChoice === p.id}
+                      onSelect={() => setAccountChoice(p.id)}
+                    />
+                  ))}
+                </div>
+                <div
+                  className="mono"
+                  style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 6 }}
+                >
+                  Accounts use host env vars or keychain-backed profiles. Manage them in Settings →
+                  Agents.
+                </div>
+              </FormRow>
 
-          {/* Container — per-workspace container. */}
-          <FormRow label="Container">
-            <SharedRuntimePanel />
-          </FormRow>
+              <FormRow label="Repo binding" optional>
+                <RepositoryPicker />
+              </FormRow>
+
+              <FormRow label="Container">
+                <SharedRuntimePanel />
+              </FormRow>
+            </>
+          )}
 
           {/* Group — where the agent's pane lands. Real (tree.ts pane groups):
               "New tab" opens a fresh workspace (the historic default for every

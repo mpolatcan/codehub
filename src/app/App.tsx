@@ -1,9 +1,11 @@
+import { AnimatePresence } from "motion/react";
 import { useEffect } from "react";
 import { AboutDialog } from "./components/AboutDialog";
 import { Grid } from "./components/Grid";
 import { SpawnModal } from "./components/SpawnModal";
 import { ActionBar } from "./components/hub/ActionBar";
 import { ActivityRail } from "./components/hub/ActivityRail";
+import { BusyOverlay } from "./components/hub/BusyOverlay";
 import { CommandPalette } from "./components/hub/CommandPalette";
 import { DiffViewer } from "./components/hub/DiffViewer";
 import { FilesBrowser } from "./components/hub/FilesBrowser";
@@ -114,6 +116,7 @@ export function App() {
       <SpawnModal />
       <AboutDialog />
       {newWorkspace && <NewWorkspace />}
+      <BusyOverlay />
     </div>
   );
 }
@@ -153,7 +156,9 @@ function HubView() {
   return (
     <>
       {resume && resumeSide === "left" && <ResumeDrawer />}
-      {files && <FilesBrowser onClose={() => setFiles(false)} />}
+      <AnimatePresence>
+        {files && <FilesBrowser key="files" onClose={() => setFiles(false)} />}
+      </AnimatePresence>
       <main
         style={{
           flex: 1,
@@ -192,26 +197,32 @@ function HubView() {
             />
           </div>
         )}
-        <HubStatusBar />
+        {active && <HubStatusBar />}
       </main>
 
-      {diff !== null && <DiffViewer path={diff} onClose={() => setDiff(null)} />}
-      {resume && resumeSide === "right" ? (
-        <ResumeDrawer />
-      ) : activityRail ? (
-        <ActivityRail />
-      ) : (
-        <button
-          type="button"
-          className="ch-activity-rail-reveal"
-          title="Show activity panel (⌘⇧A)"
-          onClick={() => setActivityRail(true)}
-        >
-          <span style={{ position: "relative", display: "inline-flex" }}>{Ico.bell}</span>
-          <span style={{ display: "inline-flex", transform: "rotate(180deg)" }}>
-            {Ico.sidebarR}
-          </span>
-        </button>
+      {active && (
+        <>
+          <AnimatePresence>
+            {diff !== null && <DiffViewer key="diff" path={diff} onClose={() => setDiff(null)} />}
+          </AnimatePresence>
+          {resume && resumeSide === "right" ? (
+            <ResumeDrawer />
+          ) : activityRail ? (
+            <ActivityRail />
+          ) : (
+            <button
+              type="button"
+              className="ch-activity-rail-reveal"
+              title="Show activity panel (⌘⇧A)"
+              onClick={() => setActivityRail(true)}
+            >
+              <span style={{ position: "relative", display: "inline-flex" }}>{Ico.bell}</span>
+              <span style={{ display: "inline-flex", transform: "rotate(180deg)" }}>
+                {Ico.sidebarR}
+              </span>
+            </button>
+          )}
+        </>
       )}
     </>
   );

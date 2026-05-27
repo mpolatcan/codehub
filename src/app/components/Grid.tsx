@@ -210,6 +210,8 @@ function Leaf({
   const closeSession = useStore((s) => s.closeSession);
   const swapPanes = useStore((s) => s.swapPanes);
   const movePane = useStore((s) => s.movePane);
+  const openDetail = useStore((s) => s.openDetail);
+  const sessionMeta = useStore((s) => s.sessionMeta);
   const setFocusMode = useOverlay((s) => s.setFocusMode);
   const dragSession = useOverlay((s) => s.dragSession);
   const setDragSession = useOverlay((s) => s.setDragSession);
@@ -256,6 +258,20 @@ function Leaf({
       onClick: () => {
         focusSession(session);
         setFocusMode(true);
+      },
+    },
+    { label: "—", onClick: () => {} },
+    {
+      icon: Ico.search,
+      label: "Inspect session",
+      onClick: () => openDetail(session),
+    },
+    {
+      icon: Ico.terminal,
+      label: "Copy session name",
+      onClick: () => {
+        const alias = sessionMeta[session]?.alias ?? session;
+        void navigator.clipboard.writeText(alias);
       },
     },
     { label: "—", onClick: () => {} },

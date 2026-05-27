@@ -1,11 +1,13 @@
+import { motion } from "motion/react";
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgentGlyph } from "../../components/primitives/AgentGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { StatusBadge } from "../../components/primitives/StatusBadge";
 import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
 import { fmtTokens, useSessionUsage } from "../../hooks/useSessionUsage";
+import { slideRight } from "../../hooks/useSlideIn";
 import {
   type ActivityEvent,
   type Cli,
@@ -22,11 +24,22 @@ import { useStore } from "../../lib/store";
 // honest-empty states until a backend source exists.
 export function ActivityRail() {
   const running = useStore((s) => s.status?.state === "running");
-  const setPalette = useOverlay((s) => s.setPalette);
   const setActivityRail = useOverlay((s) => s.setActivityRail);
+  const [filter, setFilter] = useState("");
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLInputElement>(null);
+
+  const toggleFilter = () => {
+    setShowFilter((v) => {
+      if (!v) requestAnimationFrame(() => filterRef.current?.focus());
+      else setFilter("");
+      return !v;
+    });
+  };
 
   return (
-    <aside
+    <motion.aside
+      {...slideRight}
       className="activity-rail ch-activity-rail"
       style={{
         width: 280,
@@ -77,8 +90,8 @@ export function ActivityRail() {
         <span style={{ flex: 1 }} />
         <IconBtn
           title="Filter activity"
-          style={{ width: 22, height: 22 }}
-          onClick={() => setPalette(true)}
+          style={{ width: 22, height: 22, color: showFilter ? "var(--fg-0)" : undefined }}
+          onClick={toggleFilter}
         >
           {Ico.search}
         </IconBtn>
@@ -91,21 +104,53 @@ export function ActivityRail() {
         </IconBtn>
       </div>
 
+      {showFilter && (
+        <div style={{ padding: "6px 10px", borderBottom: "1px solid var(--bd-soft)" }}>
+          <input
+            ref={filterRef}
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") toggleFilter();
+            }}
+            placeholder="filter sessions…"
+            spellCheck={false}
+            style={{
+              width: "100%",
+              background: "var(--bg-2)",
+              border: "1px solid var(--bd)",
+              borderRadius: 5,
+              padding: "4px 8px",
+              fontSize: 11,
+              color: "var(--fg-1)",
+              fontFamily: "var(--mono)",
+              outline: "none",
+            }}
+          />
+        </div>
+      )}
+
       <PromptToasts />
-      <Feed />
-      <Activity running={running} />
-    </aside>
+      <Feed filter={filter} />
+      <Activity running={running} filter={filter} />
+    </motion.aside>
   );
 }
 
 // Live per-session activity: every running session with a working/idle dot +
 // how long it's been quiet. Clicking a row jumps to that session in the Hub.
-function Activity({ running }: { running: boolean }) {
+function Activity({ running, filter }: { running: boolean; filter: string }) {
   const meta = useStore((s) => s.sessionMeta);
   const activity = useStore((s) => s.sessionActivity);
   const focusSession = useStore((s) => s.focusSession);
   const setView = useStore((s) => s.setView);
-  const sessions = Object.entries(meta).filter(([, m]) => m.cli !== "shell");
+  const q = filter.trim().toLowerCase();
+  const sessions = Object.entries(meta)
+    .filter(([, m]) => m.cli !== "shell")
+    .filter(
+      ([name, m]) => !q || m.alias.toLowerCase().includes(q) || name.toLowerCase().includes(q),
+    );
 
   if (!running) {
     return (
@@ -395,14 +440,16 @@ function PromptToast({
 
 // Turn-by-turn history feed. Honest-empty until session_activity_history returns
 // events; the live per-session Activity list below still fills the rail.
-function Feed() {
+function Feed({ filter }: { filter: string }) {
   const history = useStore((s) => s.activityHistory);
   const sessionMeta = useStore((s) => s.sessionMeta);
   const focusSession = useStore((s) => s.focusSession);
   if (history.length === 0) return null;
 
+  const q = filter.trim().toLowerCase();
   const rows = history
     .filter((ev) => sessionMeta[ev.session]?.cli !== "shell")
+    .filter((ev) => !q || (sessionMeta[ev.session]?.alias ?? ev.session).toLowerCase().includes(q))
     .sort((a, b) => b.at - a.at)
     .slice(0, 40);
   if (rows.length === 0) return null;

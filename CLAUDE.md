@@ -4,6 +4,13 @@ A Tauri 2 desktop app that runs multiple AI coding CLIs (Claude Code, Codex, Ant
 
 This file is loaded on every Claude session in this repo. Keep it short and load-bearing.
 
+## Behavioral rules
+
+1. **Think before coding.** State assumptions explicitly. If multiple interpretations exist, present them — don't pick silently. If something is unclear, stop and ask. Push back when a simpler approach exists.
+2. **Simplicity first.** Minimum code that solves the problem. No features beyond what was asked. No abstractions for single-use code. No speculative "flexibility". If 200 lines could be 50, rewrite it.
+3. **Surgical changes.** Touch only what you must. Don't "improve" adjacent code, comments, or formatting. Match existing style. Remove imports/variables YOUR changes made unused — don't remove pre-existing dead code unless asked. Every changed line should trace to the user's request.
+4. **Goal-driven execution.** Transform tasks into verifiable goals. For multi-step tasks, state a brief plan with checkpoints. Build → verify → iterate, not build-everything-then-check.
+
 ## Stack
 
 - **Backend**: Rust 1.85+, Tauri 2, tokio, bollard (Docker API client), futures-util.
@@ -26,11 +33,12 @@ codehub/
       tokens.css            # Design tokens: 3 themes (dark/gray/light), status
                             #   colors, agent accents, shadcn bridge, helper classes
       panes.css             # Structural CSS (splits, panes, rail, tabs, launcher)
-      screens/              # Full-page views (14 screens):
+      screens/              # Full-page views (15 screens):
                             #   Dashboard, Settings, Usage, Welcome, NewWorkspace,
                             #   SessionDetail, ContainerInspector, AgentDetail,
-                            #   Integrations, Companion, EmptyState, Resume,
-                            #   SpawnDialog, States
+                            #   Integrations (Settings sub-pane), Companion,
+                            #   EmptyState, Resume, SpawnDialog, LiveActivities,
+                            #   States
       components/           # Three subdirectories:
                             #   hub/ — HubSidebar, HubTabs, HubStatusBar, Grid,
                             #     PaneHead, PaneMount, ActivityRail, DiffViewer,
@@ -123,7 +131,9 @@ Environment knobs:
 - **xterm panes are never disposed except by `closeSession`.** They live in the `lib/panes.ts` registry and get reparented by `<PaneMount>`; disposing on unmount would wipe scrollback on every split/tab-switch.
 - **Tauri commands return `Result<T, String>`.** Coerce backend errors with `.map_err(|e| e.to_string())`. Don't leak typed errors across the IPC boundary.
 - **Three themes: dark (default), gray, light.** Tokens live in `tokens.css` (`--bg-*`, `--fg-*`, `--live`, `--wait`, etc.), bridged to Tailwind in `theme.css`. Theme is toggled via `lib/theme.ts` (localStorage-persisted, `<html>` class swap). Never inline raw hex values; use tokens.
-- **Full-page views live in `screens/`** (14 files). For the frontend map, start at `store.ts` (state) + `App.tsx` (routing). The screens directory is the equivalent of a router — `App.tsx` conditionally renders each based on `view` state.
+- **Full-page views live in `screens/`** (15 files). For the frontend map, start at `store.ts` (state) + `App.tsx` (routing). The screens directory is the equivalent of a router — `App.tsx` conditionally renders each based on `view` state. Sidebar nav: Hub, Dashboard, Workspaces, Usage, Settings (Integrations lives inside Settings, not as a top-level view).
+- **CTA naming convention**: "New workspace" always opens the workspace wizard (`setNewWorkspace`). "New agent" / "Add agent" always opens the spawn dialog (`openLaunch`). Never use "New workspace" for something that spawns an agent. The tab bar "+" opens the workspace wizard; the action bar "New agent ⌘A" opens the spawn dialog.
+- **Workspace close confirmation**: closing a workspace tab shows a `confirmCloseWorkspace` dialog that counts working agents. The container persists after close — user can stop it from the Workspaces view.
 - **Bird silhouettes go in the SVG sprite** in `index.html`. Reference via `<use href="#bird-foo"/>`. Don't inline new SVGs per-tab.
 - **CLIs are enumerated in four places** (kept deliberately in sync): `Cli` enum in `docker.rs`, `Cli` type in `src/app/lib/ipc.ts`, `CLIS` + `MODE_SUPPORT` in `src/app/lib/catalog.ts`, and the `RUN` line in `runtime/Dockerfile`. The `add-cli` skill walks the full update.
 - **Never commit `Cargo.lock`** — wait, scratch that: do commit `Cargo.lock`. CodeHub is an application binary, not a library, so the lock is part of the build contract.
@@ -146,6 +156,12 @@ Environment knobs:
 - **Global keyboard shortcuts (`useKeyboard`) attach at the capture phase** so they beat xterm's textarea handler. Don't switch to bubble phase, and don't blanket-skip on `TEXTAREA` — xterm's helper IS a textarea, so the rename-input guard keys off the `.pane-name-input` class instead.
 - **Spawn background tasks in the Tauri `setup` hook with `tauri::async_runtime::spawn`, NOT `tokio::spawn`.** `setup` runs on the main thread with no entered tokio runtime, so a bare `tokio::spawn` panics (`there is no reactor running`) — and because it unwinds across the Obj-C `did_finish_launching` boundary, the process *aborts* instead of erroring. Code shared with the dev bridge (which runs under `#[tokio::main]`, where `tokio::spawn` is valid) must not bake in the spawner: expose the loop as a plain `async fn` and let each caller spawn on its own runtime (see `events::event_tailer_loop` + its two call sites). This shipped as a latent startup crash because the subsystem had only ever run via `make dev-web`, never a real Tauri launch.
 - **The agent-event tailer (`events.rs`) keys strictly by container ID, never name.** Agents append JSON lines to `/tmp/codehub/events/<session>.jsonl` (container-LOCAL, NOT mounted — that's why per-workspace containers each need their own tailer). The reconciler runs one bollard-exec `tail` per running container, re-scanning every 5s, and a per-container/per-session replay cursor de-dups the full-file replays that `tail -n +1 -F` re-emits on every (re)attach. Key the cursor by container **ID** (not name): a recreate (new id, fresh `/tmp`) then drops the stale cursor instead of suppressing fresh events, and an old tailer can't exec into a same-name replacement. Don't reintroduce a name fallback — it replays from line 1 on the first id flip (this regressed four times; see PR #64).
+
+## Frontend work
+
+Frontend design, skills, and token rules live in their own file:
+
+@.claude/rules/frontend.md
 
 ## Testing posture
 

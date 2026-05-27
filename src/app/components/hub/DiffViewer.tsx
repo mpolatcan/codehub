@@ -1,6 +1,8 @@
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Ico } from "../../components/primitives/icons";
+import { slideRight } from "../../hooks/useSlideIn";
 import { ipc } from "../../lib/ipc";
 import { activeWorkspace, useStore } from "../../lib/store";
 import { DiffBody, diffCounts, parseDiff } from "./DiffBody";
@@ -41,7 +43,8 @@ export function DiffViewer({ path, onClose }: { path: string; onClose: () => voi
   const counts = diff ? diffCounts(parseDiff(diff)) : null;
 
   return (
-    <aside
+    <motion.aside
+      {...slideRight}
       style={{
         width: WIDTH,
         flexShrink: 0,
@@ -100,6 +103,6 @@ export function DiffViewer({ path, onClose }: { path: string; onClose: () => voi
         }
         style={{ flex: 1, minHeight: 0, overflow: "auto" }}
       />
-    </aside>
+    </motion.aside>
   );
 }

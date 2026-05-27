@@ -38,13 +38,14 @@ export function WorkspaceBar() {
       }}
     >
       <span
-        style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "var(--fg-1)" }}
+        style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
         title={git?.isRepo ? `/workspace · ${git.branch ?? "detached"}` : "/workspace"}
       >
         {Ico.branch}
         {git?.isRepo ? (
           <>
-            <span>1 repo</span>
+            <span style={{ color: "var(--fg-1)" }}>{git.branch ?? "detached"}</span>
+            <span style={{ color: "var(--fg-3)" }}>·</span>
             {git.total > 0 ? (
               <span style={{ color: "var(--wait)" }}>+{git.total} uncommitted</span>
             ) : (

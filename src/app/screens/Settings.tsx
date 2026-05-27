@@ -24,8 +24,7 @@
  * Copy note: keys are forwarded from the host environment, NOT an OS keychain —
  * wording corrected from the design.
  */
-import { SHORTCUT_GROUPS } from "@/app/components/hub/Shortcuts";
-import { AGENT_META, AgentGlyph, type AgentId } from "@/app/components/primitives/AgentGlyph";
+import { AGENT_META, AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { Logo } from "@/app/components/primitives/Logo";
 import { Segmented } from "@/app/components/primitives/Segmented";
 import { StatusDot } from "@/app/components/primitives/StatusDot";
@@ -34,22 +33,17 @@ import { Ico } from "@/app/components/primitives/icons";
 import { CLIS } from "@/app/lib/catalog";
 import {
   type AgentCli,
-  type AgentVersion,
   type AppInfo,
   type AppSettings,
   type AuthProgress,
   type Cli,
-  type DockerInfo,
-  type GitStatus,
-  type ImageInfo,
-  type MountInfo,
-  type RuntimeHealth,
   ipc,
   onAuthProgress,
 } from "@/app/lib/ipc";
-import { activeWorkspace, useStore } from "@/app/lib/store";
+import { useStore } from "@/app/lib/store";
 import { type Theme, useTheme } from "@/app/lib/theme";
 import { Button } from "@/app/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/ui/select";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { ApiKeyDialog } from "../components/ApiKeyDialog";
 import { LoginTerminalDialog } from "../components/LoginTerminalDialog";
@@ -69,16 +63,13 @@ const NAV_GROUPS: { label: string; items: { key: string; label: string; soon?: b
     items: [
       { key: "general", label: "General" },
       { key: "agents", label: "Agents & API keys" },
-      { key: "runtime", label: "Container runtime" },
       { key: "integrations", label: "Integrations" },
-      { key: "repos", label: "Repositories" },
       { key: "platform", label: "Platform" },
     ],
   },
   {
     label: "Experience",
     items: [
-      { key: "shortcuts", label: "Keyboard shortcuts" },
       { key: "notifications", label: "Notifications" },
       { key: "appearance", label: "Appearance" },
     ],
@@ -89,10 +80,6 @@ const NAV_GROUPS: { label: string; items: { key: string; label: string; soon?: b
       { key: "billing", label: "Usage & billing", soon: true },
       { key: "team", label: "Team", soon: true },
     ],
-  },
-  {
-    label: "About",
-    items: [{ key: "about", label: "About CodeHub" }],
   },
 ];
 
@@ -106,8 +93,6 @@ export function Settings({ onStopAll, initialAgentDetail }: SettingsProps) {
   // palette's GitHub repo rows) by setting it before navigating to Settings.
   const active = useStore((s) => s.settingsSection);
   const setActive = useStore((s) => s.setSettingsSection);
-  const agentVersions = useStore((s) => s.agentVersions);
-  const dockerInfo = useStore((s) => s.dockerInfo);
 
   // App/platform identity is static (build + host consts), so fetch it once.
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
@@ -143,6 +128,7 @@ export function Settings({ onStopAll, initialAgentDetail }: SettingsProps) {
           padding: "20px 12px",
           overflow: "auto",
         }}
+        className="scroll"
       >
         <h2 style={{ margin: "0 6px 14px", fontSize: 17, fontWeight: 600, color: "var(--fg-0)" }}>
           Settings
@@ -157,6 +143,7 @@ export function Settings({ onStopAll, initialAgentDetail }: SettingsProps) {
                 key={item.key}
                 type="button"
                 onClick={() => !item.soon && setActive(item.key)}
+                disabled={item.soon}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -175,7 +162,9 @@ export function Settings({ onStopAll, initialAgentDetail }: SettingsProps) {
                       : "var(--fg-1)",
                   background: active === item.key ? "var(--bg-3)" : "transparent",
                   cursor: item.soon ? "default" : "pointer",
+                  opacity: item.soon ? 0.5 : 1,
                   marginBottom: 1,
+                  transition: "background 0.12s ease, color 0.12s ease",
                 }}
               >
                 <span style={{ flex: 1 }}>{item.label}</span>
@@ -191,25 +180,17 @@ export function Settings({ onStopAll, initialAgentDetail }: SettingsProps) {
       </nav>
 
       {/* pane */}
-      <div style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
+      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
         {active === "agents" ? (
           <AgentsPane onStopAll={onStopAll} initialDetail={initialAgentDetail} />
-        ) : active === "runtime" ? (
-          <RuntimePane dockerInfo={dockerInfo} />
         ) : active === "integrations" ? (
           <IntegrationsPane />
-        ) : active === "repos" ? (
-          <ReposPane />
         ) : active === "platform" ? (
           <PlatformPane appInfo={appInfo} />
-        ) : active === "shortcuts" ? (
-          <ShortcutsPane />
         ) : active === "notifications" ? (
           <NotificationsPane />
         ) : active === "appearance" ? (
           <AppearancePane />
-        ) : active === "about" ? (
-          <AboutPane appInfo={appInfo} dockerInfo={dockerInfo} agentVersions={agentVersions} />
         ) : (
           <GeneralPane />
         )}
@@ -238,9 +219,34 @@ function PaneHead({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-// Agents & API keys — REAL Tier-1 data (versions + host-env key presence).
-// Default agent is live (config store); the approve/budget controls stay
-// disabled until per-agent permissions land; "Stop all" is real (closeAllSessions).
+const NATIVE_PROVIDERS: Record<AgentCli, string> = {
+  claude: "Anthropic",
+  codex: "OpenAI",
+  antigravity: "Google",
+};
+
+const AGENT_DESCRIPTIONS: Record<AgentCli, string> = {
+  claude:
+    "Default agent · supports Anthropic + OpenAI-compatible providers (MiniMax, GLM, Qwen, custom). Click the avatar to upload a custom logo PNG — falls back to the built-in glyph.",
+  codex:
+    "OpenAI agent · uses GPT models via the OpenAI API. Supports standard, auto, and YOLO permission modes.",
+  antigravity:
+    "Google agent · uses Gemini models. Standard mode only — launch flags are unverified.",
+};
+
+function avatarHue(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
+  return h;
+}
+
+function avatarInitials(label: string): string {
+  const parts = label.split(/[\s.]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return label.slice(0, 2).toUpperCase();
+}
+
+// Agents & API keys — tabbed per-agent view with hero, accounts, and providers.
 function AgentsPane({
   onStopAll,
   initialDetail,
@@ -252,7 +258,23 @@ function AgentsPane({
   const agentVersions = useStore((s) => s.agentVersions);
   const sessionCount = useStore((s) => Object.keys(s.sessionMeta).length);
   const closeAllSessions = useStore((s) => s.closeAllSessions);
+  const config = useStore((s) => s.config);
+  const profiles = useStore((s) => s.accountProfiles);
+  const loadAccountProfiles = useStore((s) => s.loadAccountProfiles);
+  const removeAccountProfile = useStore((s) => s.removeAccountProfile);
   const [detail, setDetail] = useState<AgentCli | null>(initialDetail ?? null);
+  const [selectedAgent, setSelectedAgent] = useState<AgentCli>("claude");
+  const [keyDialog, setKeyDialog] = useState<string | null>(null);
+  const [loginBusy, setLoginBusy] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginProgress, setLoginProgress] = useState<AuthProgress | null>(null);
+  const [terminalDialog, setTerminalDialog] = useState<{
+    provider: string;
+    profileId: string;
+    sessionName: string;
+    workspace: string;
+  } | null>(null);
+  const pendingProfileId = useRef<string | null>(null);
 
   const stopAll = () => {
     if (sessionCount === 0) return;
@@ -260,52 +282,117 @@ function AgentsPane({
     (onStopAll ?? (() => void closeAllSessions()))();
   };
 
+  useEffect(() => {
+    let unsub: (() => void) | null = null;
+    onAuthProgress((p) => {
+      setLoginProgress(p);
+      if (p.stage === "success") {
+        setLoginBusy(null);
+        setLoginError(null);
+        void loadAccountProfiles();
+        setTimeout(() => setLoginProgress(null), 3000);
+      } else if (p.stage === "error") {
+        setLoginBusy(null);
+        setLoginError(p.message ?? "Login failed");
+      }
+    }).then((u) => {
+      unsub = u;
+    });
+    return () => unsub?.();
+  }, [loadAccountProfiles]);
+
+  useEffect(() => {
+    void loadAccountProfiles();
+  }, [loadAccountProfiles]);
+
+  const defaultLoginLabel = (provider: string) =>
+    provider === "github"
+      ? "GitHub"
+      : provider === "codex"
+        ? "Codex"
+        : provider === "antigravity"
+          ? "Antigravity"
+          : "Claude";
+
+  const startLogin = async (provider: string, agent: string) => {
+    setLoginBusy(provider);
+    setLoginError(null);
+    setLoginProgress(null);
+    let createdId: string | null = null;
+    try {
+      const label = defaultLoginLabel(provider);
+      const existingIds = new Set(profiles.map((p) => p.id));
+      const list = await ipc.addAccountProfile(agent, label, undefined, "vault");
+      useStore.setState({ accountProfiles: list });
+      const created = list.find((p) => !existingIds.has(p.id));
+      if (!created) throw new Error("profile creation failed");
+      createdId = created.id;
+      const result = await ipc.vaultInitiateOauth(provider, created.id);
+      if (result?.sessionName && result?.workspace) {
+        pendingProfileId.current = created.id;
+        setTerminalDialog({
+          provider,
+          profileId: created.id,
+          sessionName: result.sessionName,
+          workspace: result.workspace,
+        });
+        setLoginBusy(null);
+      }
+    } catch (e) {
+      const msg = String(e).replace(/^Error:\s*/, "");
+      setLoginError(msg);
+      setLoginBusy(null);
+      if (createdId) {
+        void useStore.getState().removeAccountProfile(createdId);
+      }
+    }
+  };
+
+  const handleDialogDone = (result: "captured" | "cancelled") => {
+    const pendingId = pendingProfileId.current;
+    setTerminalDialog(null);
+    pendingProfileId.current = null;
+    if (result === "captured") {
+      void loadAccountProfiles();
+    } else if (pendingId) {
+      void (async () => {
+        try {
+          if (await ipc.vaultHasKey(pendingId)) {
+            await loadAccountProfiles();
+          } else {
+            await useStore.getState().removeAccountProfile(pendingId);
+          }
+        } catch {
+          await useStore.getState().removeAccountProfile(pendingId);
+        }
+      })();
+    }
+  };
+
   if (detail)
     return <AgentDetail agent={detail} onBack={() => setDetail(null)} onSwitch={setDetail} />;
 
+  const key = keyStatus?.[selectedAgent];
+  const ver = agentVersions?.[selectedAgent];
+  const meta = AGENT_META[selectedAgent];
+  const cliSpec = CLIS.find((c) => c.id === selectedAgent)!;
+  const agentProfiles = profiles.filter((p) => p.agent === selectedAgent);
+  const providers = config?.providers ?? [];
+
+  const tabSubtitle = (agent: AgentCli) => {
+    if (agent === "claude" && providers.length > 0) return `${providers.length + 1} providers`;
+    return NATIVE_PROVIDERS[agent];
+  };
+
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div>
       <PaneHead title="Agents & API keys">
         Configure the coding agents available in the spawn dialog. Keys are read from your host
-        environment (e.g. <span className="mono">CLAUDE_CODE_OAUTH_TOKEN</span>) and forwarded into
-        running containers — CodeHub never stores them.
+        environment and forwarded into running containers — CodeHub never stores them.
       </PaneHead>
 
-      <SectionHead label="Agents" />
-      {CLIS.map((c) => {
-        // Real Tier-1 reads; null until the bootstrap fetch resolves (or if a
-        // binary/key is absent — then version/varName render as em-dash).
-        const key = keyStatus?.[c.id];
-        const ver = agentVersions?.[c.id];
-        return (
-          <AgentRow
-            key={c.id}
-            agent={c.id}
-            name={c.label}
-            version={ver?.version ?? null}
-            present={key?.present ?? false}
-            varName={key?.varName ?? null}
-            source={key?.source ?? null}
-            onConfigure={() => setDetail(c.id)}
-          />
-        );
-      })}
-
-      <div style={{ display: "flex", gap: 8, margin: "14px 0 32px" }}>
-        <Button variant="outline" size="sm" disabled>
-          {Ico.plus}Add custom agent
-        </Button>
-        <RefreshVersionsButton />
-      </div>
-
-      <VaultAuthSection />
-
-      <AccountsSection />
-
+      {/* ── Defaults for new sessions ────────────────────────────────── */}
       <SectionHead label="Defaults for new sessions" />
-      {/* Default agent is live (config store → launcher pre-selection). The
-          approve/budget controls have no agent-level hook yet, so they stay
-          disabled rather than faking persistence. */}
       <SettingRow
         label="Default agent"
         desc="Pre-selected in the spawn dialog (⌘N)."
@@ -337,6 +424,7 @@ function AgentsPane({
         last
       />
 
+      {/* ── Danger zone ──────────────────────────────────────────────── */}
       <SectionHead label="Danger zone" tone="err" />
       <div
         className="ch-card"
@@ -344,6 +432,7 @@ function AgentsPane({
           padding: 14,
           borderColor: "color-mix(in oklab, var(--err) 30%, var(--bd))",
           background: "color-mix(in oklab, var(--err) 4%, var(--bg-2))",
+          marginBottom: 32,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -362,193 +451,268 @@ function AgentsPane({
           </Button>
         </div>
       </div>
-    </div>
-  );
-}
 
-// Vault-backed credential management: "Sign in" (container-mediated login)
-// or "Add key" (paste) per built-in agent. Stored in OS keychain, never on disk.
-function VaultAuthSection() {
-  const profiles = useStore((s) => s.accountProfiles);
-  const loadAccountProfiles = useStore((s) => s.loadAccountProfiles);
-  const removeAccountProfile = useStore((s) => s.removeAccountProfile);
-  const [keyDialog, setKeyDialog] = useState<string | null>(null);
-  const [profileLabel, setProfileLabel] = useState("");
-  const [loginBusy, setLoginBusy] = useState<string | null>(null);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [loginProgress, setLoginProgress] = useState<AuthProgress | null>(null);
-  // Active terminal dialog: set when a login session is ready.
-  const [terminalDialog, setTerminalDialog] = useState<{
-    provider: string;
-    profileId: string;
-    sessionName: string;
-    workspace: string;
-  } | null>(null);
-  // Profile id to clean up if login is cancelled.
-  const pendingProfileId = useRef<string | null>(null);
-
-  const vaultProfiles = profiles.filter((p) => p.source === "vault");
-  const defaultLoginLabel = (provider: string) =>
-    provider === "github"
-      ? "GitHub"
-      : provider === "codex"
-        ? "Codex"
-        : provider === "antigravity"
-          ? "Antigravity"
-          : "Claude";
-
-  useEffect(() => {
-    let unsub: (() => void) | null = null;
-    onAuthProgress((p) => {
-      setLoginProgress(p);
-      if (p.stage === "success") {
-        setLoginBusy(null);
-        setLoginError(null);
-        setProfileLabel("");
-        void loadAccountProfiles();
-        setTimeout(() => setLoginProgress(null), 3000);
-      } else if (p.stage === "error") {
-        setLoginBusy(null);
-        setLoginError(p.message ?? "Login failed");
-      }
-    }).then((u) => {
-      unsub = u;
-    });
-    return () => unsub?.();
-  }, [loadAccountProfiles]);
-
-  const startLogin = async (provider: string, agent: string) => {
-    setLoginBusy(provider);
-    setLoginError(null);
-    setLoginProgress(null);
-    let createdId: string | null = null;
-    try {
-      const label = profileLabel.trim() || defaultLoginLabel(provider);
-      const existingIds = new Set(profiles.map((p) => p.id));
-      const list = await ipc.addAccountProfile(agent, label, undefined, "vault");
-      useStore.setState({ accountProfiles: list });
-      const created = list.find((p) => !existingIds.has(p.id));
-      if (!created) throw new Error("profile creation failed");
-      createdId = created.id;
-
-      const result = await ipc.vaultInitiateOauth(provider, created.id);
-
-      if (result?.sessionName && result?.workspace) {
-        // Open the inline terminal dialog. Dialog handles attach + capture.
-        pendingProfileId.current = created.id;
-        setTerminalDialog({
-          provider,
-          profileId: created.id,
-          sessionName: result.sessionName,
-          workspace: result.workspace,
-        });
-        setLoginBusy(null);
-      }
-      // GitHub: device flow runs in background, auth-progress events carry status.
-    } catch (e) {
-      const msg = String(e).replace(/^Error:\s*/, "");
-      setLoginError(msg);
-      setLoginBusy(null);
-      if (createdId) {
-        void useStore.getState().removeAccountProfile(createdId);
-      }
-    }
-  };
-
-  const handleDialogDone = (result: "captured" | "cancelled") => {
-    const pendingId = pendingProfileId.current;
-    setTerminalDialog(null);
-    pendingProfileId.current = null;
-    if (result === "captured") {
-      setProfileLabel("");
-      void loadAccountProfiles();
-    } else if (pendingId) {
-      void (async () => {
-        try {
-          if (await ipc.vaultHasKey(pendingId)) {
-            await loadAccountProfiles();
-          } else {
-            await useStore.getState().removeAccountProfile(pendingId);
-          }
-        } catch {
-          await useStore.getState().removeAccountProfile(pendingId);
-        }
-      })();
-    }
-  };
-
-  return (
-    <>
-      <SectionHead label="Credential vault" />
-      <p style={{ margin: "0 0 12px", fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
-        Store credentials in your OS keychain so they persist across sessions without exporting env
-        vars. Each workspace picks which account to use at creation time.
-      </p>
-      <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--fg-3)", lineHeight: 1.45 }}>
-        Codex device sign-in requires ChatGPT Settings &gt; Security &gt; Enable device code
-        authorization for Codex. If your workspace manages this setting, an admin must enable it.
-      </p>
-
-      <div style={{ marginBottom: 10 }}>
-        <Field label="Profile name">
-          <input
-            value={profileLabel}
-            onChange={(e) => setProfileLabel(e.target.value)}
-            placeholder="Work"
-            disabled={loginBusy != null}
-            spellCheck={false}
-            style={{ ...inputStyle, minWidth: 240 }}
-          />
-        </Field>
+      {/* ── Agent tab bar ────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          borderBottom: "1px solid var(--bd-soft)",
+          marginBottom: 28,
+        }}
+      >
+        {CLIS.map((c) => {
+          const sel = selectedAgent === c.id;
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setSelectedAgent(c.id)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "12px 18px",
+                border: "none",
+                cursor: "pointer",
+                background: "transparent",
+                borderBottom: sel ? "2px solid var(--fg-0)" : "2px solid transparent",
+                color: sel ? "var(--fg-0)" : "var(--fg-2)",
+                fontSize: 13,
+                fontFamily: "var(--sans)",
+                fontWeight: sel ? 500 : 400,
+                marginBottom: -1,
+                transition: "color 0.12s ease",
+              }}
+            >
+              <AgentGlyph
+                agent={c.id}
+                size={14}
+                color={sel ? AGENT_META[c.id].accent : "var(--fg-3)"}
+              />
+              {c.label}
+              <span style={{ color: "var(--fg-3)", fontSize: 12 }}>· {tabSubtitle(c.id)}</span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          disabled
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "10px 14px",
+            border: "none",
+            cursor: "default",
+            background: "transparent",
+            color: "var(--fg-3)",
+            fontSize: 12.5,
+            fontFamily: "var(--sans)",
+            opacity: 0.5,
+          }}
+        >
+          {Ico.plus} Custom agent
+        </button>
       </div>
+
+      {/* ── Agent hero ───────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 18,
+          marginBottom: 32,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setDetail(selectedAgent)}
+          style={{
+            width: 60,
+            height: 60,
+            borderRadius: 14,
+            background: `color-mix(in oklab, ${meta.accent} 14%, var(--bg-1))`,
+            border: `1px solid color-mix(in oklab, ${meta.accent} 30%, var(--bd))`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+          title="View agent details"
+        >
+          <span style={{ transform: "scale(2.4)" }}>
+            <AgentGlyph agent={selectedAgent} size={14} color={meta.accent} />
+          </span>
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <span
+              style={{
+                fontSize: 22,
+                fontWeight: 600,
+                letterSpacing: "-0.01em",
+                color: "var(--fg-0)",
+              }}
+            >
+              {cliSpec.label}
+            </span>
+            {ver?.version && <Tag>v{ver.version}</Tag>}
+            {key && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "3px 10px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  background: key.present
+                    ? "color-mix(in oklab, var(--live) 15%, transparent)"
+                    : "color-mix(in oklab, var(--wait) 15%, transparent)",
+                  color: key.present ? "var(--live)" : "var(--wait)",
+                  border: `1px solid ${
+                    key.present
+                      ? "color-mix(in oklab, var(--live) 30%, transparent)"
+                      : "color-mix(in oklab, var(--wait) 30%, transparent)"
+                  }`,
+                }}
+              >
+                <StatusDot status={key.present ? "live" : "wait"} />
+                {key.present ? "Connected" : "Key needed"}
+              </span>
+            )}
+          </div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              color: "var(--fg-2)",
+              lineHeight: 1.55,
+              maxWidth: 700,
+            }}
+          >
+            {AGENT_DESCRIPTIONS[selectedAgent]}
+          </p>
+        </div>
+        <div style={{ flexShrink: 0 }}>
+          <RefreshVersionsButton />
+        </div>
+      </div>
+
+      {/* ── Accounts ─────────────────────────────────────────────────── */}
+      <SectionHead label={`Accounts · ${agentProfiles.length}`} />
+      {agentProfiles.length > 0 ? (
+        <div className="ch-card" style={{ padding: 0, marginBottom: 12 }}>
+          {agentProfiles.map((p, i) => {
+            const hue = avatarHue(p.id);
+            const color = `oklch(0.55 0.12 ${hue})`;
+            return (
+              <div
+                key={p.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  padding: "12px 16px",
+                  borderBottom:
+                    i === agentProfiles.length - 1 ? "none" : "1px solid var(--bd-soft)",
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "50%",
+                    background: `color-mix(in oklab, ${color} 25%, var(--bg-3))`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color,
+                    flexShrink: 0,
+                  }}
+                >
+                  {avatarInitials(p.label)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+                      {p.label}
+                    </span>
+                    <Tag>{p.agent}</Tag>
+                    {p.source === "vault" && (
+                      <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                        keychain
+                      </span>
+                    )}
+                  </div>
+                  <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+                    {p.source === "vault"
+                      ? p.present
+                        ? "stored in keychain"
+                        : "missing from keychain"
+                      : (p.varName ?? "host env")}
+                  </div>
+                </div>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    fontSize: 11.5,
+                    color: p.present ? "var(--live)" : "var(--err)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <StatusDot status={p.present ? "live" : "err"} />
+                  {p.present ? "Active" : "Missing"}
+                </span>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => void removeAccountProfile(p.id)}
+                  aria-label={`Manage ${p.label}`}
+                >
+                  Manage
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div
+          className="ch-card"
+          style={{
+            padding: "20px 16px",
+            marginBottom: 12,
+            fontSize: 12.5,
+            color: "var(--fg-2)",
+            textAlign: "center",
+          }}
+        >
+          No accounts configured for {cliSpec.label}.
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <Button
           variant="outline"
           size="sm"
           disabled={loginBusy != null}
-          onClick={() => startLogin("claude", "claude")}
+          onClick={() => startLogin(selectedAgent, selectedAgent)}
         >
-          {loginBusy === "claude" ? "Signing in..." : "Sign in with Claude"}
+          {Ico.plus}
+          {loginBusy === selectedAgent ? "Signing in…" : `Sign in with ${cliSpec.alias}`}
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={loginBusy != null}
-          onClick={() => startLogin("codex", "codex")}
-        >
-          {loginBusy === "codex" ? "Signing in..." : "Sign in with Codex"}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={loginBusy != null}
-          onClick={() => startLogin("antigravity", "antigravity")}
-        >
-          {loginBusy === "antigravity" ? "Signing in..." : "Sign in with Antigravity"}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={loginBusy != null}
-          onClick={() => startLogin("github", "github")}
-        >
-          {loginBusy === "github" ? "Signing in..." : "Sign in with GitHub"}
-        </Button>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <Button variant="ghost" size="sm" onClick={() => setKeyDialog("codex")}>
-          Paste OpenAI key
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => setKeyDialog("antigravity")}>
-          Paste Google key
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => setKeyDialog("github")}>
-          Paste GitHub PAT
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => setKeyDialog("claude")}>
-          Paste Claude token
+        <Button variant="ghost" size="sm" onClick={() => setKeyDialog(selectedAgent)}>
+          Add API key
         </Button>
       </div>
 
@@ -638,54 +802,195 @@ function VaultAuthSection() {
         </div>
       )}
 
-      {vaultProfiles.length > 0 && (
-        <div className="ch-card" style={{ padding: 0, marginBottom: 12 }}>
-          {vaultProfiles.map((p, i) => (
+      {/* ── Model Providers ──────────────────────────────────────────── */}
+      <SectionHead label={`Model Providers · ${providers.length + 1}`} />
+      <div className="ch-card" style={{ padding: 0, marginBottom: 12 }}>
+        {/* Native provider for selected agent */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            padding: "12px 16px",
+            borderBottom: providers.length === 0 ? "none" : "1px solid var(--bd-soft)",
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "var(--bg-3)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 14,
+              fontWeight: 600,
+              color: "var(--fg-1)",
+              flexShrink: 0,
+            }}
+          >
+            {NATIVE_PROVIDERS[selectedAgent][0]}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+                {NATIVE_PROVIDERS[selectedAgent]}
+              </span>
+              <Tag>default</Tag>
+            </div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+              Native · {key?.source === "vault" ? "keychain" : "env"}
+            </div>
+          </div>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: 11.5,
+              color: key?.present ? "var(--live)" : "var(--fg-2)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <StatusDot status={key?.present ? "live" : "idle"} />
+            {key?.present ? "Connected" : "Disconnected"}
+          </span>
+          <button
+            type="button"
+            style={{
+              padding: "4px 6px",
+              border: "1px solid var(--bd)",
+              borderRadius: 6,
+              background: "transparent",
+              color: "var(--fg-2)",
+              fontSize: 14,
+              cursor: "pointer",
+              lineHeight: 1,
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            ···
+          </button>
+        </div>
+        {/* Custom providers */}
+        {providers.map((p, i) => {
+          const hue = avatarHue(p.name);
+          const color = `oklch(0.55 0.12 ${hue})`;
+          return (
             <div
               key={p.id}
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 12,
-                padding: "10px 14px",
-                borderBottom: i === vaultProfiles.length - 1 ? "none" : "1px solid var(--bd-soft)",
+                gap: 14,
+                padding: "12px 16px",
+                borderBottom: i === providers.length - 1 ? "none" : "1px solid var(--bd-soft)",
               }}
             >
-              <span
+              <div
                 style={{
-                  width: 7,
-                  height: 7,
+                  width: 36,
+                  height: 36,
                   borderRadius: "50%",
-                  background: p.present ? "var(--live)" : "var(--err)",
+                  background: `color-mix(in oklab, ${color} 25%, var(--bg-3))`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color,
                   flexShrink: 0,
                 }}
-                title={p.present ? "stored in keychain" : "not in keychain"}
-              />
-              <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>
-                {p.label}
-              </span>
-              <Tag>{p.agent}</Tag>
-              <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
-                keychain
-              </span>
-              {!p.present && (
-                <span className="mono" style={{ fontSize: 10.5, color: "var(--err)" }}>
-                  missing from keychain
-                </span>
-              )}
-              <span style={{ flex: 1 }} />
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={() => void removeAccountProfile(p.id)}
-                aria-label={`Remove ${p.label}`}
               >
-                Remove
-              </Button>
+                {p.name[0]}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+                    {p.name}
+                  </span>
+                </div>
+                <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+                  {p.kind}
+                  {p.endpoint ? ` · ${p.endpoint}` : ""}
+                </div>
+              </div>
+              {p.models.length > 0 && (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {p.models.slice(0, 3).map((m) => (
+                    <span
+                      key={m}
+                      className="mono"
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        border: "1px solid var(--bd)",
+                        background: "var(--bg-1)",
+                        fontSize: 10.5,
+                        color: "var(--fg-1)",
+                      }}
+                    >
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: 11.5,
+                  color: p.enabled ? "var(--live)" : "var(--fg-2)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <StatusDot status={p.enabled ? "live" : "idle"} />
+                {p.enabled ? "Connected" : "Disabled"}
+              </span>
+              <span
+                style={{ color: "var(--fg-3)", fontSize: 16, cursor: "pointer", lineHeight: 1 }}
+              >
+                ···
+              </span>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          marginBottom: 32,
+        }}
+      >
+        <Button variant="outline" size="sm" disabled>
+          {Ico.plus} Add provider
+        </Button>
+        {["OpenAI-compatible", "AWS Bedrock", "Vertex AI", "Ollama"].map((preset) => (
+          <span
+            key={preset}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "6px 12px",
+              borderRadius: 999,
+              border: "1px solid var(--bd)",
+              background: "var(--bg-2)",
+              color: "var(--fg-2)",
+              fontSize: 11.5,
+              opacity: 0.6,
+            }}
+          >
+            {preset}
+          </span>
+        ))}
+      </div>
 
       {keyDialog && (
         <ApiKeyDialog
@@ -694,7 +999,6 @@ function VaultAuthSection() {
           onSaved={() => void loadAccountProfiles()}
         />
       )}
-
       {terminalDialog && (
         <LoginTerminalDialog
           provider={terminalDialog.provider}
@@ -704,361 +1008,6 @@ function VaultAuthSection() {
           onDone={handleDialogDone}
         />
       )}
-    </>
-  );
-}
-
-// Accounts — env-backed label-only profiles (legacy Tier-3). Each maps an agent
-// to a host env var NAME. The credential value is never stored or read, only
-// its presence is probed. Vault-backed profiles are managed above.
-function AccountsSection() {
-  const allProfiles = useStore((s) => s.accountProfiles);
-  const profiles = allProfiles.filter((p) => p.source !== "vault");
-  const loadAccountProfiles = useStore((s) => s.loadAccountProfiles);
-  const addAccountProfile = useStore((s) => s.addAccountProfile);
-  const removeAccountProfile = useStore((s) => s.removeAccountProfile);
-
-  const [agent, setAgent] = useState<AgentCli>("claude");
-  const [label, setLabel] = useState("");
-  const [varName, setVarName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    void loadAccountProfiles();
-  }, [loadAccountProfiles]);
-
-  const canAdd = label.trim() !== "" && varName.trim() !== "" && !busy;
-  const add = async () => {
-    setError(null);
-    setBusy(true);
-    try {
-      await addAccountProfile(agent, label.trim(), varName.trim());
-      setLabel("");
-      setVarName("");
-    } catch (e) {
-      // The backend rejects empty labels + invalid env names with a message.
-      setError(String(e).replace(/^Error:\s*/, ""));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <SectionHead label="Accounts" />
-      <p style={{ margin: "0 0 12px", fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
-        Run an agent under a second login by pointing it at another host environment variable.
-        CodeHub stores the variable <strong>name</strong> only — never the credential. Export the
-        variable in your shell, then pick the account in the spawn dialog.
-      </p>
-
-      {profiles.length > 0 && (
-        <div className="ch-card" style={{ padding: 0, marginBottom: 12 }}>
-          {profiles.map((p, i) => (
-            <div
-              key={p.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "10px 14px",
-                borderBottom: i === profiles.length - 1 ? "none" : "1px solid var(--bd-soft)",
-              }}
-            >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: p.present ? "var(--live)" : "var(--err)",
-                  flexShrink: 0,
-                }}
-                title={p.present ? "credential available" : "credential missing"}
-              />
-              <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>
-                {p.label}
-              </span>
-              <Tag>{p.agent}</Tag>
-              <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
-                {p.source === "vault" ? "keychain" : p.varName}
-              </span>
-              {!p.present && (
-                <span className="mono" style={{ fontSize: 10.5, color: "var(--err)" }}>
-                  {p.source === "vault" ? "not in keychain" : "not set on host"}
-                </span>
-              )}
-              <span style={{ flex: 1 }} />
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={() => void removeAccountProfile(p.id)}
-                aria-label={`Remove ${p.label}`}
-              >
-                Remove
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="ch-card" style={{ padding: 14 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <Field label="Agent">
-            <select
-              value={agent}
-              onChange={(e) => setAgent(e.target.value as AgentCli)}
-              className="mono"
-              style={selectStyle}
-            >
-              {CLIS.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Label">
-            <input
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="Work"
-              spellCheck={false}
-              style={inputStyle}
-            />
-          </Field>
-          <Field label="Host env var">
-            <input
-              value={varName}
-              onChange={(e) => setVarName(e.target.value.toUpperCase())}
-              placeholder="CLAUDE_TOKEN_WORK"
-              spellCheck={false}
-              className="mono"
-              style={{ ...inputStyle, minWidth: 220 }}
-            />
-          </Field>
-          <Button size="sm" disabled={!canAdd} onClick={() => void add()}>
-            {Ico.plus}Add account
-          </Button>
-        </div>
-        {error && <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--err)" }}>{error}</div>}
-      </div>
-      <div style={{ height: 24 }} />
-    </>
-  );
-}
-
-// Small labelled field wrapper for the inline account form.
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span className="lbl">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-const inputStyle: CSSProperties = {
-  background: "var(--bg-0)",
-  border: "1px solid var(--bd)",
-  borderRadius: 6,
-  padding: "7px 10px",
-  fontSize: 12,
-  color: "var(--fg-1)",
-  outline: "none",
-  fontFamily: "var(--sans)",
-};
-
-const selectStyle: CSSProperties = {
-  ...inputStyle,
-  cursor: "pointer",
-};
-
-// About pane — every value is real: version/os/arch from `app_info` (build +
-// host consts), Docker from `docker_info`, agent versions from `agent_versions`,
-// update status from `check_update`. No changelog, no fabricated build metadata;
-// absent reads render as em-dash. The update check is honest: the updater plugin
-// isn't wired (available is null today), so it reads "up to date" with no in-app
-// install affordance — never a fabricated release.
-function AboutPane({
-  appInfo,
-  dockerInfo,
-  agentVersions,
-}: {
-  appInfo: AppInfo | null;
-  dockerInfo: DockerInfo | null;
-  agentVersions: Record<AgentCli, AgentVersion> | null;
-}) {
-  const dash = "—";
-  const platform = appInfo ? `${appInfo.os}-${appInfo.arch}` : dash;
-  const dockerLine = dockerInfo?.reachable ? (dockerInfo.version ?? "reachable") : "not reachable";
-  return (
-    <div style={{ maxWidth: 720 }}>
-      <h1
-        style={{
-          margin: "0 0 4px",
-          fontSize: 22,
-          fontWeight: 600,
-          letterSpacing: "-0.01em",
-          color: "var(--fg-0)",
-        }}
-      >
-        About CodeHub
-      </h1>
-      <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: 13 }}>
-        Build and host platform details for this install. Everything here is read from the running
-        binary and the local Docker daemon.
-      </p>
-
-      {/* hero */}
-      <div
-        className="ch-card"
-        style={{ padding: 18, display: "flex", alignItems: "center", gap: 16, marginBottom: 8 }}
-      >
-        <div
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: 12,
-            background: "var(--bg-0)",
-            border: "1px solid var(--bd)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <Logo size={30} withText={false} />
-        </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-0.01em" }}>CodeHub</div>
-          <div
-            className="mono"
-            style={{ fontSize: 12, color: "var(--fg-2)", marginTop: 3, display: "flex", gap: 8 }}
-          >
-            <span>v{appInfo?.version ?? dash}</span>
-            <span style={{ color: "var(--fg-3)" }}>·</span>
-            <span>{platform}</span>
-          </div>
-        </div>
-        <UpdateBadge fallbackVersion={appInfo?.version ?? null} />
-      </div>
-
-      <UpdateRow />
-
-      <SectionHead label="Environment" />
-      <div
-        className="ch-card"
-        style={{
-          padding: 16,
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "10px 24px",
-        }}
-      >
-        <Kv k="Version" v={appInfo ? `v${appInfo.version}` : dash} />
-        <Kv k="Docker" v={dockerLine} />
-        <Kv k="OS" v={appInfo?.os ?? dash} />
-        <Kv k="Architecture" v={appInfo?.arch ?? dash} />
-        <Kv k="Family" v={appInfo?.family ?? dash} />
-        <Kv k="Docker API" v={dockerInfo?.apiVersion ?? dash} />
-      </div>
-
-      <SectionHead label="Agents" />
-      <div className="ch-card" style={{ padding: 16, display: "grid", gap: "10px 24px" }}>
-        {CLIS.map((c) => (
-          <Kv key={c.id} k={c.label} v={agentVersions?.[c.id]?.version || "not installed"} />
-        ))}
-      </div>
-
-      <SectionHead label="Credits" />
-      <p style={{ margin: "0 0 8px", fontSize: 12, color: "var(--fg-2)", lineHeight: 1.6 }}>
-        CodeHub runs Claude Code, Codex, and Antigravity side by side in workspace containers. Built
-        with Tauri, React, and xterm.js. Agent CLIs and their model providers are owned by their
-        respective vendors.
-      </p>
-    </div>
-  );
-}
-
-// Compact hero badge reflecting the update check. Honest by construction: the
-// backend's check_update returns available:null today (the Tauri updater plugin
-// isn't wired — Platform pane marks self-update "planned"), so this reads
-// "up to date" rather than inventing a release. When a newer version IS reported
-// it surfaces it; nothing here is fabricated.
-function UpdateBadge({ fallbackVersion }: { fallbackVersion: string | null }) {
-  const update = useStore((s) => s.updateStatus);
-  if (!update) return null;
-  const hasUpdate = update.available != null;
-  const color = hasUpdate ? "var(--wait)" : "var(--live)";
-  return (
-    <div
-      className="mono"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        gap: 1,
-        padding: "6px 10px",
-        borderRadius: 6,
-        background: `color-mix(in oklab, ${color} 12%, transparent)`,
-        border: `1px solid color-mix(in oklab, ${color} 35%, transparent)`,
-        color,
-        flexShrink: 0,
-      }}
-    >
-      <span style={{ fontSize: 11 }}>{hasUpdate ? "update available" : "up to date"}</span>
-      <span style={{ fontSize: 13, fontWeight: 600 }}>
-        v{hasUpdate ? update.available : (update.current ?? fallbackVersion ?? "—")}
-      </span>
-    </div>
-  );
-}
-
-// Update-check row: triggers check_update on mount + on demand. The install
-// affordance only appears when a newer version is actually reported; today the
-// backend has no updater wired so it stays honest ("up to date", no install).
-function UpdateRow() {
-  const update = useStore((s) => s.updateStatus);
-  const loadUpdateStatus = useStore((s) => s.loadUpdateStatus);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    void loadUpdateStatus();
-  }, [loadUpdateStatus]);
-  const check = async () => {
-    setBusy(true);
-    try {
-      await loadUpdateStatus();
-    } finally {
-      setBusy(false);
-    }
-  };
-  const hasUpdate = update?.available != null;
-  return (
-    <div
-      className="ch-card"
-      style={{ padding: 14, display: "flex", alignItems: "center", gap: 14, marginBottom: 8 }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)", marginBottom: 2 }}>
-          {hasUpdate ? `Update available — v${update?.available}` : "Software update"}
-        </div>
-        <div style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
-          {update == null
-            ? "Checking for updates…"
-            : hasUpdate
-              ? (update.notes ?? "A newer version is available.")
-              : "You're on the latest version. In-app install isn't wired yet — updates arrive with the auto-updater."}
-        </div>
-      </div>
-      {hasUpdate && (
-        <Button variant="success" size="sm" disabled>
-          Install (soon)
-        </Button>
-      )}
-      <Button variant="outline" size="sm" disabled={busy} onClick={() => void check()}>
-        {busy ? "Checking…" : "Check now"}
-      </Button>
     </div>
   );
 }
@@ -1069,7 +1018,7 @@ function UpdateRow() {
 function GeneralPane() {
   const restore = useStore((s) => s.config?.restoreSessionsOnLaunch ?? true);
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div>
       <PaneHead title="General">
         Workspace-wide defaults. Saved to this machine and applied immediately.
       </PaneHead>
@@ -1097,90 +1046,6 @@ function GeneralPane() {
         live
         last
       />
-    </div>
-  );
-}
-
-// Container runtime — all REAL reads. Daemon from the bootstrap `docker_info`;
-// image identity + liveness fetched once from `container_image` /
-// `container_health`. Read-only: the container is configured via env knobs
-// (CODEHUB_IMAGE, CODEHUB_NETWORK_MODE), not from here.
-function RuntimePane({ dockerInfo }: { dockerInfo: DockerInfo | null }) {
-  const dash = "—";
-  const runtimeState = useStore((s) => s.status?.state);
-  const notRunning = runtimeState !== "running";
-  const [image, setImage] = useState<ImageInfo | null>(null);
-  const [health, setHealth] = useState<RuntimeHealth | null>(null);
-  useEffect(() => {
-    let alive = true;
-    ipc
-      .containerImage()
-      .then((i) => alive && setImage(i))
-      .catch(() => {});
-    ipc
-      .containerHealth()
-      .then((h) => alive && setHealth(h))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const uptime = health?.startedAt ? fmtUptime(health.startedAt) : null;
-  return (
-    <div style={{ maxWidth: 720 }}>
-      <PaneHead title="Container runtime">
-        The shared Docker container every agent runs inside. Read-only here — the image and network
-        mode are set with the <span className="mono">CODEHUB_IMAGE</span> /{" "}
-        <span className="mono">CODEHUB_NETWORK_MODE</span> env vars. Full inspection lives in the
-        Containers view.
-      </PaneHead>
-
-      {notRunning && (
-        <div
-          className="ch-card"
-          style={{
-            padding: "12px 16px",
-            marginBottom: 16,
-            borderColor: "color-mix(in oklab, var(--wait) 35%, var(--bd))",
-            background: "color-mix(in oklab, var(--wait) 5%, var(--bg-2))",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            fontSize: 12.5,
-            color: "var(--fg-1)",
-          }}
-        >
-          <StatusDot status="wait" />
-          Container not running — image and health fields below may be stale.
-        </div>
-      )}
-
-      <SectionHead label="Daemon" />
-      <div className="ch-card" style={{ padding: 16, display: "grid", gap: "10px 24px" }}>
-        <Kv k="Reachable" v={dockerInfo ? (dockerInfo.reachable ? "yes" : "no") : dash} />
-        <Kv k="Docker version" v={dockerInfo?.version ?? dash} />
-        <Kv k="API version" v={dockerInfo?.apiVersion ?? dash} />
-      </div>
-
-      <SectionHead label="Image" />
-      <div className="ch-card" style={{ padding: 16, display: "grid", gap: "10px 24px" }}>
-        <Kv k="Tag" v={image?.tag ?? dash} />
-        <Kv k="Digest" v={shortHash(image?.digest) ?? dash} />
-        <Kv k="Size" v={image?.size != null ? fmtBytes(image.size) : dash} />
-        <Kv
-          k="Platform"
-          v={image?.os && image?.arch ? `${image.os}-${image.arch}` : (image?.arch ?? dash)}
-        />
-      </div>
-
-      <SectionHead label="Health" />
-      <div className="ch-card" style={{ padding: 16, display: "grid", gap: "10px 24px" }}>
-        <Kv k="Status" v={health?.status ?? dash} />
-        <Kv k="Uptime" v={uptime ?? dash} />
-        <Kv k="Restarts" v={health?.restartCount != null ? String(health.restartCount) : dash} />
-        <Kv k="OOM killed" v={health?.oomKilled == null ? dash : health.oomKilled ? "yes" : "no"} />
-      </div>
     </div>
   );
 }
@@ -1331,7 +1196,7 @@ const MATRIX_COLS = "1fr 104px 104px 1.1fr";
 
 function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
   return (
-    <div style={{ maxWidth: 880 }}>
+    <div>
       <div
         style={{
           display: "flex",
@@ -1564,294 +1429,6 @@ function SupportChip({ tone }: { tone: Support }) {
   );
 }
 
-// Repositories — REAL. CodeHub mounts a single host repo at /workspace; this
-// surfaces that bind (host path) plus its live git state. Multi-repo support
-// would need a backend, so "add" is a disabled stub.
-function ReposPane() {
-  const dash = "—";
-  const [mounts, setMounts] = useState<MountInfo[] | null>(null);
-  const [git, setGit] = useState<GitStatus | null>(null);
-  const containerKey = useStore((s) => activeWorkspace(s)?.containerKey ?? null);
-  const loadWorkspaceInfo = useStore((s) => s.loadWorkspaceInfo);
-  useEffect(() => {
-    let alive = true;
-    if (!containerKey) {
-      setMounts([]);
-      setGit(null);
-      void loadWorkspaceInfo();
-      return () => {
-        alive = false;
-      };
-    }
-    ipc
-      .containerMounts(containerKey)
-      .then((m) => alive && setMounts(m))
-      .catch(() => alive && setMounts([]));
-    ipc
-      .containerGitStatus(containerKey)
-      .then((g) => alive && setGit(g))
-      .catch(() => {});
-    void loadWorkspaceInfo();
-    return () => {
-      alive = false;
-    };
-  }, [containerKey, loadWorkspaceInfo]);
-
-  const workspace = mounts?.find((m) => m.destination === "/workspace");
-  const branchLine = git?.isRepo
-    ? `${git.branch ?? "detached"}${git.ahead ? ` ↑${git.ahead}` : ""}${git.behind ? ` ↓${git.behind}` : ""}`
-    : "not a git repo";
-
-  return (
-    <div style={{ maxWidth: 720 }}>
-      <PaneHead title="Repositories">
-        CodeHub mounts one host directory at <span className="mono">/workspace</span>, shared by
-        every agent in the container. This is what they read and edit.
-      </PaneHead>
-
-      <SectionHead label="Workspace mount" />
-      {workspace ? (
-        <div className="ch-card" style={{ padding: 16, display: "grid", gap: "10px 24px" }}>
-          <Kv k="Host path" v={workspace.source} />
-          <Kv k="Mounted at" v={workspace.destination} />
-          <Kv k="Access" v={workspace.rw ? "read-write" : "read-only"} />
-          <Kv k="Branch" v={branchLine} />
-          <Kv
-            k="Working tree"
-            v={
-              git?.isRepo
-                ? git.total === 0
-                  ? "clean"
-                  : `${git.total} changed file${git.total === 1 ? "" : "s"}`
-                : dash
-            }
-          />
-        </div>
-      ) : (
-        <div className="ch-card" style={{ padding: 16, fontSize: 12.5, color: "var(--fg-2)" }}>
-          {mounts == null ? "Loading…" : "No /workspace mount — the container isn't running."}
-        </div>
-      )}
-
-      <SectionHead label="Change workspace" />
-      <WorkspaceChanger />
-      <p style={{ margin: "12px 0 0", fontSize: 11.5, color: "var(--fg-2)" }}>
-        One shared workspace per container. Mounting multiple repositories at once needs the
-        multi-container work (Tier-3) and is not built yet.
-      </p>
-    </div>
-  );
-}
-
-// Real Tier-2 workspace changer: shows the effective host dir, lets it change via
-// the native folder dialog or an MRU recent, and offers a runtime recreate (the
-// bind-mount source is fixed at create-time) when the choice differs from what's
-// mounted. Shared concern with the spawn dialog's RepositoryPicker.
-function WorkspaceChanger() {
-  const workspaceInfo = useStore((s) => s.workspaceInfo);
-  const error = useStore((s) => s.error);
-  // Default outside the selector — a `?? []` inside returns a fresh array per
-  // render and loops useSyncExternalStore (config starts null).
-  const recents = useStore((s) => s.config?.recentWorkspaces) ?? [];
-  const running = useStore((s) => s.status?.state === "running");
-  const pickWorkspaceDir = useStore((s) => s.pickWorkspaceDir);
-  const selectWorkspaceDir = useStore((s) => s.selectWorkspaceDir);
-  const recreateRuntime = useStore((s) => s.recreateRuntime);
-  const [manualOpen, setManualOpen] = useState(false);
-  const [manualPath, setManualPath] = useState("");
-
-  const effective = workspaceInfo?.effective ?? null;
-  const needsRecreate = workspaceInfo?.needsRecreate ?? false;
-  const otherRecents = recents.filter((p) => p !== effective);
-
-  useEffect(() => {
-    if (effective && !manualPath) setManualPath(effective);
-  }, [effective, manualPath]);
-
-  const chooseWithDialog = async () => {
-    const picked = await pickWorkspaceDir();
-    // The browser dev bridge cannot show a native folder picker. Match the spawn
-    // and new-workspace repository picker by falling back to a typed path.
-    if (!picked) setManualOpen(true);
-  };
-
-  const submitManualPath = () => {
-    const path = manualPath.trim();
-    if (path) void selectWorkspaceDir(path);
-  };
-
-  const restart = () => {
-    if (
-      window.confirm(
-        "Restart the runtime to mount the new workspace? This ends every running session (tmux scrollback is kept).",
-      )
-    ) {
-      void recreateRuntime();
-    }
-  };
-
-  return (
-    <div className="ch-card" style={{ padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span
-          className="mono"
-          style={{
-            fontSize: 12.5,
-            color: "var(--fg-1)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={effective ?? undefined}
-        >
-          {effective ?? "—"}
-        </span>
-        <span style={{ flex: 1 }} />
-        <Button variant="outline" size="sm" onClick={() => void chooseWithDialog()}>
-          {Ico.files}Choose folder…
-        </Button>
-      </div>
-
-      {(manualOpen || !effective) && (
-        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
-          <input
-            value={manualPath}
-            onChange={(e) => setManualPath(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") submitManualPath();
-            }}
-            placeholder="/absolute/path/to/repo"
-            spellCheck={false}
-            className="mono"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              padding: "7px 10px",
-              borderRadius: 6,
-              border: "1px solid var(--bd-soft)",
-              background: "var(--bg-0)",
-              color: "var(--fg-1)",
-              fontSize: 11.5,
-              outline: "none",
-            }}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!manualPath.trim()}
-            onClick={submitManualPath}
-          >
-            Use path
-          </Button>
-        </div>
-      )}
-
-      {error?.startsWith("set workspace dir failed") && (
-        <div className="mono" style={{ marginTop: 8, fontSize: 10.5, color: "var(--err)" }}>
-          {error}
-        </div>
-      )}
-
-      {otherRecents.length > 0 && (
-        <div style={{ marginTop: 12 }}>
-          <div className="lbl" style={{ marginBottom: 6 }}>
-            Recent
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {otherRecents.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => void selectWorkspaceDir(p)}
-                className="mono"
-                style={{
-                  textAlign: "left",
-                  background: "var(--bg-1)",
-                  border: "1px solid var(--bd-soft)",
-                  borderRadius: 6,
-                  padding: "6px 10px",
-                  fontSize: 11.5,
-                  color: "var(--fg-2)",
-                  cursor: "pointer",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-                title={p}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {needsRecreate && (
-        <div
-          style={{
-            marginTop: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "10px 12px",
-            background: "color-mix(in oklab, var(--wait) 10%, var(--bg-1))",
-            border: "1px solid color-mix(in oklab, var(--wait) 40%, var(--bd))",
-            borderRadius: 8,
-          }}
-        >
-          <span style={{ fontSize: 12, color: "var(--fg-1)", flex: 1 }}>
-            Workspace changed — restart the runtime to mount it. Ends every running session.
-          </span>
-          <Button variant="outline" size="sm" disabled={!running} onClick={restart}>
-            Restart runtime
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Keyboard shortcuts — REAL. Mirrors the working bindings from the ⌘/ cheat
-// sheet (single source: SHORTCUT_GROUPS in components/hub/Shortcuts.tsx).
-function ShortcutsPane() {
-  return (
-    <div style={{ maxWidth: 720, paddingTop: 4 }}>
-      <PaneHead title="Keyboard shortcuts">
-        Every binding that works today. Inside a terminal pane, all other keys pass straight through
-        to the agent / tmux. The same list opens anywhere with <span className="kbd">⌘</span>{" "}
-        <span className="kbd">/</span>.
-      </PaneHead>
-
-      {SHORTCUT_GROUPS.map((g) => (
-        <div key={g.title}>
-          <SectionHead label={g.title} />
-          {g.items.map((sc, i) => (
-            <div
-              key={sc.desc}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 14,
-                padding: "10px 0",
-                borderBottom: i === g.items.length - 1 ? "none" : "1px solid var(--bd-soft)",
-              }}
-            >
-              <span style={{ fontSize: 13, color: "var(--fg-0)", flex: 1 }}>{sc.desc}</span>
-              <span style={{ display: "inline-flex", gap: 3 }}>
-                {sc.keys.map((k) => (
-                  <span key={k} className="kbd">
-                    {k}
-                  </span>
-                ))}
-              </span>
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // Notifications — desktop notification PREFERENCES. The three flags persist for
 // real (config::Settings → settings.json) AND drive real OS delivery: the event
 // tailer reads the ConfigStore at event time and fires a tauri-plugin-notification
@@ -1861,7 +1438,7 @@ function ShortcutsPane() {
 // no toast — that's the one place a saved toggle won't fire.
 function NotificationsPane() {
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div>
       <PaneHead title="Notifications">
         How CodeHub should alert you when an agent needs attention while its window isn't focused.
       </PaneHead>
@@ -2843,7 +2420,7 @@ export function LinuxNotificationPreview() {
 function AppearancePane() {
   const { theme, setTheme } = useTheme();
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div>
       <PaneHead title="Appearance">
         Theme and terminal font size apply instantly and are remembered on this machine.
       </PaneHead>
@@ -3030,8 +2607,8 @@ function RefreshVersionsButton() {
     }
   };
   return (
-    <Button variant="ghost" size="sm" disabled={busy} onClick={() => void refresh()}>
-      {busy ? "Refreshing…" : "Refresh versions"}
+    <Button variant="outline" size="sm" disabled={busy} onClick={() => void refresh()}>
+      {Ico.search} {busy ? "Checking…" : "Check for update"}
     </Button>
   );
 }
@@ -3041,92 +2618,22 @@ function DefaultAgentSelect() {
   const value = useStore((s) => s.config?.defaultAgent ?? "claude");
   const updateConfig = useStore((s) => s.updateConfig);
   return (
-    <div
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "0 8px",
-        border: "1px solid var(--bd)",
-        borderRadius: 6,
-        background: "var(--bg-1)",
-      }}
-    >
-      <AgentGlyph agent={value} size={11} color={`var(--a-${value})`} />
-      <select
-        value={value}
-        onChange={(e) => void updateConfig({ defaultAgent: e.target.value as Cli })}
-        style={{
-          appearance: "none",
-          border: "none",
-          background: "transparent",
-          color: "var(--fg-0)",
-          fontFamily: "var(--sans)",
-          fontSize: 12,
-          padding: "6px 2px",
-          cursor: "pointer",
-          minWidth: 110,
-        }}
-      >
+    <Select value={value} onValueChange={(v) => void updateConfig({ defaultAgent: v as Cli })}>
+      <SelectTrigger style={{ width: 180, gap: 8 }}>
+        <AgentGlyph agent={value} size={11} color={`var(--a-${value})`} />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
         {CLIS.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.label}
-          </option>
+          <SelectItem key={c.id} value={c.id}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <AgentGlyph agent={c.id} size={11} color={AGENT_META[c.id].accent} />
+              {c.label}
+            </span>
+          </SelectItem>
         ))}
-      </select>
-      <span style={{ color: "var(--fg-2)" }}>{Ico.chevD}</span>
-    </div>
-  );
-}
-
-// Human-readable bytes (binary units), matching the Containers view formatter.
-function fmtBytes(n: number): string {
-  if (n <= 0) return "0 B";
-  const units = ["B", "kB", "MB", "GB", "TB"];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  const v = n / 1024 ** i;
-  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
-}
-
-// Compact uptime from an RFC 3339 start time: "<1m", "12m", "3h", "2d".
-function fmtUptime(rfc3339: string): string | null {
-  const start = Date.parse(rfc3339);
-  if (Number.isNaN(start)) return null;
-  const s = Math.max(0, Math.floor((Date.now() - start) / 1000));
-  if (s < 60) return "<1m";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
-
-// Strip `sha256:` and shorten to 12 hex chars (how `docker images` shows it).
-function shortHash(s: string | null | undefined): string | null {
-  if (!s) return null;
-  return s.replace(/^sha256:/, "").slice(0, 12);
-}
-
-// One mono key/value row for the About pane. Value is right-aligned and
-// ellipsized so a long Docker/socket string can't widen its grid track.
-function Kv({ k, v }: { k: string; v: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0 }}>
-      <span style={{ fontSize: 12, color: "var(--fg-2)", flexShrink: 0 }}>{k}</span>
-      <span style={{ flex: 1, borderBottom: "1px dotted var(--bd-soft)", minWidth: 8 }} />
-      <span
-        className="mono tnum"
-        style={{
-          fontSize: 11.5,
-          color: "var(--fg-1)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          minWidth: 0,
-        }}
-        title={v}
-      >
-        {v}
-      </span>
-    </div>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -3141,111 +2648,6 @@ function SectionHead({ label, tone }: { label: string; tone?: "err" }) {
       </span>
       <span style={{ flex: 1, height: 1, background: "var(--bd-soft)" }} />
     </div>
-  );
-}
-
-// One agent card, all real data. `present` is host-env key presence (never the
-// value); `varName`/`source` name where it came from; `version` is the binary's
-// reported version (em-dash when the binary or feed is absent).
-function AgentRow({
-  agent,
-  name,
-  version,
-  present,
-  varName,
-  source,
-  onConfigure,
-}: {
-  agent: AgentId;
-  name: string;
-  version: string | null;
-  present: boolean;
-  varName: string | null;
-  source: string | null;
-  onConfigure?: () => void;
-}) {
-  const meta = AGENT_META[agent];
-  // Honest auth subline: the env var that's set, else what's missing.
-  const authLine = present
-    ? `${varName ?? "host env"}${source && source !== "env" ? ` · ${source}` : ""}`
-    : "no host key set";
-  return (
-    <button
-      type="button"
-      onClick={onConfigure}
-      className="ch-card agent-row"
-      style={{
-        padding: 14,
-        display: "flex",
-        alignItems: "center",
-        gap: 14,
-        marginBottom: 8,
-        width: "100%",
-        textAlign: "left",
-        background: "var(--bg-2)",
-        cursor: onConfigure ? "pointer" : "default",
-      }}
-    >
-      <div
-        style={{
-          width: 38,
-          height: 38,
-          borderRadius: 8,
-          background: `color-mix(in oklab, ${meta.accent} 14%, var(--bg-1))`,
-          border: `1px solid color-mix(in oklab, ${meta.accent} 30%, var(--bd))`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <span style={{ transform: "scale(1.4)" }}>
-          <AgentGlyph agent={agent} size={14} color={meta.accent} />
-        </span>
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-          <span style={{ fontSize: 13.5, fontWeight: 500, color: "var(--fg-0)" }}>{name}</span>
-          <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
-            {version ?? "—"}
-          </span>
-        </div>
-        <div style={{ fontSize: 11.5, color: "var(--fg-2)", fontFamily: "var(--mono)" }}>
-          {authLine}
-        </div>
-      </div>
-      {present ? (
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            fontSize: 11.5,
-            color: "var(--live)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <StatusDot status="live" /> Connected
-        </span>
-      ) : (
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            fontSize: 11.5,
-            color: "var(--wait)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <StatusDot status="wait" /> Key needed
-        </span>
-      )}
-      {onConfigure && (
-        <span style={{ color: "var(--fg-3)", display: "inline-flex", flexShrink: 0 }}>
-          {Ico.arrowR}
-        </span>
-      )}
-    </button>
   );
 }
 

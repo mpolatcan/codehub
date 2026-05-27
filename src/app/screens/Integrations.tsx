@@ -581,7 +581,7 @@ function SoonRow({ name, desc }: { name: string; desc: string }) {
   return (
     <div
       className="ch-card"
-      style={{ padding: 12, display: "flex", alignItems: "center", gap: 12 }}
+      style={{ padding: 12, display: "flex", alignItems: "center", gap: 12, opacity: 0.55 }}
     >
       <span
         className="mono"

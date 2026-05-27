@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { groupKey, splitKey, useLauncher } from "../lib/launcher";
 import { useOverlay } from "../lib/overlay";
-import { confirmCloseRunningSession, useStore } from "../lib/store";
+import { confirmCloseRunningSession, confirmCloseWorkspace, useStore } from "../lib/store";
 import { type SplitDir, activeGroup, workspaceLeaves, workspaceTitle } from "../lib/tree";
 
 // Split the focused pane along its longer visible axis — wider panes split into
@@ -110,7 +110,8 @@ export function useKeyboard() {
           break;
         case "t":
           e.preventDefault();
-          launcher.open("newtab");
+          if (e.shiftKey) overlay.setNewWorkspace(true);
+          else launcher.open("newtab");
           break;
         case "k":
           e.preventDefault();
@@ -124,12 +125,8 @@ export function useKeyboard() {
           e.preventDefault();
           if (e.shiftKey) {
             if (!ws) return;
-            const count = workspaceLeaves(ws).length;
-            const suffix =
-              count > 0 ? ` This ends ${count} session${count === 1 ? "" : "s"} in the tab.` : "";
-            if (window.confirm(`Close ${workspaceTitle(ws)}?${suffix}`)) {
-              void store.closeWorkspace(ws.id);
-            }
+            const result = confirmCloseWorkspace(ws.id);
+            if (result) void store.closeWorkspace(ws.id);
             return;
           }
           if (!focused) return;

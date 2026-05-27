@@ -155,24 +155,26 @@
 }
 
 /* ── GRAY ───────────────────────────────────────────────────────────────── */
+/* Warm mid-gray — perceptibly lighter than Dark, with a neutral-warm undertone.
+   Sidebar and cards read as warm graphite against the pure-cool Dark default. */
 .gray,
 .ch-theme-gray {
-  --bg-0: #1a1d22;
-  --bg-1: #21252b;
-  --bg-2: #2a2e36;
-  --bg-3: #353a44;
-  --bg-hover: #404653;
-  --bg-active: #4b515e;
+  --bg-0: #1e2025;
+  --bg-1: #262930;
+  --bg-2: #2f333b;
+  --bg-3: #3a3f4a;
+  --bg-hover: #454b58;
+  --bg-active: #515865;
 
-  --bd: #3b414c;
-  --bd-strong: #525864;
-  --bd-soft: #2c3038;
+  --bd: #424854;
+  --bd-strong: #5a6170;
+  --bd-soft: #333842;
 
-  --fg-0: #ecedf0;
-  --fg-1: #b9bdc6;
-  --fg-2: #858a96;
-  --fg-3: #6a6f7a;
-  --fg-4: #4c5159;
+  --fg-0: #edeef1;
+  --fg-1: #bcc1ca;
+  --fg-2: #8b91a0;
+  --fg-3: #6c7282;
+  --fg-4: #505660;
 
   --live: oklch(0.76 0.16 145);
   --live-dim: oklch(0.76 0.16 145 / 0.18);
@@ -201,23 +203,23 @@
   --shadow-3: 0 4px 0 rgba(255, 255, 255, 0.015), 0 18px 60px rgba(0, 0, 0, 0.55);
 
   /* shadcn token bridge (gray) */
-  --background: #21252b;
-  --foreground: #ecedf0;
-  --card: #2a2e36;
-  --card-foreground: #ecedf0;
-  --popover: #2a2e36;
-  --popover-foreground: #ecedf0;
+  --background: #262930;
+  --foreground: #edeef1;
+  --card: #2f333b;
+  --card-foreground: #edeef1;
+  --popover: #2f333b;
+  --popover-foreground: #edeef1;
   --primary: oklch(0.7 0.17 295);
-  --primary-foreground: #1a1d22;
-  --secondary: #353a44;
-  --secondary-foreground: #ecedf0;
-  --muted: #353a44;
-  --muted-foreground: #858a96;
-  --accent: #353a44;
-  --accent-foreground: #ecedf0;
+  --primary-foreground: #1e2025;
+  --secondary: #3a3f4a;
+  --secondary-foreground: #edeef1;
+  --muted: #3a3f4a;
+  --muted-foreground: #8b91a0;
+  --accent: #3a3f4a;
+  --accent-foreground: #edeef1;
   --destructive: oklch(0.68 0.17 25);
-  --border: #3b414c;
-  --input: #3b414c;
+  --border: #424854;
+  --input: #424854;
   --ring: oklch(0.7 0.17 295);
 }
 
@@ -436,6 +438,7 @@
   background: var(--bg-2);
   border: 1px solid var(--bd);
   border-radius: var(--r-3);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 /* Clickable changed-file row in the Hub activity rail. */
@@ -482,6 +485,12 @@
   cursor: pointer;
   color: var(--fg-1);
   position: relative;
+  transition: background 0.15s ease, color 0.15s ease;
+  background: transparent;
+  border: none;
+  width: 100%;
+  font: inherit;
+  text-align: left;
 }
 
 .side-item:hover {
@@ -504,4 +513,162 @@
   background: var(--fg-0);
   border-radius: 2px;
   transform: translateY(-50%);
+  animation: indicator-in 0.2s ease;
+}
+@keyframes indicator-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scaleY(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scaleY(1);
+  }
+}
+
+/* Disabled sidebar item (Coming soon) */
+.side-item.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: default;
+}
+
+/* ---- Transition utilities ------------------------------------------------ */
+
+/* Activity rail row hover */
+.rail-file {
+  transition: background 0.12s ease;
+}
+
+/* Dashboard sessions table row hover */
+.session-row {
+  transition: background 0.12s ease;
+  cursor: pointer;
+}
+.session-row:hover {
+  background: var(--bg-3);
+}
+.session-row:hover td:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.session-row:hover td:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+/* Panel slide-in animations are handled by the Web Animations API
+   (useSlideIn hook) for reliable cross-engine support. */
+
+/* Card hover lift */
+.ch-card-interactive {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.ch-card-interactive:hover {
+  border-color: var(--bd-strong);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Smooth scrollbar for custom panels */
+.scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-3) transparent;
+}
+.scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll::-webkit-scrollbar-thumb {
+  background: var(--bg-3);
+  border-radius: 999px;
+}
+.scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-3);
+}
+
+/* Workspace sidebar row hover */
+.ws-side-row {
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.ws-side-row:hover {
+  border-color: var(--bd);
+}
+
+/* ---- Global focus-visible ring ------------------------------------------- */
+/* Themed range slider */
+.ch-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  outline: none;
+}
+.ch-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--pri);
+  border: 2px solid var(--bg-1);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.ch-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--pri);
+  border: 2px solid var(--bg-1);
+  cursor: pointer;
+}
+
+/* Themed select */
+select.mono {
+  color-scheme: dark;
+}
+
+/* Workspace card — reveal remove button on hover */
+.ws-card:hover .ws-remove,
+.ws-card:focus-within .ws-remove {
+  opacity: 1 !important;
+}
+
+/* Sidebar session — reveal close button on hover */
+.side-item:hover .session-close,
+.side-item:focus-within .session-close {
+  opacity: 1 !important;
+}
+
+/* Keyboard users get a clear accent ring on all custom chrome elements.
+   Mouse clicks stay clean (the :focus-visible heuristic suppresses it). */
+.side-item:focus-visible,
+.btn:focus-visible,
+.pane-add-btn:focus-visible,
+.spawn-half:focus-visible,
+.ctx-row:focus-visible,
+.ws-card:focus-visible,
+.tmpl-card:focus-visible,
+.ch-activity-rail-reveal:focus-visible,
+.rail-file:focus-visible,
+.ch-tab:focus-visible,
+.ws-side-row:focus-visible {
+  outline: 2px solid var(--pri);
+  outline-offset: -2px;
+}
+
+/* ---- Reduced motion ------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .side-item {
+    transition: none;
+  }
+  .side-item.active::before {
+    animation: none;
+  }
+  .ch-card-interactive {
+    transition: none;
+  }
+  .ws-side-row {
+    transition: none;
+  }
 }

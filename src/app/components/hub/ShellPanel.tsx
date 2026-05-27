@@ -1,8 +1,10 @@
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { PaneMount } from "../../components/PaneMount";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
+import { slideUp } from "../../hooks/useSlideIn";
 import { useOverlay } from "../../lib/overlay";
 import { activeWorkspace, useStore } from "../../lib/store";
 
@@ -51,7 +53,8 @@ export function ShellPanel() {
   }, [containerKey, ensureDockedShell, running]);
 
   return (
-    <div
+    <motion.div
+      {...slideUp}
       style={{
         flexShrink: 0,
         height: 224,
@@ -120,7 +123,7 @@ export function ShellPanel() {
           <ShellEmpty loading={loading} running={running} err={err} />
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 

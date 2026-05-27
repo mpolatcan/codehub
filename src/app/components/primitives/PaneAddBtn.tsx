@@ -24,11 +24,13 @@ export function PaneAddBtn({
   kind,
   kbd,
   active = false,
+  showLabel = false,
   onClick,
 }: {
   kind: PaneAddKind;
   kbd: string;
   active?: boolean;
+  showLabel?: boolean;
   onClick?: MouseEventHandler<HTMLButtonElement>;
 }) {
   const m = MAP[kind];
@@ -37,13 +39,16 @@ export function PaneAddBtn({
   return (
     <button
       type="button"
-      className={`pane-add-btn${m.toggle && active ? " active" : ""}`}
+      className={`pane-add-btn${m.toggle && active ? " active" : ""}${showLabel ? " with-label" : ""}`}
       title={`${titlePrefix} ${m.label}${suffix} · ${kbd}`}
       aria-pressed={m.toggle ? active : undefined}
       onClick={onClick}
       style={{ "--pa-c": m.color } as CSSProperties}
     >
       {Ico[m.icon]}
+      {showLabel && (
+        <span style={{ fontSize: 11, fontFamily: "var(--mono)", fontWeight: 500 }}>{m.label}</span>
+      )}
     </button>
   );
 }

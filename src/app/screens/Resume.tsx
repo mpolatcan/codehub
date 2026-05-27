@@ -26,10 +26,12 @@
  *   - Codex's createSession has no --resume path, so we honestly spawn a FRESH
  *     Codex session (labelled "New Codex") rather than pretend to restore it.
  */
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { AgentGlyph } from "../components/primitives/AgentGlyph";
 import { IconBtn } from "../components/primitives/IconBtn";
 import { Ico } from "../components/primitives/icons";
+import { slideLeft, slideRight } from "../hooks/useSlideIn";
 import type { AgentCli, ClaudeSession, CodexSession } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
 import { useLauncher } from "../lib/launcher";
@@ -178,13 +180,12 @@ export function ResumeDrawer() {
   if (!open) return null;
 
   return (
-    <aside
+    <motion.aside
+      {...(side === "left" ? slideLeft : slideRight)}
       style={{
         width: 350,
         flexShrink: 0,
         background: "var(--bg-1)",
-        // Border faces the hub: right-docked → border on its left edge, and
-        // vice-versa when flipped to the left.
         ...(side === "left"
           ? { borderRight: "1px solid var(--bd-soft)" }
           : { borderLeft: "1px solid var(--bd-soft)" }),
@@ -339,7 +340,7 @@ export function ResumeDrawer() {
           ))
         )}
       </div>
-    </aside>
+    </motion.aside>
   );
 }
 

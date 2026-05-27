@@ -1,8 +1,10 @@
+import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { AgentGlyph } from "../../components/primitives/AgentGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Logo } from "../../components/primitives/Logo";
 import { StatusDot } from "../../components/primitives/StatusDot";
+import { Tip } from "../../components/primitives/Tip";
 import { Ico } from "../../components/primitives/icons";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../../lib/catalog";
 import { useOverlay } from "../../lib/overlay";
@@ -25,22 +27,32 @@ function dirName(path: string | undefined): string | null {
 
 // design NAV_ITEMS — top-level views. `view` is the live HubView each maps to;
 // `badge` resolves to a real count (sessions) or undefined.
-type NavId = "hub" | "dashboard" | "workspaces" | "usage" | "integrations";
+type NavId = "hub" | "dashboard" | "workspaces" | "usage" | "settings";
 
 export function HubSidebar() {
   const collapsed = useStore((s) => s.sidebarCollapsed);
-  return collapsed ? <SidebarRail /> : <SidebarExpanded />;
+  return (
+    <motion.div
+      animate={{ width: collapsed ? 52 : 264 }}
+      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+      style={{
+        flexShrink: 0,
+        overflow: "hidden",
+        display: "flex",
+      }}
+    >
+      {collapsed ? <SidebarRail /> : <SidebarExpanded />}
+    </motion.div>
+  );
 }
 
 // ── shared selectors + nav model ────────────────────────────────────────────
 function useNav() {
   const view = useStore((s) => s.view);
-  const settingsSection = useStore((s) => s.settingsSection);
   const setView = useStore((s) => s.setView);
   const setSettingsSection = useStore((s) => s.setSettingsSection);
   const sessionCount = useStore((s) => Object.keys(s.sessionMeta).length);
 
-  // active id by current view; Integrations is a Settings sub-pane (design IA).
   const activeId: NavId | null =
     view === "hub"
       ? "hub"
@@ -50,8 +62,8 @@ function useNav() {
           ? "workspaces"
           : view === "usage"
             ? "usage"
-            : view === "settings" && settingsSection === "integrations"
-              ? "integrations"
+            : view === "settings"
+              ? "settings"
               : null;
 
   const items: Array<{
@@ -72,11 +84,11 @@ function useNav() {
     { id: "workspaces", label: "Workspaces", icon: Ico.container, go: () => setView("containers") },
     { id: "usage", label: "Usage", icon: Ico.cpu, go: () => setView("usage") },
     {
-      id: "integrations",
-      label: "Integrations",
-      icon: Ico.branch,
+      id: "settings",
+      label: "Settings",
+      icon: Ico.settings,
       go: () => {
-        setSettingsSection("integrations");
+        setSettingsSection("general");
         setView("settings");
       },
     },
@@ -136,25 +148,12 @@ function SidebarExpanded() {
 
       {/* Views */}
       <div style={{ padding: "10px 10px 4px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "0 4px 6px",
-          }}
-        >
+        <div style={{ padding: "0 4px 6px" }}>
           <span className="lbl">Views</span>
-          <span
-            className="mono"
-            title="Top-level views"
-            style={{ fontSize: 10, color: "var(--fg-3)" }}
-          >
-            {items.length}
-          </span>
         </div>
         {items.map((n) => (
-          <div
+          <button
+            type="button"
             key={n.id}
             className={`side-item${activeId === n.id ? " active" : ""}`}
             onClick={n.go}
@@ -166,7 +165,7 @@ function SidebarExpanded() {
                 {n.badge}
               </span>
             )}
-          </div>
+          </button>
         ))}
       </div>
 
@@ -259,6 +258,7 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div
+      className="ws-side-row"
       style={{
         borderRadius: 7,
         padding: 4,
@@ -411,6 +411,7 @@ function SessionRow({
           <span style={{ flex: 1 }} />
           <button
             type="button"
+            className="session-close"
             aria-label="close"
             onClick={(e) => {
               e.stopPropagation();
@@ -425,6 +426,8 @@ function SessionRow({
               fontSize: 13,
               lineHeight: 1,
               padding: 0,
+              opacity: 0,
+              transition: "opacity .15s",
             }}
           >
             ×
@@ -449,8 +452,7 @@ function SessionRow({
 // ── footer — design's account row, fed by real runtime identity ──────────────
 function SidebarFooter() {
   const status = useStore((s) => s.status);
-  const setView = useStore((s) => s.setView);
-  const setSettingsSection = useStore((s) => s.setSettingsSection);
+  const dockerInfo = useStore((s) => s.dockerInfo);
   const runtimeLive = status?.state === "running";
 
   return (
@@ -497,21 +499,12 @@ function SidebarFooter() {
             whiteSpace: "nowrap",
           }}
         >
-          daemon
-        </div>
-        <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
           {status?.state ?? "—"}
         </div>
+        <div className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+          {dockerInfo?.version ? `docker ${dockerInfo.version}` : "docker daemon"}
+        </div>
       </div>
-      <IconBtn
-        title="Settings"
-        onClick={() => {
-          setSettingsSection("general");
-          setView("settings");
-        }}
-      >
-        {Ico.settings}
-      </IconBtn>
     </div>
   );
 }
@@ -520,11 +513,6 @@ function SidebarFooter() {
 function SidebarRail() {
   const { activeId, items } = useNav();
   const toggleSidebar = useStore((s) => s.toggleSidebar);
-  const setView = useStore((s) => s.setView);
-  const setSettingsSection = useStore((s) => s.setSettingsSection);
-  const view = useStore((s) => s.view);
-  const settingsSection = useStore((s) => s.settingsSection);
-  const settingsActive = view === "settings" && settingsSection !== "integrations";
   const runtimeState = useStore((s) => s.status?.state);
 
   return (
@@ -582,16 +570,6 @@ function SidebarRail() {
           pulse={runtimeState === "running"}
         />
       </div>
-      <RailIcon
-        title="Settings"
-        active={settingsActive}
-        onClick={() => {
-          setSettingsSection("general");
-          setView("settings");
-        }}
-      >
-        {Ico.settings}
-      </RailIcon>
     </aside>
   );
 }
@@ -610,45 +588,62 @@ function RailIcon({
   onClick?: () => void;
 }) {
   return (
-    <div
-      title={title}
-      onClick={onClick}
-      style={{
-        width: 32,
-        height: 32,
-        borderRadius: 7,
-        marginBottom: 4,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: active ? "var(--bg-3)" : "transparent",
-        color: active ? "var(--fg-0)" : "var(--fg-2)",
-        cursor: "pointer",
-        position: "relative",
-      }}
-    >
-      {children}
-      {badge && (
-        <span
-          className="mono"
-          style={{
-            position: "absolute",
-            top: -2,
-            right: -2,
-            fontSize: 10,
-            fontWeight: 600,
-            background: "var(--fg-0)",
-            color: "var(--bg-0)",
-            borderRadius: 7,
-            padding: "1px 4px",
-            minWidth: 14,
-            textAlign: "center",
-            border: "1.5px solid var(--bg-0)",
-          }}
-        >
-          {badge}
-        </span>
-      )}
-    </div>
+    <Tip text={title} side="right">
+      <button
+        type="button"
+        onClick={onClick}
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 7,
+          marginBottom: 4,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: active ? "var(--bg-3)" : "transparent",
+          color: active ? "var(--fg-0)" : "var(--fg-2)",
+          cursor: "pointer",
+          position: "relative",
+          border: "none",
+          padding: 0,
+          transition: "background .12s, color .12s",
+        }}
+        onMouseEnter={(e) => {
+          if (!active) {
+            e.currentTarget.style.background = "var(--bg-3)";
+            e.currentTarget.style.color = "var(--fg-0)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!active) {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "var(--fg-2)";
+          }
+        }}
+      >
+        {children}
+        {badge && (
+          <span
+            className="mono"
+            style={{
+              position: "absolute",
+              top: -2,
+              right: -2,
+              fontSize: 10,
+              fontWeight: 600,
+              background: "var(--fg-0)",
+              color: "var(--bg-0)",
+              borderRadius: 7,
+              padding: "1px 4px",
+              minWidth: 14,
+              textAlign: "center",
+              border: "1.5px solid var(--bg-0)",
+            }}
+          >
+            {badge}
+          </span>
+        )}
+      </button>
+    </Tip>
   );
 }

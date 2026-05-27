@@ -1,4 +1,5 @@
 import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
+import { Tip } from "./Tip";
 
 export interface IconBtnProps {
   children: ReactNode;
@@ -19,10 +20,9 @@ export function IconBtn({
   disabled = false,
   style,
 }: IconBtnProps) {
-  return (
+  const btn = (
     <button
       type="button"
-      title={title}
       onClick={onClick}
       disabled={disabled}
       style={{
@@ -37,7 +37,7 @@ export function IconBtn({
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        transition: "background .12s, color .12s",
+        transition: "background .12s, color .12s, opacity .12s",
         padding: 0,
         ...style,
       }}
@@ -57,4 +57,6 @@ export function IconBtn({
       {children}
     </button>
   );
+
+  return title ? <Tip text={title}>{btn}</Tip> : btn;
 }

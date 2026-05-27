@@ -49,12 +49,14 @@ export function GroupsBar({ ws }: { ws: Workspace }) {
         {Ico.plus}
       </IconBtn>
       <div style={{ flex: 1 }} />
-      <span
-        className="mono"
-        style={{ alignSelf: "center", fontSize: 10, color: "var(--fg-3)", padding: "0 10px" }}
-      >
-        {groups.length} group{groups.length === 1 ? "" : "s"}
-      </span>
+      {groups.length > 1 && (
+        <span
+          className="mono"
+          style={{ alignSelf: "center", fontSize: 10, color: "var(--fg-3)", padding: "0 10px" }}
+        >
+          {groups.length} groups
+        </span>
+      )}
     </div>
   );
 }

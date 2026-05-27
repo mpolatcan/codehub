@@ -1,36 +1,26 @@
-/**
- * Welcome — the workspace launcher. Ported from design/screens/welcome.jsx, the
- * first screen when no agent tab is open AND the user has saved workspaces (a
- * cold first run with none shows EmptyHero instead).
- *
- * Honest data model: a saved workspace is a name + host directory pointer
- * (config.savedWorkspaces) — each opens in its own workspace container, so
- * the design's fabricated container size / vCPU·RAM / live-agent footer are
- * dropped rather than fabricated. Each card shows what's real: the name, the
- * mounted directory, when it was last opened, a pin toggle, and an "open" badge
- * when it's the directory currently bound at /workspace.
- *
- * Opening a workspace points the /workspace mount at its dir and opens the spawn
- * launcher to start the first agent (the same launcher used everywhere). If the
- * dir differs from what's mounted, the launcher surfaces the existing "restart
- * runtime to apply" affordance.
- */
+import { AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { Ico } from "@/app/components/primitives/icons";
 import { shortPath } from "@/app/components/spawn-form";
 import type { SavedWorkspace } from "@/app/lib/ipc";
 import { useLauncher } from "@/app/lib/launcher";
 import { useOverlay } from "@/app/lib/overlay";
 import { useStore } from "@/app/lib/store";
+import { workspaceLeaves } from "@/app/lib/tree";
 import { Button } from "@/app/ui/button";
+import { useMemo, useState } from "react";
 
-// Relative age from an epoch-ms timestamp (lastOpened). Null/0 → "not opened yet".
 function relTime(ms: number | null): string {
   if (!ms) return "not opened yet";
   const secs = Math.floor((Date.now() - ms) / 1000);
   if (secs < 60) return "just now";
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  if (secs < 172800) return "yesterday";
   return `${Math.floor(secs / 86400)}d ago`;
+}
+
+function dirName(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? path;
 }
 
 export function Welcome() {
@@ -39,12 +29,29 @@ export function Welcome() {
   const setResume = useOverlay((s) => s.setResume);
   const setView = useStore((s) => s.setView);
   const setSettingsSection = useStore((s) => s.setSettingsSection);
+  const [query, setQuery] = useState("");
 
   const pinned = saved.filter((w) => w.pinned);
-  // Everything else, most-recently-opened first.
   const rest = saved
     .filter((w) => !w.pinned)
     .sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
+
+  const q = query.toLowerCase();
+  const filteredPinned = useMemo(
+    () =>
+      pinned.filter(
+        (ws) => !q || ws.name.toLowerCase().includes(q) || ws.dir.toLowerCase().includes(q),
+      ),
+    [pinned, q],
+  );
+  const filteredRest = useMemo(
+    () =>
+      rest.filter(
+        (ws) => !q || ws.name.toLowerCase().includes(q) || ws.dir.toLowerCase().includes(q),
+      ),
+    [rest, q],
+  );
+  const showSearch = saved.length >= 4;
 
   return (
     <main
@@ -58,10 +65,10 @@ export function Welcome() {
         color: "var(--fg-1)",
       }}
     >
-      {/* hero band */}
+      {/* hero band — matches design welcome.jsx */}
       <div
         style={{
-          padding: "40px 48px 24px",
+          padding: "40px 48px 28px",
           borderBottom: "1px solid var(--bd-soft)",
           display: "flex",
           alignItems: "flex-end",
@@ -93,7 +100,7 @@ export function Welcome() {
               lineHeight: 1.55,
             }}
           >
-            A workspace runs in its own container. Open one to spawn agents inside it.
+            A workspace bundles repos and a container together. Open one to spawn agents inside it.
           </p>
         </div>
         <Button onClick={() => openWizard(true)} title="Create a new workspace (⌘⇧N)">
@@ -104,60 +111,122 @@ export function Welcome() {
         </Button>
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: "24px 48px 32px" }}>
-        {pinned.length > 0 && (
-          <Section title="Pinned" count={pinned.length}>
-            {pinned.map((w) => (
-              <WorkspaceCard key={w.id} ws={w} />
-            ))}
-          </Section>
+      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "24px 48px 40px" }}>
+        {/* search */}
+        {showSearch && (
+          <div style={{ marginBottom: 20 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 12px",
+                background: "var(--bg-2)",
+                border: "1px solid var(--bd-soft)",
+                borderRadius: 8,
+                maxWidth: 360,
+              }}
+            >
+              <span style={{ color: "var(--fg-3)", display: "inline-flex" }}>{Ico.search}</span>
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filter workspaces…"
+                className="mono"
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: "none",
+                  outline: "none",
+                  color: "var(--fg-0)",
+                  fontSize: 12,
+                }}
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--fg-3)",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    padding: 0,
+                  }}
+                >
+                  {Ico.close}
+                </button>
+              )}
+            </div>
+          </div>
         )}
 
-        {rest.length > 0 && (
-          <Section title="Recent" count={rest.length}>
-            {rest.map((w) => (
+        {filteredPinned.length > 0 && (
+          <CardSection title="Pinned" count={filteredPinned.length}>
+            {filteredPinned.map((w) => (
               <WorkspaceCard key={w.id} ws={w} />
             ))}
-          </Section>
+          </CardSection>
         )}
 
-        {/* Start new */}
+        {filteredRest.length > 0 && (
+          <CardSection title="Recent" count={filteredRest.length}>
+            {filteredRest.map((w) => (
+              <WorkspaceCard key={w.id} ws={w} />
+            ))}
+          </CardSection>
+        )}
+
+        {query && filteredPinned.length === 0 && filteredRest.length === 0 && (
+          <div
+            className="mono"
+            style={{
+              padding: "32px 0",
+              textAlign: "center",
+              fontSize: 12,
+              color: "var(--fg-3)",
+            }}
+          >
+            No workspaces match "{query}".
+          </div>
+        )}
+
+        {/* start a new workspace — template cards (design welcome.jsx) */}
         <div>
-          <div className="lbl" style={{ marginBottom: 12 }}>
+          <div className="lbl" style={{ marginBottom: 14 }}>
             Start a new workspace
           </div>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(256px, 1fr))",
+              gridTemplateColumns: "repeat(3, 1fr)",
               gap: 12,
             }}
           >
             <TemplateCard
               title="Blank workspace"
-              desc="Pick a folder and a first agent yourself."
+              desc="Pick repos and container size yourself."
               icon={Ico.plus}
               cta="Start"
               onClick={() => openWizard(true)}
             />
             <TemplateCard
               title="From GitHub"
-              desc="Browse the repositories your gh CLI can see, then open one."
+              desc="Clone a repo URL, auto-detect language, pre-configure container."
               icon={Ico.search}
-              cta="Browse repos"
+              cta="Clone repo"
               onClick={() => {
                 setSettingsSection("integrations");
                 setView("settings");
               }}
             />
             <TemplateCard
-              title="Resume a session"
-              desc="Reattach to a recent Claude session and continue its transcript."
+              title="Resume session"
+              desc="Reattach to a recent agent session and continue."
               icon={Ico.bell}
               cta="Browse sessions"
-              // Welcome only renders inside HubView (view is already "hub"), but
-              // force it for symmetry with ⌘R / the palette so the drawer always
-              // has a host to render in.
               onClick={() => {
                 setView("hub");
                 setResume(true);
@@ -170,7 +239,7 @@ export function Welcome() {
   );
 }
 
-function Section({
+function CardSection({
   title,
   count,
   children,
@@ -186,7 +255,7 @@ function Section({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gridTemplateColumns: "repeat(3, 1fr)",
           gap: 12,
         }}
       >
@@ -198,22 +267,26 @@ function Section({
 
 function WorkspaceCard({ ws }: { ws: SavedWorkspace }) {
   const effective = useStore((s) => s.workspaceInfo?.effective ?? null);
+  const workspaces = useStore((s) => s.workspaces);
+  const sessionMeta = useStore((s) => s.sessionMeta);
   const openSavedWorkspace = useStore((s) => s.openSavedWorkspace);
   const removeSavedWorkspace = useStore((s) => s.removeSavedWorkspace);
   const togglePin = useStore((s) => s.toggleWorkspacePin);
   const openLaunch = useLauncher((s) => s.open);
 
-  // "Open" = this workspace's dir is the one currently bound at /workspace.
   const isMounted = effective !== null && effective === ws.dir;
+  const liveWs = workspaces.find((w) => w.dir === ws.dir);
+  const agentSessions = liveWs ? workspaceLeaves(liveWs) : [];
+  const agents = agentSessions.map((s) => sessionMeta[s]).filter((m) => m && m.cli !== "shell");
 
   const open = async () => {
-    await openSavedWorkspace(ws.id); // points the mount + marks lastOpened
+    await openSavedWorkspace(ws.id);
     openLaunch("newtab", {
       dir: "row",
       workspaceTitle: ws.name,
       workspaceDir: ws.dir,
       savedWorkspaceId: ws.id,
-    }); // start the first agent in it (launcher surfaces any recreate)
+    });
   };
 
   return (
@@ -232,11 +305,14 @@ function WorkspaceCard({ ws }: { ws: SavedWorkspace }) {
       style={{
         padding: "14px 16px",
         position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
         borderColor: isMounted ? "var(--pri)" : undefined,
       }}
     >
-      {/* top row: pin toggle + name + (open badge / remove) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      {/* name row: pin + name + open badge */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
         <button
           type="button"
           title={ws.pinned ? "Unpin" : "Pin to top"}
@@ -257,7 +333,18 @@ function WorkspaceCard({ ws }: { ws: SavedWorkspace }) {
         >
           <PinGlyph filled={ws.pinned} />
         </button>
-        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg-0)", flex: 1, minWidth: 0 }}>
+        <span
+          style={{
+            fontSize: 15,
+            fontWeight: 600,
+            color: "var(--fg-0)",
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {ws.name}
         </span>
         {isMounted && (
@@ -295,14 +382,16 @@ function WorkspaceCard({ ws }: { ws: SavedWorkspace }) {
             color: "var(--fg-3)",
             display: "inline-flex",
             lineHeight: 0,
+            opacity: 0,
+            transition: "opacity .15s",
           }}
         >
           {Ico.close}
         </button>
       </div>
 
-      {/* dir chip */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+      {/* repo chips */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
         <span
           title={ws.dir}
           style={{
@@ -319,11 +408,11 @@ function WorkspaceCard({ ws }: { ws: SavedWorkspace }) {
           }}
         >
           {Ico.branch}
-          {shortPath(ws.dir)}
+          {dirName(ws.dir)}
         </span>
       </div>
 
-      {/* meta: workspace container + last opened */}
+      {/* container meta + time */}
       <div
         style={{
           display: "flex",
@@ -338,8 +427,40 @@ function WorkspaceCard({ ws }: { ws: SavedWorkspace }) {
           {Ico.container}container
         </span>
         <span style={{ flex: 1 }} />
-        <span>{relTime(ws.lastOpened)}</span>
+        <span style={{ color: "var(--fg-3)" }}>{relTime(ws.lastOpened)}</span>
       </div>
+
+      {/* agent strip — only when workspace is live with agents */}
+      {agents.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontFamily: "var(--mono)",
+            fontSize: 11,
+            color: "var(--fg-2)",
+            borderTop: "1px solid var(--bd-soft)",
+            paddingTop: 8,
+          }}
+        >
+          <span>
+            {agents.length} agent{agents.length === 1 ? "" : "s"}
+          </span>
+          <span style={{ flex: 1 }} />
+          <div style={{ display: "flex", gap: 3 }}>
+            {agents.map((m, i) => (
+              <AgentGlyph
+                // biome-ignore lint/suspicious/noArrayIndexKey: positional agent indicators
+                key={i}
+                agent={m.cli}
+                size={12}
+                color={`var(--a-${m.cli})`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -370,13 +491,13 @@ function TemplateCard({
           onClick?.();
         }
       }}
-      style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}
+      style={{ padding: 20, display: "flex", flexDirection: "column", gap: 10 }}
     >
       <div
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 6,
+          width: 36,
+          height: 36,
+          borderRadius: 8,
           background: "var(--bg-3)",
           border: "1px solid var(--bd-soft)",
           display: "flex",
@@ -387,17 +508,15 @@ function TemplateCard({
       >
         {icon}
       </div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{title}</div>
-      <div style={{ fontSize: 11, color: "var(--fg-2)", lineHeight: 1.5, flex: 1 }}>{desc}</div>
-      <Button variant="outline" size="xs" style={{ alignSelf: "flex-start", marginTop: 4 }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--fg-0)" }}>{title}</div>
+      <div style={{ fontSize: 12, color: "var(--fg-2)", lineHeight: 1.5, flex: 1 }}>{desc}</div>
+      <Button variant="outline" size="xs" style={{ alignSelf: "flex-start", marginTop: 2 }}>
         {cta}
       </Button>
     </div>
   );
 }
 
-// Small pushpin glyph (inline; not part of the shared icon sprite). Filled when
-// pinned, outline when not, so the one control reads as a toggle.
 function PinGlyph({ filled }: { filled?: boolean }) {
   return (
     <svg

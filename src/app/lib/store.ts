@@ -49,6 +49,7 @@ import {
   swapLeaves,
   updateGroup,
   workspaceLeaves,
+  workspaceTitle,
 } from "./tree";
 
 // Top-level view, switched from the sidebar nav. "hub" is the terminal grid;
@@ -131,11 +132,15 @@ interface CodeHubState {
   // App update check (Settings → About).
   updateStatus: UpdateStatus | null;
 
+  // Global loading overlay message. null = idle, string = busy with that label.
+  busyMessage: string | null;
+
   // imperative bookkeeping (non-reactive counters)
   plateCounter: number;
   sessionCounter: number;
   bootstrapped: boolean;
 
+  setBusy: (msg: string | null) => void;
   setStatus: (s: ContainerStatus) => void;
   setError: (msg: string) => void;
   // Runtime lifecycle controls (Containers screen + empty-state). start is safe;
@@ -372,9 +377,12 @@ export const useStore = create<CodeHubState>((set, get) => {
     githubStatus: null,
     githubRepos: [],
     updateStatus: null,
+    busyMessage: null,
     plateCounter: 0,
     sessionCounter: 0,
     bootstrapped: false,
+
+    setBusy: (msg) => set({ busyMessage: msg }),
 
     setStatus: (status) => {
       set({ status, error: null });
@@ -395,28 +403,37 @@ export const useStore = create<CodeHubState>((set, get) => {
     startRuntime: async () => {
       const ws = get().workspaces.find((w) => w.id === get().activeWorkspaceId);
       const workspace = ws?.containerKey;
+      set({ busyMessage: "Starting runtime…" });
       try {
         get().setStatus(await ipc.containerStart(workspace));
       } catch (e) {
         set({ error: `start runtime failed: ${e}` });
+      } finally {
+        set({ busyMessage: null });
       }
     },
     stopRuntime: async () => {
       const ws = get().workspaces.find((w) => w.id === get().activeWorkspaceId);
       const workspace = ws?.containerKey;
+      set({ busyMessage: "Stopping runtime…" });
       try {
         get().setStatus(await ipc.containerStop(workspace));
       } catch (e) {
         set({ error: `stop runtime failed: ${e}` });
+      } finally {
+        set({ busyMessage: null });
       }
     },
     restartRuntime: async () => {
       const ws = get().workspaces.find((w) => w.id === get().activeWorkspaceId);
       const workspace = ws?.containerKey;
+      set({ busyMessage: "Restarting runtime…" });
       try {
         get().setStatus(await ipc.containerRestart(workspace));
       } catch (e) {
         set({ error: `restart runtime failed: ${e}` });
+      } finally {
+        set({ busyMessage: null });
       }
     },
 
@@ -487,57 +504,62 @@ export const useStore = create<CodeHubState>((set, get) => {
     },
 
     newPlate: async (cli, mode, resume, initialPrompt, account, workspaceMeta) => {
-      const name = uniqueName(cli);
-      const claudeId = claudeIdFor(cli, resume);
-      // A resume carries its id via --resume; a fresh Claude session pins a new
-      // one via --session-id (same value, so we can read its transcript back).
-      const sessionId = resume ? undefined : claudeId;
-      // The workspace id is computed up front so it can be passed as the
-      // per-workspace-container key to createSession/attach: every session in
-      // this tab lives in one container (`codehub-ws-<id>`).
-      const plate = get().plateCounter + 1;
-      const wsId = `ws-${plate}-${Date.now().toString(36)}`;
-      const containerKey = wsId;
-      await ipc.createSession(
-        name,
-        cli,
-        mode,
-        aliasFor(cli, get().sessionCounter),
-        resume,
-        sessionId,
-        account,
-        containerKey,
-        workspaceMeta?.dir,
-      );
-      await registry.spawnPane(name, containerKey);
-      prefillPrompt(name, initialPrompt);
+      set({ busyMessage: "Starting session…" });
+      try {
+        const name = uniqueName(cli);
+        const claudeId = claudeIdFor(cli, resume);
+        // A resume carries its id via --resume; a fresh Claude session pins a new
+        // one via --session-id (same value, so we can read its transcript back).
+        const sessionId = resume ? undefined : claudeId;
+        // The workspace id is computed up front so it can be passed as the
+        // per-workspace-container key to createSession/attach: every session in
+        // this tab lives in one container (`codehub-ws-<id>`).
+        const plate = get().plateCounter + 1;
+        const wsId = `ws-${plate}-${Date.now().toString(36)}`;
+        const containerKey = wsId;
+        await ipc.createSession(
+          name,
+          cli,
+          mode,
+          aliasFor(cli, get().sessionCounter),
+          resume,
+          sessionId,
+          account,
+          containerKey,
+          workspaceMeta?.dir,
+        );
+        await registry.spawnPane(name, containerKey);
+        prefillPrompt(name, initialPrompt);
 
-      const group = makeGroup("Group 1", leafNode(name), name);
-      const ws: Workspace = {
-        id: wsId,
-        plate,
-        title: workspaceMeta?.title,
-        dir: workspaceMeta?.dir,
-        savedWorkspaceId: workspaceMeta?.savedWorkspaceId,
-        groups: [group],
-        activeGroupId: group.id,
-        // Container keyed by the workspace id (= what we created/attached with).
-        // Splits + later panes route by this.
-        containerKey,
-      };
-      registerMeta(name, cli, mode, ws.id, group.id, containerKey, claudeId);
-      const status = await ipc.containerStatus(containerKey).catch(() => null);
-      // New tab becomes active — clear focus mode / drag from the old workspace.
-      resetGridOverlays();
-      set((s) => ({
-        plateCounter: plate,
-        workspaces: [...s.workspaces, ws],
-        activeWorkspaceId: ws.id,
-        status: status ?? s.status,
-        error: status ? null : s.error,
-        // Avoid a restore pass duplicating the just-created session/workspace.
-        bootstrapped: status?.state === "running" ? true : s.bootstrapped,
-      }));
+        const group = makeGroup("Group 1", leafNode(name), name);
+        const ws: Workspace = {
+          id: wsId,
+          plate,
+          title: workspaceMeta?.title,
+          dir: workspaceMeta?.dir,
+          savedWorkspaceId: workspaceMeta?.savedWorkspaceId,
+          groups: [group],
+          activeGroupId: group.id,
+          // Container keyed by the workspace id (= what we created/attached with).
+          // Splits + later panes route by this.
+          containerKey,
+        };
+        registerMeta(name, cli, mode, ws.id, group.id, containerKey, claudeId);
+        const status = await ipc.containerStatus(containerKey).catch(() => null);
+        // New tab becomes active — clear focus mode / drag from the old workspace.
+        resetGridOverlays();
+        set((s) => ({
+          plateCounter: plate,
+          workspaces: [...s.workspaces, ws],
+          activeWorkspaceId: ws.id,
+          status: status ?? s.status,
+          error: status ? null : s.error,
+          // Avoid a restore pass duplicating the just-created session/workspace.
+          bootstrapped: status?.state === "running" ? true : s.bootstrapped,
+        }));
+      } finally {
+        set({ busyMessage: null });
+      }
     },
 
     splitSession: async (target, dir, cli, mode, initialPrompt, account) => {
@@ -546,97 +568,107 @@ export const useStore = create<CodeHubState>((set, get) => {
       const grp = ws && findGroupOf(ws, target);
       if (!ws || !grp || !grp.root) return;
       if (leavesList(grp.root).length >= MAX_GROUP_PANES) return;
-      const name = uniqueName(cli);
-      const claudeId = claudeIdFor(cli);
-      // Route to the workspace's container, not `ws.id` — they differ for a
-      // restored workspace (fresh `ws.id`, original key kept on the workspace).
-      // Splitting must land the new pane in the same container as its siblings.
-      const containerKey = ws.containerKey;
-      await ipc.createSession(
-        name,
-        cli,
-        mode,
-        aliasFor(cli, get().sessionCounter),
-        undefined,
-        claudeId,
-        account,
-        containerKey,
-      );
-      await registry.spawnPane(name, containerKey);
-      prefillPrompt(name, initialPrompt);
-      registerMeta(name, cli, mode, ws.id, grp.id, containerKey, claudeId);
+      set({ busyMessage: "Starting session…" });
+      try {
+        const name = uniqueName(cli);
+        const claudeId = claudeIdFor(cli);
+        // Route to the workspace's container, not `ws.id` — they differ for a
+        // restored workspace (fresh `ws.id`, original key kept on the workspace).
+        // Splitting must land the new pane in the same container as its siblings.
+        const containerKey = ws.containerKey;
+        await ipc.createSession(
+          name,
+          cli,
+          mode,
+          aliasFor(cli, get().sessionCounter),
+          undefined,
+          claudeId,
+          account,
+          containerKey,
+        );
+        await registry.spawnPane(name, containerKey);
+        prefillPrompt(name, initialPrompt);
+        registerMeta(name, cli, mode, ws.id, grp.id, containerKey, claudeId);
 
-      set((s) => ({
-        workspaces: updateWs(s.workspaces, ws.id, (w) =>
-          updateGroup(w, grp.id, (g) => ({
-            ...g,
-            root: g.root
-              ? replaceLeaf(g.root, target, (lf) => ({
-                  kind: "split",
-                  id: nid(),
-                  dir,
-                  ratio: 0.5,
-                  a: lf,
-                  b: leafNode(name),
-                }))
-              : leafNode(name),
-            focused: name,
-          })),
-        ),
-      }));
+        set((s) => ({
+          workspaces: updateWs(s.workspaces, ws.id, (w) =>
+            updateGroup(w, grp.id, (g) => ({
+              ...g,
+              root: g.root
+                ? replaceLeaf(g.root, target, (lf) => ({
+                    kind: "split",
+                    id: nid(),
+                    dir,
+                    ratio: 0.5,
+                    a: lf,
+                    b: leafNode(name),
+                  }))
+                : leafNode(name),
+              focused: name,
+            })),
+          ),
+        }));
+      } finally {
+        set({ busyMessage: null });
+      }
     },
 
     // Close one session. tmux is killed FIRST, then the pane is detached/disposed
     // (see CLAUDE.md / TEST_SCENARIOS S3/S5/S7/S8) so no resize/write can race a
     // dying pane.
     closeSession: async (name) => {
-      const meta = get().sessionMeta[name];
-      await destroySessionRecord(name, meta?.containerKey);
+      set({ busyMessage: "Closing session…" });
+      try {
+        const meta = get().sessionMeta[name];
+        await destroySessionRecord(name, meta?.containerKey);
 
-      if (!meta) return;
-      const ws = get().workspaces.find((w) => w.id === meta.workspaceId);
-      const grp = ws && findGroupOf(ws, name);
-      if (!ws || !grp) return;
-      const nextRoot = grp.root ? removeLeaf(grp.root, name) : null;
+        if (!meta) return;
+        const ws = get().workspaces.find((w) => w.id === meta.workspaceId);
+        const grp = ws && findGroupOf(ws, name);
+        if (!ws || !grp) return;
+        const nextRoot = grp.root ? removeLeaf(grp.root, name) : null;
 
-      // Group still has panes → just drop the leaf and refocus within the group.
-      if (nextRoot) {
-        set((s) => ({
-          workspaces: updateWs(s.workspaces, ws.id, (w) =>
-            updateGroup(w, grp.id, (g) => ({
-              ...g,
-              root: nextRoot,
-              focused: g.focused === name ? firstLeaf(nextRoot) : g.focused,
-            })),
-          ),
-        }));
-        return;
-      }
-
-      // Group is now empty. Last group in the workspace → close the tab (preserves
-      // the ⌘W close-tab contract). Otherwise drop just this group and fall back to
-      // a sibling if it was active.
-      if (ws.groups.length <= 1) {
-        const utilityShell = get().utilityShells[ws.containerKey];
-        if (utilityShell && utilityShell !== name) {
-          await destroySessionRecord(utilityShell, ws.containerKey);
+        // Group still has panes → just drop the leaf and refocus within the group.
+        if (nextRoot) {
+          set((s) => ({
+            workspaces: updateWs(s.workspaces, ws.id, (w) =>
+              updateGroup(w, grp.id, (g) => ({
+                ...g,
+                root: nextRoot,
+                focused: g.focused === name ? firstLeaf(nextRoot) : g.focused,
+              })),
+            ),
+          }));
+          return;
         }
-        removeWorkspace(get, set, ws.id);
-        return;
+
+        // Group is now empty. Last group in the workspace → close the tab (preserves
+        // the ⌘W close-tab contract). Otherwise drop just this group and fall back to
+        // a sibling if it was active.
+        if (ws.groups.length <= 1) {
+          const utilityShell = get().utilityShells[ws.containerKey];
+          if (utilityShell && utilityShell !== name) {
+            await destroySessionRecord(utilityShell, ws.containerKey);
+          }
+          removeWorkspace(get, set, ws.id);
+          return;
+        }
+        // Emptied group falls to a sibling — clear focus mode / drag if it was the
+        // active one so they don't carry over.
+        if (ws.activeGroupId === grp.id) resetGridOverlays();
+        set((s) => ({
+          workspaces: updateWs(s.workspaces, ws.id, (w) => {
+            const groups = w.groups.filter((g) => g.id !== grp.id);
+            return {
+              ...w,
+              groups,
+              activeGroupId: w.activeGroupId === grp.id ? groups[0].id : w.activeGroupId,
+            };
+          }),
+        }));
+      } finally {
+        set({ busyMessage: null });
       }
-      // Emptied group falls to a sibling — clear focus mode / drag if it was the
-      // active one so they don't carry over.
-      if (ws.activeGroupId === grp.id) resetGridOverlays();
-      set((s) => ({
-        workspaces: updateWs(s.workspaces, ws.id, (w) => {
-          const groups = w.groups.filter((g) => g.id !== grp.id);
-          return {
-            ...w,
-            groups,
-            activeGroupId: w.activeGroupId === grp.id ? groups[0].id : w.activeGroupId,
-          };
-        }),
-      }));
     },
 
     closeWorkspace: async (id) => {
@@ -1321,6 +1353,24 @@ export function confirmCloseGroup(sessions: string[], groupName: string): boolea
   return window.confirm(
     `${groupName}: ${working} ${plural} still working. Close the group? Scrollback is kept.`,
   );
+}
+
+// Workspace-close guard: a single confirmation covering every working agent in
+// the workspace. Returns "close" to proceed (keep container), "close-stop" to
+// close and stop the container, or null to abort. Same preference + live signal.
+export function confirmCloseWorkspace(wsId: string): "close" | "close-stop" | null {
+  const s = useStore.getState();
+  const ws = s.workspaces.find((w) => w.id === wsId);
+  if (!ws) return "close";
+  const sessions = workspaceLeaves(ws);
+  const needsConfirm = s.config?.confirmCloseRunningAgent ?? true;
+  const working = sessions.filter((n) => s.sessionActivity[n]?.state === "working").length;
+  if (!needsConfirm && working === 0) return "close";
+  const title = workspaceTitle(ws);
+  const workingMsg =
+    working > 0 ? `${working} agent${working === 1 ? " is" : "s are"} still working. ` : "";
+  const msg = `Close ${title}?\n\n${workingMsg}Sessions will be killed. The workspace container keeps running — you can stop it from the Workspaces view.`;
+  return window.confirm(msg) ? "close" : null;
 }
 
 // Convenience selectors.

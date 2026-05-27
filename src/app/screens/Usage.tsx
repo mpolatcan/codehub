@@ -157,7 +157,7 @@ export function Usage() {
           </h1>
           <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
             {running
-              ? `${totalSessions} sessions · ${totalTurns} turns · ${fmtUsd(totalCost)} est. — token counts factual, cost estimated`
+              ? `${totalSessions} session${totalSessions === 1 ? "" : "s"} · ${totalTurns} turn${totalTurns === 1 ? "" : "s"} · ${fmtUsd(totalCost)} est. · token counts factual, cost estimated`
               : `runtime ${state}`}
           </span>
           <span style={{ flex: 1 }} />
@@ -381,7 +381,7 @@ function AgentUsageCard({
 
   return (
     <div
-      className="ch-card"
+      className="ch-card ch-card-interactive"
       style={{ padding: 0, display: "flex", overflow: "hidden", borderColor: accentBd }}
     >
       {/* LEFT — identity + sparkline */}
@@ -738,7 +738,7 @@ function EmptyAgentCard({
   const accent = `var(--a-${agent})`;
   return (
     <div
-      className="ch-card"
+      className="ch-card ch-card-interactive"
       style={{
         padding: 0,
         display: "flex",
@@ -904,17 +904,17 @@ function SummaryCell({
   const subColor = tone === "warn" ? "var(--wait)" : tone === "over" ? "var(--err)" : "var(--fg-2)";
   return (
     <div
-      className="ch-card"
-      style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6 }}
+      className="ch-card ch-card-interactive"
+      style={{ padding: 14, display: "flex", flexDirection: "column", gap: 4 }}
     >
       <div className="lbl">{label}</div>
       <span
         className="mono tnum"
-        style={{ fontSize: 22, color: valueColor, fontWeight: 500, letterSpacing: "-0.02em" }}
+        style={{ fontSize: 28, color: valueColor, fontWeight: 500, letterSpacing: "-0.02em" }}
       >
         {value}
       </span>
-      <div className="mono" style={{ fontSize: 11, color: subColor }}>
+      <div className="mono" style={{ fontSize: 10.5, color: subColor }}>
         {subtle}
       </div>
     </div>

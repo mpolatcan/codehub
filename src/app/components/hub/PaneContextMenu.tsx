@@ -1,4 +1,6 @@
+import { motion } from "motion/react";
 import { useEffect, useRef } from "react";
+import { slideUp } from "../../hooks/useSlideIn";
 import { Ico } from "../primitives/icons";
 
 export interface PaneMenuItem {
@@ -48,8 +50,9 @@ export function PaneContextMenu({
   const top = Math.min(y, window.innerHeight - (items.length * 30 + 16));
 
   return (
-    <div
+    <motion.div
       ref={ref}
+      {...slideUp}
       style={{
         position: "fixed",
         left,
@@ -95,6 +98,6 @@ export function PaneContextMenu({
           </div>
         ),
       )}
-    </div>
+    </motion.div>
   );
 }
