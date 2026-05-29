@@ -3,11 +3,12 @@ import type { DragEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PaneMount } from "../../components/PaneMount";
 import { IconBtn } from "../../components/primitives/IconBtn";
-import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
-import { slideUp } from "../../hooks/useSlideIn";
+import { useResizableDock } from "../../hooks/useResizableDock";
+import { EASE } from "../../hooks/useSlideIn";
 import { useOverlay } from "../../lib/overlay";
 import { activeWorkspace, useStore } from "../../lib/store";
+import { ResizeHandle } from "./ResizeHandle";
 
 interface ShellTab {
   name: string;
@@ -26,8 +27,23 @@ export function ShellPanel() {
   const [err, setErr] = useState<string | null>(null);
   const initDone = useRef(false);
 
+  // Tab-strip scroll: chevrons appear once the tabs overflow the strip, and hide
+  // at each extent so a dead-end arrow never shows (mirrors HubTabs).
+  const stripRef = useRef<HTMLDivElement>(null);
+  const prevTabCount = useRef(0);
+  const [overflowing, setOverflowing] = useState(false);
+  const [atStart, setAtStart] = useState(true);
+  const [atEnd, setAtEnd] = useState(false);
+  const scrollTabs = (dir: -1 | 1) =>
+    stripRef.current?.scrollBy({ left: dir * 160, behavior: "smooth" });
+
   const running = status?.state === "running";
   const containerKey = ws?.containerKey ?? null;
+  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.shell.h", 224, {
+    min: 120,
+    max: () => Math.min(window.innerHeight * 0.7, 520),
+    edge: "top",
+  });
 
   useEffect(() => {
     let alive = true;
@@ -80,15 +96,55 @@ export function ShellPanel() {
 
   const closeTab = useCallback(
     (idx: number) => {
-      if (tabs.length <= 1) return;
+      // Closing the only remaining tab has nothing left to show → hide the dock
+      // (reopen via ⌘J or the ActionBar shell toggle, which re-runs init).
+      if (tabs.length <= 1) {
+        setShell(false);
+        return;
+      }
       setTabs((prev) => {
         const next = prev.filter((_, i) => i !== idx);
         setActiveIdx((a) => (a >= next.length ? next.length - 1 : a > idx ? a - 1 : a));
         return next;
       });
     },
-    [tabs.length],
+    [tabs.length, setShell],
   );
+
+  const renameTab = useCallback((idx: number, label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    setTabs((prev) => prev.map((t, i) => (i === idx ? { ...t, label: trimmed } : t)));
+  }, []);
+
+  // Keep the newest tab (and the trailing "+") in view when a tab is added.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (strip && tabs.length > prevTabCount.current) {
+      strip.scrollTo({ left: strip.scrollWidth, behavior: "smooth" });
+    }
+    prevTabCount.current = tabs.length;
+  }, [tabs.length]);
+
+  // Measure overflow + scroll extents on tab change, scroll, and resize.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on tab count change — add/remove shifts scrollWidth, which the ResizeObserver alone won't catch.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const measure = () => {
+      setOverflowing(strip.scrollWidth > strip.clientWidth + 4);
+      setAtStart(strip.scrollLeft <= 0);
+      setAtEnd(strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(strip);
+    strip.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      ro.disconnect();
+      strip.removeEventListener("scroll", measure);
+    };
+  }, [tabs.length]);
 
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
@@ -113,114 +169,115 @@ export function ShellPanel() {
 
   return (
     <motion.div
-      {...slideUp}
-      style={{
-        flexShrink: 0,
-        height: 224,
-        background: "var(--bg-0)",
-        borderTop: "1px solid var(--bd-soft)",
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-      }}
+      ref={ref as React.Ref<HTMLDivElement>}
+      initial={{ height: 0 }}
+      animate={{ height: size }}
+      exit={{ height: 0 }}
+      transition={{ duration: dragging ? 0 : 0.28, ease: EASE }}
+      style={{ flexShrink: 0, overflow: "hidden", position: "relative" }}
     >
+      {/* fixed-height inner so the xterm pane keeps a constant size during the
+          open/close tween; a resize drag changes it → PaneMount refits live */}
       <div
         style={{
-          height: 32,
-          flexShrink: 0,
-          background: "var(--bg-1)",
-          borderBottom: "1px solid var(--bd-soft)",
+          height: size,
+          background: "var(--bg-0)",
+          borderTop: "1px solid var(--bd-soft)",
           display: "flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "0 10px",
+          flexDirection: "column",
+          minHeight: 0,
         }}
       >
-        <span style={{ color: "var(--live)", display: "inline-flex" }}>{Ico.terminal}</span>
+        <ResizeHandle edge="top" onMouseDown={beginResize} onDoubleClick={reset} />
         <div
-          className="scroll"
           style={{
-            display: "flex",
-            gap: 2,
-            marginLeft: 4,
-            minWidth: 0,
-            flex: 1,
-            overflow: "auto hidden",
-          }}
-        >
-          {tabs.map((tab, i) => (
-            <ShellTabBtn
-              key={tab.name}
-              label={tab.label}
-              active={i === activeIdx}
-              closable={tabs.length > 1}
-              dragging={dragIdx === i}
-              dropTarget={dropIdx === i && dragIdx !== i}
-              onClick={() => setActiveIdx(i)}
-              onClose={() => closeTab(i)}
-              onDragStart={() => onDragStart(i)}
-              onDragOver={() => onDragOver(i)}
-              onDragEnd={onDragEnd}
-            />
-          ))}
-          {tabs.length === 0 && !loading && (
-            <span
-              className="mono"
-              style={{ fontSize: 11, color: "var(--fg-3)", padding: "2px 8px" }}
-            >
-              workspace shell
-            </span>
-          )}
-        </div>
-        <IconBtn
-          title="New shell tab"
-          style={{ width: 22, height: 22 }}
-          onClick={addTab}
-          disabled={!running || loading}
-        >
-          {Ico.plus}
-        </IconBtn>
-        <span style={{ width: 1, height: 14, background: "var(--bd-soft)", flexShrink: 0 }} />
-        <span
-          className="mono"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            minWidth: 0,
-            color: "var(--fg-3)",
-            fontSize: 10,
+            height: 32,
             flexShrink: 0,
+            background: "var(--bg-1)",
+            borderBottom: "1px solid var(--bd-soft)",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            padding: "0 8px",
           }}
-          title={status?.name ?? containerKey ?? undefined}
         >
-          <StatusDot status={running ? "live" : "off"} pulse={running} />
-          <span
+          <span style={{ color: "var(--live)", display: "inline-flex", flexShrink: 0 }}>
+            {Ico.terminal}
+          </span>
+          {overflowing && !atStart && (
+            <IconBtn
+              title="Scroll tabs left"
+              onClick={() => scrollTabs(-1)}
+              style={{ width: 22, height: 22, flexShrink: 0 }}
+            >
+              {Ico.chevL}
+            </IconBtn>
+          )}
+          <div
+            ref={stripRef}
             style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              maxWidth: 140,
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              marginLeft: 4,
+              minWidth: 0,
+              flex: 1,
+              overflowX: "auto",
+              overflowY: "hidden",
+              scrollbarWidth: "none",
             }}
           >
-            {status?.name ?? containerKey ?? "no workspace"}
-          </span>
-        </span>
-        <IconBtn
-          title="Hide shell (⌘⇧B)"
-          onClick={() => setShell(false)}
-          style={{ width: 22, height: 22 }}
-        >
-          {Ico.close}
-        </IconBtn>
-      </div>
+            {tabs.map((tab, i) => (
+              <ShellTabBtn
+                key={tab.name}
+                label={tab.label}
+                active={i === activeIdx}
+                dragging={dragIdx === i}
+                dropTarget={dropIdx === i && dragIdx !== i}
+                onClick={() => setActiveIdx(i)}
+                onClose={() => closeTab(i)}
+                onRename={(label) => renameTab(i, label)}
+                onDragStart={() => onDragStart(i)}
+                onDragOver={() => onDragOver(i)}
+                onDragEnd={onDragEnd}
+              />
+            ))}
+            {tabs.length === 0 && !loading ? (
+              <span
+                className="mono"
+                style={{ fontSize: 11, color: "var(--fg-3)", padding: "2px 8px" }}
+              >
+                workspace shell
+              </span>
+            ) : (
+              <IconBtn
+                title="New shell tab"
+                style={{ width: 22, height: 22, flexShrink: 0, marginLeft: 2 }}
+                onClick={addTab}
+                disabled={!running || loading}
+              >
+                {Ico.plus}
+              </IconBtn>
+            )}
+          </div>
+          {overflowing && !atEnd && (
+            <IconBtn
+              title="Scroll tabs right"
+              onClick={() => scrollTabs(1)}
+              style={{ width: 22, height: 22, flexShrink: 0 }}
+            >
+              {Ico.chevR}
+            </IconBtn>
+          )}
+        </div>
 
-      <div className="pane-body" style={{ background: "var(--bg-0)" }}>
-        {activeTab ? (
-          <PaneMount session={activeTab.name} />
-        ) : (
-          <ShellEmpty loading={loading} running={running} err={err} />
-        )}
+        <div className="pane-body" style={{ background: "var(--bg-0)" }}>
+          {activeTab ? (
+            <PaneMount session={activeTab.name} />
+          ) : (
+            <ShellEmpty loading={loading} running={running} err={err} />
+          )}
+        </div>
       </div>
     </motion.div>
   );
@@ -229,29 +286,32 @@ export function ShellPanel() {
 function ShellTabBtn({
   label,
   active,
-  closable,
   dragging,
   dropTarget,
   onClick,
   onClose,
+  onRename,
   onDragStart,
   onDragOver,
   onDragEnd,
 }: {
   label: string;
   active: boolean;
-  closable: boolean;
   dragging: boolean;
   dropTarget: boolean;
   onClick: () => void;
   onClose: () => void;
+  onRename: (label: string) => void;
   onDragStart: () => void;
   onDragOver: () => void;
   onDragEnd: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+
   return (
     <span
-      draggable
+      className={`shell-tab${active ? " active" : ""}`}
+      draggable={!editing}
       onDragStart={(e: DragEvent) => {
         e.dataTransfer.effectAllowed = "move";
         onDragStart();
@@ -269,11 +329,12 @@ function ShellTabBtn({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 5,
-        padding: "2px 8px",
-        borderRadius: 4,
+        gap: 3,
+        padding: "0 4px 0 10px",
+        height: 24,
+        borderRadius: 6,
         fontFamily: "var(--mono)",
-        fontSize: 11,
+        fontSize: 12,
         background: dropTarget
           ? "color-mix(in oklab, var(--pri) 20%, var(--bg-3))"
           : active
@@ -290,45 +351,62 @@ function ShellTabBtn({
         whiteSpace: "nowrap",
         flexShrink: 0,
         opacity: dragging ? 0.4 : 1,
-        transition: "background .12s, border-color .12s, opacity .12s",
       }}
     >
-      <button
-        type="button"
-        onClick={onClick}
-        style={{
-          background: "transparent",
-          border: "none",
-          padding: 0,
-          cursor: "inherit",
-          color: "inherit",
-          fontFamily: "inherit",
-          fontSize: "inherit",
-        }}
-      >
-        {label}
-      </button>
-      {closable && (
-        <button
-          type="button"
-          onClick={(e) => {
+      {editing ? (
+        <input
+          className="pane-name-input"
+          defaultValue={label}
+          // biome-ignore lint/a11y/noAutofocus: rename input is opened by an explicit double-click
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onBlur={(e) => {
+            onRename(e.currentTarget.value);
+            setEditing(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onRename(e.currentTarget.value);
+              setEditing(false);
+            } else if (e.key === "Escape") {
+              setEditing(false);
+            }
             e.stopPropagation();
-            onClose();
           }}
-          title="Close shell tab"
-          style={{
-            background: "transparent",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-            color: "var(--fg-3)",
-            fontSize: 11,
-            lineHeight: 1,
-            display: "inline-flex",
-          }}
-        >
-          ×
-        </button>
+          style={{ width: 76, fontSize: 12 }}
+        />
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={onClick}
+            onDoubleClick={() => setEditing(true)}
+            title="Double-click to rename"
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "inherit",
+              color: "inherit",
+              fontFamily: "inherit",
+              fontSize: "inherit",
+            }}
+          >
+            {label}
+          </button>
+          <button
+            type="button"
+            className="tab-close"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            title="Close shell tab"
+          >
+            {Ico.close}
+          </button>
+        </>
       )}
     </span>
   );

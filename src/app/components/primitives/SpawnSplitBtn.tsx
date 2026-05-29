@@ -1,20 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { groupKey, splitKey, useLauncher } from "../../lib/launcher";
 import { activeWorkspace, useStore } from "../../lib/store";
 import { MAX_GROUP_PANES, type SplitDir, activeGroup, leavesList } from "../../lib/tree";
 import { Ico } from "./icons";
 
 // THE primary spawn CTA for the Hub ActionBar — one button replacing the old
 // "Split right + Split down + New agent" trio (design/components.jsx
-// `SpawnSplitBtn`). Left half opens the launcher at the default placement; the
-// chevron half opens a placement popover for explicit targets.
+// `SpawnSplitBtn`). Left half drops a configuring pane at the default placement;
+// the chevron half opens a placement popover for explicit targets.
 //
-// Default click follows the design: split right from the focused pane. When no
-// pane is focused (empty workspace / no tab), it falls back to the new-tab
-// launcher. The placement menu also offers "In new group" (⌘G) — creates a
-// fresh pane group and lands the agent in it.
+// Default click follows the design: split right from the focused pane → a
+// configuring pane there. No focused pane (empty workspace) → a new workspace
+// with a configuring first pane. The placement menu also offers "In new group"
+// (⌘⇧N). Configuration happens IN the pane (no modal).
 export function SpawnSplitBtn() {
-  const openLaunch = useLauncher((s) => s.open);
+  const beginSplitSpawn = useStore((s) => s.beginSplitSpawn);
+  const beginGroupSpawn = useStore((s) => s.beginGroupSpawn);
+  const beginNewWorkspaceSpawn = useStore((s) => s.beginNewWorkspaceSpawn);
   const addGroup = useStore((s) => s.addGroup);
   const active = useStore(activeWorkspace);
   const group = active ? activeGroup(active) : null;
@@ -34,25 +35,29 @@ export function SpawnSplitBtn() {
 
   const newTab = () => {
     setOpen(false);
-    openLaunch("newtab");
+    beginNewWorkspaceSpawn();
   };
   const split = (dir: SplitDir) => {
     if (!focused || groupFull) return;
     setOpen(false);
-    openLaunch(splitKey(focused), { dir, session: focused });
+    beginSplitSpawn(focused, dir);
   };
+  // Primary "New agent" auto-places into the active group's even grid; a manual
+  // split (the placement menu) is the freeform escape hatch.
   const primary = () => {
     if (groupFull) newGroup();
-    else if (focused) split("row");
-    else newTab();
+    else if (active && group) {
+      setOpen(false);
+      beginGroupSpawn(active.id, group.id);
+    } else newTab();
   };
-  // Spawn into a fresh group: create the empty group (becomes active), then open
-  // the launcher targeting it so the new agent lands as that group's first pane.
+  // Spawn into a fresh group: create the empty group (becomes active), then drop
+  // a configuring pane as that group's first pane.
   const newGroup = () => {
     if (!active) return;
     setOpen(false);
     const gid = addGroup(active.id);
-    openLaunch(groupKey(gid), { dir: "row", groupId: gid, workspaceId: active.id });
+    beginGroupSpawn(active.id, gid);
   };
 
   return (
@@ -62,16 +67,14 @@ export function SpawnSplitBtn() {
         className="spawn-half spawn-main"
         title={
           groupFull
-            ? `Group full (${MAX_GROUP_PANES}/${MAX_GROUP_PANES}) — add agent in a new group (⌘G)`
-            : focused
-              ? "New agent — split right (⌘A)"
-              : "New agent — new tab (⌘N)"
+            ? `Group full (${MAX_GROUP_PANES}/${MAX_GROUP_PANES}) — add agent in a new group (⌘⇧N)`
+            : "New agent — fills the next grid cell (⌘N)"
         }
         onClick={primary}
       >
         {Ico.plus}
         {groupFull ? "New group" : "New agent"}
-        <span className="kbd">{groupFull ? "⌘G" : focused ? "⌘A" : "⌘N"}</span>
+        <span className="kbd">{groupFull ? "⌘⇧N" : "⌘N"}</span>
       </button>
       <button
         type="button"
@@ -144,14 +147,14 @@ function SpawnPlacementMenu({
       </div>
       <SpawnMenuRow
         icon={Ico.splitV}
-        label="Split right"
+        label="Split vertically"
         kbd="⌘\"
         disabled={!focused || groupFull}
         onClick={() => onSplit("row")}
       />
       <SpawnMenuRow
         icon={Ico.splitH}
-        label="Split down"
+        label="Split horizontally"
         kbd="⌘⇧\"
         disabled={!focused || groupFull}
         onClick={() => onSplit("col")}
@@ -165,11 +168,11 @@ function SpawnPlacementMenu({
       <SpawnMenuRow
         icon={Ico.grid}
         label="In new group"
-        kbd="⌘G"
+        kbd="⌘⇧N"
         disabled={!hasWorkspace}
         onClick={onNewGroup}
       />
-      <SpawnMenuRow icon={Ico.plus} label="Open in new tab" kbd="⌘⇧T" onClick={onNewTab} />
+      <SpawnMenuRow icon={Ico.plus} label="New workspace" kbd="⌘T" onClick={onNewTab} />
     </div>
   );
 }

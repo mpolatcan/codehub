@@ -4,9 +4,9 @@ import type { Cli, Mode } from "./ipc";
 // split nodes divide space row/col with a ratio. Ported verbatim from the
 // vanilla layout model so behaviour (and TEST_SCENARIOS) stays identical.
 
-// Design hub-states caps one group at five panes, then steers new work into a
-// fresh group so the split grid stays readable.
-export const MAX_GROUP_PANES = 5;
+// Cap one group at six panes (a full 3×2 grid), then steer new work into a fresh
+// group so the split grid stays readable.
+export const MAX_GROUP_PANES = 6;
 
 export type SplitDir = "row" | "col";
 
@@ -50,6 +50,10 @@ export interface Workspace {
   savedWorkspaceId?: string;
   groups: Group[];
   activeGroupId: string;
+  // User-picked tab color (a PANE_COLORS fill), or undefined for the neutral
+  // tab. Persisted by containerKey across reloads. Same mechanism as a pane's
+  // color and a group's color.
+  color?: string;
   // Per-workspace-container ROUTING key — the container every pane of this
   // workspace lives in (`codehub-ws-<key>`). Owned by the workspace, NOT derived
   // from `id`: a RESTORED workspace gets a fresh `id` but keeps the original
@@ -76,6 +80,9 @@ export interface SessionMeta {
   // workspace gets a fresh `workspaceId` but keeps the original container key).
   // Always defined: every session lives in a per-workspace container.
   containerKey: string;
+  // User-picked pane-head tint (a PANE_COLORS token). Undefined → the head uses
+  // the agent accent. Frontend-only, in-memory (like Group.color); not restored.
+  color?: string;
   // Claude conversation id this session was launched with (`--session-id`, or
   // the id it resumed). Lets the Hub read this session's own transcript for a
   // live token tally. Only set for Claude sessions.
@@ -88,14 +95,33 @@ export function nid(): number {
   return nodeCounter;
 }
 
-// Group accent palette — design GroupTab dots cycle these (var(--*) tokens).
-export const GROUP_COLORS = [
-  "var(--pri)",
-  "var(--a-codex)",
-  "var(--live)",
-  "var(--wait)",
-  "var(--idle)",
+// Pane-head color (SessionMeta.color). Each fills the WHOLE pane header, so it
+// ships with a paired `ink` (foreground) chosen for contrast against that exact
+// fill. DELIBERATELY theme-independent oklch literals (not --tokens): a user-
+// picked pane color must read identically in dark/gray/light, and its legibility
+// must be deterministic — token accents shift lightness per theme and would flip
+// a once-legible bar to unreadable. `ink` is a near-black for high-luminance
+// hues (green/amber/teal/coral/slate) and a near-white for the deep ones.
+export interface PaneColor {
+  bg: string;
+  ink: string;
+}
+export const PANE_COLORS: PaneColor[] = [
+  { bg: "oklch(0.74 0.14 35)", ink: "oklch(0.2 0.03 35)" }, // coral
+  { bg: "oklch(0.62 0.13 265)", ink: "oklch(0.97 0.02 265)" }, // blue
+  { bg: "oklch(0.6 0.19 295)", ink: "oklch(0.97 0.02 295)" }, // violet
+  { bg: "oklch(0.8 0.17 145)", ink: "oklch(0.24 0.05 145)" }, // green
+  { bg: "oklch(0.84 0.14 85)", ink: "oklch(0.26 0.05 85)" }, // amber
+  { bg: "oklch(0.68 0.07 240)", ink: "oklch(0.18 0.02 240)" }, // slate
+  { bg: "oklch(0.6 0.2 25)", ink: "oklch(0.97 0.02 25)" }, // red
+  { bg: "oklch(0.76 0.09 200)", ink: "oklch(0.22 0.03 200)" }, // teal
 ];
+
+// The contrast ink paired with a pane-head fill (undefined when not a known
+// PANE_COLORS fill, e.g. an unset pane → fall back to the default fg tokens).
+export function paneInk(bg?: string): string | undefined {
+  return bg ? PANE_COLORS.find((c) => c.bg === bg)?.ink : undefined;
+}
 
 let groupCounter = 0;
 export function makeGroup(
@@ -109,7 +135,9 @@ export function makeGroup(
   return {
     id: `grp-${n}-${Date.now().toString(36)}`,
     name: name || `Group ${n}`,
-    color: color ?? GROUP_COLORS[(n - 1) % GROUP_COLORS.length],
+    // Auto-assign from the shared palette so a group tab fills with a real color
+    // (and gets a paired ink) out of the box; the ColorDot recolors it.
+    color: color ?? PANE_COLORS[(n - 1) % PANE_COLORS.length].bg,
     root,
     focused,
   };
@@ -143,6 +171,31 @@ export function updateGroup(ws: Workspace, groupId: string, fn: (g: Group) => Gr
 
 export function leafNode(session: string): LeafNode {
   return { kind: "leaf", id: nid(), session };
+}
+
+// Default columns for the auto-balanced grid (design "3 columns × N rows").
+export const GRID_COLS = 3;
+
+// Build an EVEN grid tree from an ordered leaf list: chunk into rows of ≤maxCols,
+// each row a horizontal arrangement at equal widths, rows stacked at equal
+// heights. Right-leaning binary splits with `ratio = 1/(remaining)` make every
+// cell the same size. Used by auto-placement ("New agent") so panes form a
+// uniform grid instead of lopsided nested halves; manual split/resize still
+// produce freeform trees. Returns null for an empty list.
+export function buildGridTree(leaves: string[], maxCols = GRID_COLS): LayoutNode | null {
+  if (leaves.length === 0) return null;
+  if (leaves.length === 1) return leafNode(leaves[0]);
+  // Even right-leaning split of N nodes along one axis.
+  const evenAxis = (items: LayoutNode[], dir: SplitDir): LayoutNode =>
+    items.reduceRight<LayoutNode | null>((acc, item, i) => {
+      if (acc === null) return item;
+      return { kind: "split", id: nid(), dir, ratio: 1 / (items.length - i), a: item, b: acc };
+    }, null) as LayoutNode;
+  const rows: LayoutNode[] = [];
+  for (let i = 0; i < leaves.length; i += maxCols) {
+    rows.push(evenAxis(leaves.slice(i, i + maxCols).map(leafNode), "row"));
+  }
+  return rows.length === 1 ? rows[0] : evenAxis(rows, "col");
 }
 
 export function* leavesOf(node: LayoutNode): Generator<string> {

@@ -23,15 +23,28 @@ interface Sample {
   cost: number;
 }
 
-export function useBurnRate(): number | null {
+// Rolling rate samples retained for the status-bar sparkline. At the 30s poll
+// this is ~15 min of trend — sparse but real (no fabricated points).
+const SERIES_WINDOW = 30;
+
+export interface BurnInfo {
+  // Latest $/h rate, or null until two samples span enough wall-clock.
+  rate: number | null;
+  // History of computed rates (newest last) for a sparkline.
+  series: number[];
+}
+
+export function useBurnRate(): BurnInfo {
   const running = useStore((s) => s.status?.state === "running");
   const samples = useRef<Sample[]>([]);
-  const [rate, setRate] = useState<number | null>(null);
+  const seriesRef = useRef<number[]>([]);
+  const [info, setInfo] = useState<BurnInfo>({ rate: null, series: [] });
 
   useEffect(() => {
     if (!running) {
       samples.current = [];
-      setRate(null);
+      seriesRef.current = [];
+      setInfo({ rate: null, series: [] });
       return;
     }
     let alive = true;
@@ -50,13 +63,15 @@ export function useBurnRate(): number | null {
         const newest = buf[buf.length - 1];
         const spanMs = newest.t - oldest.t;
         if (buf.length < 2 || spanMs < MIN_SPAN_MS) {
-          setRate(null);
+          setInfo({ rate: null, series: seriesRef.current });
           return;
         }
         const perHour = ((newest.cost - oldest.cost) / spanMs) * 3_600_000;
-        setRate(perHour > 0 ? perHour : 0);
+        const rate = perHour > 0 ? perHour : 0;
+        seriesRef.current = [...seriesRef.current, rate].slice(-SERIES_WINDOW);
+        setInfo({ rate, series: seriesRef.current });
       } catch {
-        // A failed read (runtime dropped mid-poll) just leaves the last rate; the
+        // A failed read (runtime dropped mid-poll) just leaves the last value; the
         // running-flag effect clears it when the runtime actually goes down.
       }
     };
@@ -68,5 +83,5 @@ export function useBurnRate(): number | null {
     };
   }, [running]);
 
-  return rate;
+  return info;
 }

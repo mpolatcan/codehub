@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AGENT_META, AgentGlyph } from "../components/primitives/AgentGlyph";
 import { StatusDot } from "../components/primitives/StatusDot";
+import { Tab } from "../components/primitives/TabBar";
 import { Ico } from "../components/primitives/icons";
 import { CLIS } from "../lib/catalog";
 import { type AgentCli, type AgentConfig, type ClaudeIntegrations, ipc } from "../lib/ipc";
@@ -511,25 +512,7 @@ function AgentTab({
 }) {
   const meta = AGENT_META[agent];
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "0 14px",
-        height: "100%",
-        background: "transparent",
-        border: "none",
-        borderBottom: `2px solid ${active ? "var(--fg-0)" : "transparent"}`,
-        color: active ? "var(--fg-0)" : "var(--fg-2)",
-        cursor: active ? "default" : "pointer",
-        fontSize: 13,
-        fontWeight: active ? 500 : 400,
-        fontFamily: "var(--sans)",
-      }}
-    >
+    <Tab active={active} onClick={onClick}>
       <AgentGlyph agent={agent} size={13} color={meta.accent} />
       {name}
       <span
@@ -538,7 +521,7 @@ function AgentTab({
       >
         · {present ? "connected" : "key needed"}
       </span>
-    </button>
+    </Tab>
   );
 }
 

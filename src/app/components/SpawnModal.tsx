@@ -63,12 +63,13 @@ export function SpawnModal() {
     prompt: string,
     account?: string,
     targetGroupId?: string,
+    cwd?: string,
   ) => {
     close();
     if (ctx?.session) {
-      void splitSession(ctx.session, ctx.dir, cli, mode, prompt, account);
+      void splitSession(ctx.session, ctx.dir, cli, mode, prompt, account, cwd);
     } else if (ctx?.groupId && ctx.workspaceId) {
-      void addPaneToGroup(ctx.workspaceId, ctx.groupId, cli, mode, prompt, account);
+      void addPaneToGroup(ctx.workspaceId, ctx.groupId, cli, mode, prompt, account, cwd);
     } else if (targetGroupId && active) {
       // Spawn into the active workspace: an existing group, or a fresh one.
       // addPaneToGroup no-ops when the runtime is down; only create a NEW group
@@ -80,7 +81,7 @@ export function SpawnModal() {
         if (leavesList(targetGroup?.root ?? null).length >= MAX_GROUP_PANES) return;
       }
       const groupId = targetGroupId === NEW_GROUP ? addGroup(active.id) : targetGroupId;
-      void addPaneToGroup(active.id, groupId, cli, mode, prompt, account);
+      void addPaneToGroup(active.id, groupId, cli, mode, prompt, account, cwd);
     } else {
       // Default (and historic) behaviour: a brand-new workspace tab.
       const resume = cli === "claude" ? ctx?.resume : undefined;
@@ -107,6 +108,7 @@ export function SpawnModal() {
         splitting={splitting}
         groups={groups}
         workspaceName={workspaceName}
+        workspaceKey={active?.containerKey}
         onLaunch={launch}
         onCancel={close}
       />

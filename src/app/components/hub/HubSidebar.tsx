@@ -28,7 +28,7 @@ function dirName(path: string | undefined): string | null {
 
 // design NAV_ITEMS — top-level views. `view` is the live HubView each maps to;
 // `badge` resolves to a real count (sessions) or undefined.
-type NavId = "hub" | "dashboard" | "workspaces" | "settings";
+type NavId = "hub" | "dashboard" | "settings";
 
 export function HubSidebar() {
   const collapsed = useStore((s) => s.sidebarCollapsed);
@@ -63,11 +63,9 @@ function useNav() {
       ? "hub"
       : view === "dashboard"
         ? "dashboard"
-        : view === "containers"
-          ? "workspaces"
-          : view === "settings"
-            ? "settings"
-            : null;
+        : view === "settings"
+          ? "settings"
+          : null;
 
   const items: Array<{
     id: NavId;
@@ -84,7 +82,6 @@ function useNav() {
       badge: sessionCount > 0 ? String(sessionCount) : undefined,
       go: () => setView("dashboard"),
     },
-    { id: "workspaces", label: "Workspaces", icon: Ico.container, go: () => setView("containers") },
     {
       id: "settings",
       label: "Settings",
@@ -183,7 +180,8 @@ function SidebarExpanded() {
 // ── Workspaces list (design `WorkspaceSideRow`) ──────────────────────────────
 function WorkspacesSection() {
   const workspaces = useStore((s) => s.workspaces);
-  const openWizard = useOverlay((s) => s.setNewWorkspace);
+  const setView = useStore((s) => s.setView);
+  const openLauncher = useOverlay((s) => s.setLauncher);
 
   return (
     <div
@@ -205,7 +203,13 @@ function WorkspacesSection() {
         }}
       >
         <span className="lbl">Workspaces · {workspaces.length}</span>
-        <IconBtn title="New workspace (⌘⇧N)" onClick={() => openWizard(true)}>
+        <IconBtn
+          title="Open workspace — recent, resume, or new (⌘T)"
+          onClick={() => {
+            setView("hub");
+            openLauncher(true);
+          }}
+        >
           {Ico.plus}
         </IconBtn>
       </div>
@@ -225,9 +229,9 @@ function WorkspacesSection() {
           No workspaces yet.
           <br />
           <span className="mono" style={{ color: "var(--fg-3)" }}>
-            ⌘⇧N
+            ⌘T
           </span>{" "}
-          to create one.
+          to open one.
         </div>
       ) : (
         <div
@@ -377,14 +381,19 @@ function SessionRow({
   const awaiting = useStore((s) => s.pendingPrompts.some((p) => p.session === session));
   const focusSession = useStore((s) => s.focusSession);
   const closeSession = useStore((s) => s.closeSession);
+  // Hooks must run unconditionally. Compute claudeId + usage BEFORE the `meta`
+  // guard: when a session closes, its sessionMeta is deleted and this row
+  // re-renders once with meta undefined — an early return above useSessionUsage
+  // would render fewer hooks, throwing "Rendered fewer hooks than expected" and
+  // (with no error boundary) blanking the whole app.
+  const claudeId = activity?.claudeId ?? (meta?.cli === "claude" ? meta.claudeId : undefined);
+  const usage = useSessionUsage(claudeId ?? null);
   if (!meta) return null;
   const spec = SPEC_BY_CLI[meta.cli];
   const badge = MODE_BY_ID[meta.mode].badge;
   const focused = workspaceFocused === session;
   const working = activity?.state === "working";
   const status = awaiting ? "wait" : working ? "live" : focused ? "live" : "idle";
-  const claudeId = activity?.claudeId ?? (meta.cli === "claude" ? meta.claudeId : undefined);
-  const usage = useSessionUsage(claudeId ?? null);
   const isAgent = meta.cli !== "shell";
 
   return (

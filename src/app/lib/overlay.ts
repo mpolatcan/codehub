@@ -20,6 +20,11 @@ interface OverlayState {
   // utility panel, separate from agent split panes and restored by the Hub when
   // toggled from the ActionBar / shortcut.
   shell: boolean;
+  // Workspace container Details panel open/closed (⌘I, the ActionBar "Details"
+  // chip). A right-docked panel — live cpu/mem/net/disk gauges + sparklines,
+  // health (uptime/restart/oom), mounts, and lifecycle controls — scoped to the
+  // active workspace's container. Peer of Files/Shell/Diff.
+  details: boolean;
   // Resume drawer open/closed (⌘R, the ActionBar "Resume" button, Welcome's
   // "Browse sessions" card). A docked right-side drawer over the live hub — past
   // Claude/Codex transcripts, grouped by agent. Lives here (not a top-level view)
@@ -33,10 +38,16 @@ interface OverlayState {
   // from the sidebar wordmark. A modal "About this app", separate from the
   // Settings › About pane which embeds the same facts in the config surface.
   about: boolean;
-  // New-workspace wizard open/closed (⌘⇧N, the Welcome launcher's CTA + "Blank"
-  // template). A modal over the Welcome list; creates a saved workspace + opens
-  // its first agent. Lives here so a keyboard handler can open it directly.
+  // New-workspace wizard open/closed (the launcher's "Blank workspace" template).
+  // A modal that creates a saved workspace + opens its first agent. Lives here so
+  // the launcher (and a keyboard handler) can open it directly.
   newWorkspace: boolean;
+  // Launcher overlay open/closed (⌘T, the tab-bar "+"). The Welcome content —
+  // recent workspaces, resume, blank/GitHub templates — rendered as a modal
+  // ABOVE the live hub, so a workspace can be reopened/resumed WITHOUT first
+  // closing every tab (the Welcome screen itself only renders when no tab is
+  // open). The single entry point for "open / create / resume a workspace".
+  launcher: boolean;
   // File preview panel — path of the file being previewed on the right side,
   // or null when closed. Set from the FilesBrowser listing; the panel renders
   // in HubView as a right-side sibling (independent of DiffViewer).
@@ -61,10 +72,12 @@ interface OverlayState {
   setDiff: (path: string | null) => void;
   setFiles: (open: boolean) => void;
   setShell: (open: boolean) => void;
+  setDetails: (open: boolean) => void;
   setResume: (open: boolean) => void;
   setResumeSide: (side: "left" | "right") => void;
   setAbout: (open: boolean) => void;
   setNewWorkspace: (open: boolean) => void;
+  setLauncher: (open: boolean) => void;
   setFilePreview: (path: string | null) => void;
   setFocusMode: (on: boolean) => void;
   setDragSession: (session: string | null) => void;
@@ -78,10 +91,12 @@ export const useOverlay = create<OverlayState>((set) => ({
   diff: null,
   files: false,
   shell: false,
+  details: false,
   resume: false,
   resumeSide: "right",
   about: false,
   newWorkspace: false,
+  launcher: false,
   filePreview: null,
   focusMode: false,
   dragSession: null,
@@ -92,10 +107,12 @@ export const useOverlay = create<OverlayState>((set) => ({
   setDiff: (diff) => set(diff !== null ? { diff, filePreview: null } : { diff }),
   setFiles: (files) => set({ files }),
   setShell: (shell) => set({ shell }),
+  setDetails: (details) => set({ details }),
   setResume: (resume) => set({ resume }),
   setResumeSide: (resumeSide) => set({ resumeSide }),
   setAbout: (about) => set({ about }),
   setNewWorkspace: (newWorkspace) => set({ newWorkspace }),
+  setLauncher: (launcher) => set({ launcher }),
   setFilePreview: (filePreview) =>
     set(filePreview !== null ? { filePreview, diff: null } : { filePreview }),
   setFocusMode: (focusMode) => set({ focusMode }),

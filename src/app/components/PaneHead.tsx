@@ -1,34 +1,39 @@
 import { useState } from "react";
-import { ContextGauge } from "../components/primitives/ContextGauge";
+import { ColorDot } from "../components/primitives/ColorDot";
 import { IconBtn } from "../components/primitives/IconBtn";
 import { MetricStat } from "../components/primitives/MetricStat";
 import { StatusBadge } from "../components/primitives/StatusBadge";
+import { Tip } from "../components/primitives/Tip";
 import { Ico } from "../components/primitives/icons";
 import { fmtTokens, useSessionUsage } from "../hooks/useSessionUsage";
-import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
+import { MODE_BY_ID } from "../lib/catalog";
 import { useOverlay } from "../lib/overlay";
 import { confirmCloseRunningSession, useStore } from "../lib/store";
-import { leavesList } from "../lib/tree";
+import { leavesList, paneInk } from "../lib/tree";
 
-// Pane header, visually aligned with design/screens/main-hub-a.jsx:
-// index + colored pane title + compact selector chip + expand/more/close, with
-// the metric strip below. Values stay real; unknown telemetry renders as an
+// Pane header, visually aligned with design/screens/main-hub-a.jsx: index + a
+// status dot that doubles as the color picker (ColorDot) + colored pane title +
+// badges, then expand/more/close, with the metric strip below. When the user
+// picks a color the WHOLE bar takes that fill and every control flips to the
+// paired contrast ink (PANE_COLORS), so the title and buttons stay legible in
+// all three themes. Telemetry values stay real; unknown telemetry renders as an
 // em-dash rather than copying the mock's sample numbers.
 export function PaneHead({
   session,
-  index,
   draggable,
   onDragStart,
   onDragEnd,
+  onMenu,
 }: {
   session: string;
-  index?: number;
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
+  // Opens the pane context menu (split/spawn/close) at the ⋯ button. Supplied by
+  // the grid leaf, which owns the menu position state.
+  onMenu?: (e: React.MouseEvent) => void;
 }) {
   const meta = useStore((s) => s.sessionMeta[session]);
-  const agentVersions = useStore((s) => s.agentVersions);
   const activity = useStore((s) => s.sessionActivity[session]);
   const focused = useStore((s) =>
     s.workspaces.some((w) => w.groups.some((g) => g.focused === session)),
@@ -44,6 +49,7 @@ export function PaneHead({
   const awaiting = useStore((s) => s.pendingPrompts.some((p) => p.session === session));
   const closeSession = useStore((s) => s.closeSession);
   const renameSession = useStore((s) => s.renameSession);
+  const setSessionColor = useStore((s) => s.setSessionColor);
   const focusSession = useStore((s) => s.focusSession);
   const focusMode = useOverlay((s) => s.focusMode);
   const setFocusMode = useOverlay((s) => s.setFocusMode);
@@ -54,24 +60,49 @@ export function PaneHead({
 
   if (!meta) return null;
 
-  const spec = SPEC_BY_CLI[meta.cli];
   const accent = `var(--a-${meta.cli})`;
   const badge = MODE_BY_ID[meta.mode].badge;
-  const version = meta.cli === "shell" ? null : (agentVersions?.[meta.cli]?.version ?? null);
   const working = activity?.state === "working";
   const statusText = awaiting ? "Awaiting input" : working ? "Working" : "Idle";
   const canMax = siblings > 1;
   const isMax = focusMode && focused && canMax;
 
+  // A user-picked color fills the whole bar; `ink` is its paired contrast
+  // foreground (title + every control). The agent accent is the fallback and
+  // drives the left identity rail when no color is picked.
+  const tint = meta.color;
+  const ink = paneInk(tint);
+  const railColor = tint ?? accent;
+  const headBg =
+    tint ?? (awaiting ? `color-mix(in oklab, ${accent} 22%, var(--bg-1))` : "var(--bg-1)");
+  const titleColor = ink ?? "var(--fg-0)";
+  const headBorder = tint
+    ? `1px solid color-mix(in oklab, ${ink} 28%, transparent)`
+    : awaiting
+      ? `1px solid color-mix(in oklab, ${accent} 40%, var(--bd-soft))`
+      : "1px solid var(--bd-soft)";
+  // Shared control recolor while tinted — recolors expand/more/close to the ink.
+  const tintBtn = ink
+    ? {
+        idleColor: `color-mix(in oklab, ${ink} 78%, transparent)`,
+        hoverColor: ink,
+        hoverBg: `color-mix(in oklab, ${ink} 16%, transparent)`,
+      }
+    : {};
+
   return (
     <div
       style={{
         flex: "0 0 auto",
-        background: awaiting ? `color-mix(in oklab, ${accent} 22%, var(--bg-1))` : "var(--bg-1)",
-        borderBottom: awaiting
-          ? `1px solid color-mix(in oklab, ${accent} 40%, var(--bd-soft))`
-          : "1px solid var(--bd-soft)",
-        color: "var(--fg-1)",
+        background: headBg,
+        borderBottom: headBorder,
+        color: ink ?? "var(--fg-1)",
+        // Agent-identity rail: full color when this pane is focused, dimmed
+        // otherwise — a clear focused-vs-background read the lone status dot
+        // can't carry. Uses the picked color when set, else the agent accent.
+        borderLeft: `3px solid ${
+          focused ? railColor : `color-mix(in oklab, ${railColor} 38%, transparent)`
+        }`,
         userSelect: "none",
       }}
     >
@@ -88,46 +119,30 @@ export function PaneHead({
           cursor: draggable ? "grab" : undefined,
         }}
       >
-        {typeof index === "number" && (
-          <span
-            className="mono"
-            title={`Jump to pane ${index + 1} (⌘${index + 1})`}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 18,
-              height: 18,
-              borderRadius: 4,
-              fontSize: 10,
-              fontWeight: 600,
-              lineHeight: 1,
-              color: focused ? "var(--bg-0)" : "var(--fg-2)",
-              background: focused ? "var(--pri)" : "var(--bg-3)",
-              border: `1px solid ${focused ? "var(--pri)" : "var(--bd-soft)"}`,
-              flexShrink: 0,
-            }}
-          >
-            {index + 1}
-          </span>
-        )}
-
         <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-          <span
-            title={statusText}
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: "50%",
-              background: accent,
-              border: `1px solid color-mix(in oklab, ${accent} 60%, #000)`,
-              boxShadow:
-                working || awaiting
-                  ? `0 0 0 3px color-mix(in oklab, ${accent} 22%, transparent)`
-                  : "none",
-              animation: working ? "ch-pulse 2s ease-in-out infinite" : "none",
-              flexShrink: 0,
-            }}
+          {/* The status dot IS the color picker: it carries live state
+              (pulse/ring) and clicking it recolors the whole pane. On a colored
+              bar it shows the contrast ink (not the agent accent) so it never
+              clashes with the fill; on a neutral bar it shows the agent accent.
+              One dot instead of a separate swatch — same mechanism as the group
+              and workspace tabs. */}
+          <ColorDot
+            size={12}
+            display={ink ?? accent}
+            selected={meta.color}
+            onPick={(c) => setSessionColor(session, c)}
+            pulse={working}
+            ring={
+              working || awaiting
+                ? `color-mix(in oklab, ${ink ?? accent} 22%, transparent)`
+                : undefined
+            }
+            border={
+              ink
+                ? `1px solid color-mix(in oklab, ${ink} 45%, transparent)`
+                : `1px solid color-mix(in oklab, ${accent} 60%, black)`
+            }
+            title={`${statusText} · click to set pane color`}
           />
           {editing ? (
             <input
@@ -151,40 +166,21 @@ export function PaneHead({
               }}
             />
           ) : (
-            <span
-              className="mono"
-              title="Double-click to rename"
-              style={{ fontSize: 13, color: "var(--fg-0)", fontWeight: 500 }}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                setEditing(true);
-              }}
-            >
-              {meta.alias}
-            </span>
+            <Tip text="Double-click to rename">
+              <span
+                className="mono ch-rename"
+                style={{ fontSize: 13, color: titleColor, fontWeight: 500 }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditing(true);
+                }}
+              >
+                {meta.alias}
+              </span>
+            </Tip>
           )}
         </span>
 
-        <button
-          type="button"
-          title={`${spec.label}${version ? ` · ${version}` : ""}`}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            fontFamily: "var(--mono)",
-            fontSize: 11,
-            color: "var(--fg-2)",
-            background: "transparent",
-            border: "1px solid transparent",
-            borderRadius: 4,
-            padding: "2px 5px",
-            cursor: "default",
-          }}
-        >
-          <span>{version ?? spec.label}</span>
-          {Ico.chevD}
-        </button>
         {badge && <span className={`mode-badge badge-${meta.mode}`}>{badge}</span>}
         {awaiting && <StatusBadge status="wait">Awaiting</StatusBadge>}
 
@@ -195,6 +191,7 @@ export function PaneHead({
           active={isMax}
           disabled={!canMax}
           style={{ width: 22, height: 22 }}
+          {...tintBtn}
           onClick={(e) => {
             e.stopPropagation();
             if (isMax) {
@@ -208,15 +205,21 @@ export function PaneHead({
           {isMax ? Ico.grid : Ico.expand}
         </IconBtn>
         <IconBtn
-          title="More actions — right-click pane for split, copy, fullscreen…"
+          title="Pane menu — spawn, split, close"
           style={{ width: 22, height: 22 }}
+          {...tintBtn}
+          onClick={(e) => {
+            e.stopPropagation();
+            onMenu?.(e);
+          }}
         >
           {Ico.more}
         </IconBtn>
         <IconBtn
           title="Close session (⌘W)"
-          danger
+          danger={!ink}
           style={{ width: 22, height: 22 }}
+          {...tintBtn}
           onClick={(e) => {
             e.stopPropagation();
             if (!confirmCloseRunningSession(session)) return;
@@ -227,33 +230,32 @@ export function PaneHead({
         </IconBtn>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "4px 10px",
-          background: "var(--bg-1)",
-          borderTop: "1px solid var(--bd-soft)",
-          fontSize: 10,
-        }}
-      >
-        <ContextGauge used={usage?.contextUsed ?? 0} max={0} label="ctx" width={64} />
-        <MetricStat label="turn" value={usage ? String(usage.turns) : "—"} />
-        <MetricStat label="tok" value={usage ? fmtTokens(usage.tokensIn + usage.tokensOut) : "—"} />
-        <MetricStat label="$" value="—" />
-        <MetricStat label="edits" value={usage ? String(usage.edits) : "—"} />
-        <span style={{ flex: 1 }} />
-        <span
-          className="mono"
+      {/* Telemetry strip — only when the session has a real transcript tally
+          (Claude w/ usage). Idle / non-Claude / pre-transcript panes drop it
+          entirely rather than show a row of em-dashes. Context is shown as a raw
+          token count (the transcript records no window max — no fake ratio). A
+          tinted head grounds the strip on a dark mix so the default metric text
+          stays legible (rather than fighting the vivid fill). */}
+      {usage && (
+        <div
           style={{
-            fontSize: 10.5,
-            color: awaiting ? "var(--wait)" : working ? "var(--live)" : "var(--fg-3)",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            padding: "4px 12px",
+            background: tint ? `color-mix(in oklab, ${tint} 26%, var(--bg-1))` : "var(--bg-1)",
+            borderTop: tint
+              ? `1px solid color-mix(in oklab, ${tint} 40%, var(--bd-soft))`
+              : "1px solid var(--bd-soft)",
+            fontSize: 10,
           }}
         >
-          {awaiting ? "awaiting" : working ? "active" : "idle"}
-        </span>
-      </div>
+          <MetricStat label="ctx" value={fmtTokens(usage.contextUsed)} />
+          <MetricStat label="turn" value={String(usage.turns)} />
+          <MetricStat label="tok" value={fmtTokens(usage.tokensIn + usage.tokensOut)} />
+          <MetricStat label="edits" value={String(usage.edits)} />
+        </div>
+      )}
     </div>
   );
 }

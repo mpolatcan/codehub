@@ -22,7 +22,6 @@ import { type HubView, activeWorkspace, initLifecycle, useStore } from "@/app/li
 import { useTheme } from "@/app/lib/theme";
 import { MAX_GROUP_PANES, leavesList, workspaceTitle } from "@/app/lib/tree";
 import { Companion } from "@/app/screens/Companion";
-import { ContainerInspector } from "@/app/screens/ContainerInspector";
 import { Dashboard } from "@/app/screens/Dashboard";
 import { EmptyHero, EmptyState } from "@/app/screens/EmptyState";
 import { LiveActivities } from "@/app/screens/LiveActivities";
@@ -103,7 +102,6 @@ function currentScreen(): ScreenKey {
 
 function previewNav(screen: ScreenKey): { view: HubView; settingsSection?: string } {
   if (screen === "dashboard") return { view: "dashboard" };
-  if (screen === "workspaces") return { view: "containers" };
   if (screen === "agent-settings") return { view: "settings", settingsSection: "agents" };
   if (screen.startsWith("settings-")) {
     return { view: "settings", settingsSection: screen.replace("settings-", "") };
@@ -269,7 +267,7 @@ function PreviewBody({ screen }: { screen: ScreenKey }) {
   if (screen === "main-hub-a" || screen === "hub-states") return <PreviewHubBackdrop />;
   if (screen === "welcome") return <Welcome />;
   if (screen === "dashboard") return <Dashboard />;
-  if (screen === "workspaces") return <ContainerInspector />;
+  if (screen === "workspaces") return <Welcome />;
 
   if (screen === "states") return <StatesGallery />;
   if (screen === "live-activities") return <LiveActivities />;

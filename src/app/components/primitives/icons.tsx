@@ -136,6 +136,22 @@ export const Ico = {
       <path d="M3 4h4l1.5 1.5H13V12a1 1 0 01-1 1H3z" />
     </svg>
   ),
+  link: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6.5 9.5a2.5 2.5 0 003.5 0l2-2a2.5 2.5 0 00-3.5-3.5l-1 1" />
+      <path d="M9.5 6.5a2.5 2.5 0 00-3.5 0l-2 2a2.5 2.5 0 003.5 3.5l1-1" />
+    </svg>
+  ),
   cpu: (
     <svg
       aria-hidden="true"
@@ -286,6 +302,73 @@ export const Ico = {
       strokeLinejoin="round"
     >
       <path d="M3 6l5 5 5-5" />
+    </svg>
+  ),
+  chevL: (
+    <svg
+      aria-hidden="true"
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M10 3l-5 5 5 5" />
+    </svg>
+  ),
+  chevR: (
+    <svg
+      aria-hidden="true"
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 3l5 5-5 5" />
+    </svg>
+  ),
+  gauge: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.5 11.5a6 6 0 1 1 11 0" />
+      <path d="M8 8.5l3-2.5" />
+    </svg>
+  ),
+  restart: (
+    <svg
+      aria-hidden="true"
+      width="13"
+      height="13"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M13.5 3.5v3h-3" />
+      <path d="M13 6.5A5.5 5.5 0 1 0 13.2 10" />
+    </svg>
+  ),
+  stop: (
+    <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+      <rect x="4" y="4" width="8" height="8" rx="1.5" />
     </svg>
   ),
   check: (

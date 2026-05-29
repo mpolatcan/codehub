@@ -13,6 +13,10 @@
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
+// Shared easing curve, exported for components that animate inline (e.g. the
+// resizable docks, which need a 0-duration transition while dragging).
+export const EASE = ease;
+
 export const slideLeft = {
   initial: { opacity: 0, x: -40 },
   animate: { opacity: 1, x: 0, transition: { duration: 0.32, ease } },

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
-import { groupKey, splitKey, useLauncher } from "../lib/launcher";
 import { useOverlay } from "../lib/overlay";
 import { confirmCloseRunningSession, confirmCloseWorkspace, useStore } from "../lib/store";
+import { type Theme, applyTheme, getStoredTheme, persistTheme } from "../lib/theme";
 import { type SplitDir, activeGroup } from "../lib/tree";
 
 // Split the focused pane along its longer visible axis — wider panes split into
@@ -15,26 +15,31 @@ export function autoSplitDir(session: string): SplitDir {
   return el && el.clientWidth >= el.clientHeight ? "row" : "col";
 }
 
-// Global keyboard shortcuts:
-//   ⌘/Ctrl N  — new tab (opens the launcher); ⌘/Ctrl T kept as an alias
-//   ⌘⇧N       — new-workspace wizard (the Welcome launcher's CTA)
-//   ⌘⇧T       — new workspace tab (same launcher, fresh tab target)
-//   ⌘/Ctrl A  — new agent in the current workspace (same launcher, focused context)
-//   ⌘/Ctrl W  — close the focused session
+// Global keyboard shortcuts. ONE clean scheme — every binding here is also
+// listed verbatim in the cheat sheet (Shortcuts.tsx) and on the matching UI
+// control, and NONE shadow a reserved webview/OS combo (notably ⌘R is left free
+// for window reload). Keep all three in sync when changing a binding.
+//
+//   ⌘/Ctrl T  — open the launcher (new / recent / resume workspace)
+//   ⌘/Ctrl N  — new agent in the current workspace (split focused / fill empty group)
+//   ⌘⇧N       — new agent in a fresh group
+//   ⌘/Ctrl W  — close the focused pane
 //   ⌘⇧W       — close the active workspace tab
 //   ⌘[ / ⌘]   — previous / next workspace tab
-//   ⌘/Ctrl \  — split the focused pane (longer axis); ⌘⇧\ forces a column split
+//   ⌘/Ctrl 1-9 — switch to tab N
+//   ⌘/Ctrl \  — split the focused pane (longer axis); ⌘⇧\ forces the other axis
 //   ⌘/Ctrl E  — toggle the Files docked viewer
 //   ⌘/Ctrl D  — toggle the all-changes Diff viewer
-//   ⌘B        — collapse/expand the sidebar (design AppSidebar rail)
-//   ⌘⇧B       — toggle the Shell docked panel
-//   ⌘G        — spawn a new agent into a fresh group (design SpawnPlacementMenu)
-//   ⌘/Ctrl R  — toggle the Resume drawer (docked over the hub)
-//   ⌘/Ctrl ,  — settings
+//   ⌘/Ctrl J  — toggle the Shell docked panel
+//   ⌘/Ctrl I  — toggle the Details (workspace metrics) panel
+//   ⌘B        — collapse/expand the sidebar
 //   ⌘/Ctrl K  — command palette
+//   ⌘/Ctrl ,  — settings
+//   ⌘⇧L       — cycle theme (dark → gray → light)
 //   ⌘/Ctrl /  — keyboard-shortcuts cheat sheet
-//   ?          — keyboard-shortcuts cheat sheet when focus is outside an editor/terminal
-//   ⌘/Ctrl 1-9 — switch to tab N
+//   ?          — cheat sheet when focus is outside an editor/terminal
+//   (⌘⇧J — expand the companion — is a process-global shortcut, registered in the
+//    Rust backend, not here.)
 //
 // Attached at the capture phase so they win over xterm.js, which installs its
 // own keydown handler on the pane textarea. Skipped while the inline rename
@@ -59,7 +64,6 @@ export function useKeyboard() {
       if (target?.classList?.contains("pane-name-input")) return;
 
       const store = useStore.getState();
-      const launcher = useLauncher.getState();
       const overlay = useOverlay.getState();
       const ws = store.workspaces.find((w) => w.id === store.activeWorkspaceId);
       // The focused session of the active group — every grid shortcut acts on it.
@@ -101,17 +105,32 @@ export function useKeyboard() {
       }
 
       switch (e.key.toLowerCase()) {
-        case "n":
-          e.preventDefault();
-          // ⌘⇧N opens the new-workspace wizard; plain ⌘N (and ⌘T) the spawn launcher.
-          if (e.shiftKey) overlay.setNewWorkspace(true);
-          else launcher.open("newtab");
-          break;
         case "t":
+          // ⌘T — open the launcher tab (new / recent / resume workspace). Force
+          // the hub view first (the launcher renders there); setView clears the
+          // launcher, so open it AFTER.
           e.preventDefault();
-          if (e.shiftKey) overlay.setNewWorkspace(true);
-          else launcher.open("newtab");
+          store.setView("hub");
+          overlay.setLauncher(true);
           break;
+        case "n": {
+          // ⌘N — drop a configuring pane in the current workspace; ⌘⇧N — in a
+          // fresh group. No workspace at all → open the launcher (need one first).
+          e.preventDefault();
+          if (!ws) {
+            overlay.setLauncher(true);
+            break;
+          }
+          if (e.shiftKey) {
+            const gid = store.addGroup(ws.id);
+            store.beginGroupSpawn(ws.id, gid);
+          } else {
+            // Auto-place into the active group's even ≤3-col grid (no half-split
+            // of the focused pane).
+            store.beginGroupSpawn(ws.id, ws.activeGroupId);
+          }
+          break;
+        }
         case "k":
           e.preventDefault();
           useOverlay.getState().togglePalette();
@@ -124,8 +143,7 @@ export function useKeyboard() {
           e.preventDefault();
           if (e.shiftKey) {
             if (!ws) return;
-            const result = confirmCloseWorkspace(ws.id);
-            if (result) void store.closeWorkspace(ws.id);
+            if (confirmCloseWorkspace(ws.id)) void store.closeWorkspace(ws.id);
             return;
           }
           if (!focused) return;
@@ -144,52 +162,35 @@ export function useKeyboard() {
           e.preventDefault();
           overlay.setDiff(overlay.diff === null ? "" : null);
           break;
-        case "r": // toggle the Resume drawer (docked over the hub)
+        case "j": // toggle the Shell docked panel
           e.preventDefault();
-          // Already on the hub with it open → close; otherwise jump to the hub
-          // (the drawer only renders there) and open it.
-          if (store.view === "hub" && overlay.resume) {
-            overlay.setResume(false);
-          } else {
-            store.setView("hub");
-            overlay.setResume(true);
-          }
-          break;
-        case "b":
-          e.preventDefault();
-          // ⌘B collapses/expands the sidebar (design AppSidebar); ⌘⇧B toggles Shell.
-          if (!e.shiftKey) {
-            store.toggleSidebar();
-            return;
-          }
           overlay.setShell(!overlay.shell);
           break;
-        case "a":
+        case "i": // toggle the Details (workspace metrics) panel
           e.preventDefault();
-          if (!e.shiftKey) {
-            if (focused) {
-              launcher.open(splitKey(focused), { dir: "row", session: focused });
-            } else {
-              launcher.open("newtab");
-            }
+          overlay.setDetails(!overlay.details);
+          break;
+        case "b": // collapse / expand the sidebar
+          e.preventDefault();
+          store.toggleSidebar();
+          break;
+        case "l":
+          // ⌘⇧L — cycle theme (dark → gray → light). Applies + persists directly
+          // (Settings re-reads on mount); no-op without shift so ⌘L stays free.
+          if (e.shiftKey) {
+            e.preventDefault();
+            const cur = getStoredTheme();
+            const next: Theme = cur === "dark" ? "gray" : cur === "gray" ? "light" : "dark";
+            applyTheme(next);
+            persistTheme(next);
           }
           break;
-        case "g": {
-          // ⌘G — spawn a new agent into a fresh group of the active workspace.
-          if (!ws) return;
-          e.preventDefault();
-          const gid = store.addGroup(ws.id);
-          launcher.open(groupKey(gid), { dir: "row", groupId: gid, workspaceId: ws.id });
-          break;
-        }
         case "|":
         case "\\": {
           if (!focused) return;
           e.preventDefault();
-          // ⌘⇧\ (arrives as "|") forces a downward column split; plain ⌘\ picks
-          // the longer visible axis automatically.
-          const dir: SplitDir = e.shiftKey ? "col" : autoSplitDir(focused);
-          launcher.open(splitKey(focused), { dir, session: focused });
+          // ⌘⇧\ (arrives as "|") forces the opposite axis; plain ⌘\ auto-picks.
+          store.beginSplitSpawn(focused, e.shiftKey ? "col" : autoSplitDir(focused));
           break;
         }
       }

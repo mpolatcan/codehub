@@ -2,7 +2,6 @@ import type { CSSProperties, ReactNode } from "react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { CLIS, SPEC_BY_CLI } from "../../lib/catalog";
 import { type Cli, ipc } from "../../lib/ipc";
-import { useLauncher } from "../../lib/launcher";
 import { useOverlay } from "../../lib/overlay";
 import { type HubView, activeWorkspace, useStore } from "../../lib/store";
 import { workspaceTitle } from "../../lib/tree";
@@ -29,7 +28,6 @@ const SCOPES: { id: Exclude<Scope, null>; label: string }[] = [
 const VIEWS: { id: HubView; label: string; icon: keyof typeof Ico; section?: string }[] = [
   { id: "hub", label: "Hub", icon: "hub" },
   { id: "dashboard", label: "Dashboard", icon: "grid" },
-  { id: "containers", label: "Workspaces", icon: "container" },
   { id: "settings", label: "Integrations", icon: "branch", section: "integrations" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
@@ -107,7 +105,7 @@ export function CommandPalette() {
   const openDetail = useStore((s) => s.openDetail);
   const restartRuntime = useStore((s) => s.restartRuntime);
   const selectWorkspaceDir = useStore((s) => s.selectWorkspaceDir);
-  const openLaunch = useLauncher((s) => s.open);
+  const newAgent = useStore((s) => s.newAgent);
   const recents = useStore((s) => s.config?.recentWorkspaces) ?? [];
   const githubRepos = useStore((s) => s.githubRepos);
   const runtimeLive = useStore((s) => s.status?.state === "running");
@@ -170,7 +168,7 @@ export function CommandPalette() {
   };
   const spawn = (cli: Cli) => {
     setPalette(false);
-    openLaunch(`palette:${cli}`, { dir: "row", preferredCli: cli });
+    newAgent(cli);
   };
   const openDiff = () => {
     setPalette(false);
@@ -338,7 +336,6 @@ export function CommandPalette() {
               <span style={{ flex: 1 }}>
                 <Hi text="Open Resume drawer" q={query} />
               </span>
-              <Kbd>⌘R</Kbd>
             </CommandItem>
             <CommandItem value="restart runtime container" onSelect={restart}>
               <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.container}</span>
@@ -479,9 +476,7 @@ function ScopeChips({ scope, setScope }: { scope: Scope; setScope: (s: Scope) =>
     <span style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
       {SCOPES.map((s, i) => (
         <Fragment key={s.id}>
-          {i > 0 && (
-            <span style={{ color: "var(--fg-3)", fontSize: 10, margin: "0 4px" }}>·</span>
-          )}
+          {i > 0 && <span style={{ color: "var(--fg-3)", fontSize: 10, margin: "0 4px" }}>·</span>}
           <button
             type="button"
             onClick={(e) => {

@@ -26,6 +26,7 @@ import { AGENT_META, AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { Logo } from "@/app/components/primitives/Logo";
 import { Segmented } from "@/app/components/primitives/Segmented";
 import { StatusDot } from "@/app/components/primitives/StatusDot";
+import { Tab, TabBar } from "@/app/components/primitives/TabBar";
 import { Tag } from "@/app/components/primitives/Tag";
 import { Ico } from "@/app/components/primitives/icons";
 import { CLIS } from "@/app/lib/catalog";
@@ -40,6 +41,17 @@ import {
 import { useStore } from "@/app/lib/store";
 import { type Theme, useTheme } from "@/app/lib/theme";
 import { Button } from "@/app/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/app/ui/dialog";
+import { Input } from "@/app/ui/input";
+import { Label } from "@/app/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/ui/select";
 import { Switch } from "@/app/ui/switch";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { ApiKeyDialog } from "../components/ApiKeyDialog";
@@ -223,12 +235,6 @@ function PaneHead({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-const NATIVE_PROVIDERS: Record<AgentCli, string> = {
-  claude: "Anthropic",
-  codex: "OpenAI",
-  antigravity: "Google",
-};
-
 const AGENT_DESCRIPTIONS: Record<AgentCli, string> = {
   claude:
     "Anthropic's coding agent. Supports Anthropic-compatible providers (MiniMax, GLM, Qwen, custom endpoints).",
@@ -244,12 +250,48 @@ const COMPATIBLE_PROVIDERS: Record<AgentCli, string[]> = {
   antigravity: [],
 };
 
-const PROVIDER_PRESETS: { name: string; kind: string; baseUrl: string; models: string[]; note?: string }[] = [
-  { name: "AWS Bedrock", kind: "bedrock", baseUrl: "", models: ["claude-sonnet-4-20250514", "claude-haiku-4-20250414"], note: "Uses AWS credentials, no base URL needed" },
-  { name: "Vertex AI", kind: "vertex", baseUrl: "", models: ["claude-sonnet-4@20250514", "claude-haiku-4@20250414"], note: "Uses GCP credentials, no base URL needed" },
-  { name: "MiniMax", kind: "anthropic-compatible", baseUrl: "https://api.minimax.io/anthropic", models: ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.7-highspeed"], note: "Anthropic-compatible endpoint. Set ANTHROPIC_AUTH_TOKEN to your MiniMax API key." },
-  { name: "GLM / Zhipu", kind: "openai-compatible", baseUrl: "https://open.bigmodel.cn/api/paas/v4", models: ["glm-4-plus", "glm-4-flash", "glm-4-long"], note: "OpenAI-compatible. Set OPENAI_API_KEY to your Zhipu API key." },
-  { name: "Azure OpenAI", kind: "azure", baseUrl: "", models: ["gpt-4o", "gpt-4o-mini"], note: "Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY" },
+const PROVIDER_PRESETS: {
+  name: string;
+  kind: string;
+  baseUrl: string;
+  models: string[];
+  note?: string;
+}[] = [
+  {
+    name: "AWS Bedrock",
+    kind: "bedrock",
+    baseUrl: "",
+    models: ["claude-sonnet-4-20250514", "claude-haiku-4-20250414"],
+    note: "Uses AWS credentials, no base URL needed",
+  },
+  {
+    name: "Vertex AI",
+    kind: "vertex",
+    baseUrl: "",
+    models: ["claude-sonnet-4@20250514", "claude-haiku-4@20250414"],
+    note: "Uses GCP credentials, no base URL needed",
+  },
+  {
+    name: "MiniMax",
+    kind: "anthropic-compatible",
+    baseUrl: "https://api.minimax.io/anthropic",
+    models: ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.7-highspeed"],
+    note: "Anthropic-compatible endpoint. Set ANTHROPIC_AUTH_TOKEN to your MiniMax API key.",
+  },
+  {
+    name: "GLM / Zhipu",
+    kind: "openai-compatible",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    models: ["glm-4-plus", "glm-4-flash", "glm-4-long"],
+    note: "OpenAI-compatible. Set OPENAI_API_KEY to your Zhipu API key.",
+  },
+  {
+    name: "Azure OpenAI",
+    kind: "azure",
+    baseUrl: "",
+    models: ["gpt-4o", "gpt-4o-mini"],
+    note: "Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY",
+  },
   { name: "Custom endpoint", kind: "anthropic-compatible", baseUrl: "", models: [] },
 ];
 
@@ -294,7 +336,9 @@ function AgentsPane({
   const pendingProfileId = useRef<string | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [providerDialog, setProviderDialog] = useState<{ editing?: typeof providers[number] } | null>(null);
+  const [providerDialog, setProviderDialog] = useState<{
+    editing?: (typeof providers)[number];
+  } | null>(null);
   const [managingProviderId, setManagingProviderId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -414,15 +458,30 @@ function AgentsPane({
   const oauthProfiles = agentProfiles.filter((p) => p.source === "vault");
   const providers = config?.providers ?? [];
 
-  const renderProfileRow = (
-    p: (typeof profiles)[number],
-    i: number,
-    list: typeof profiles,
-  ) => {
+  // Connection is satisfied by ANY credential, not just an API key — an OAuth
+  // sign-in or an enabled custom provider counts too. The old badge keyed only
+  // off the host env-var key, so it nagged "Key needed" even with OAuth active.
+  const hasKey = Boolean(key?.present);
+  const hasOauth = oauthProfiles.some((p) => p.present);
+  const hasEnabledProvider = providers.some((p) => p.enabled);
+  // The native provider (Anthropic/OpenAI/Google) is reachable via either a host
+  // API key or an OAuth sign-in — both are "native" credentials.
+  const nativeConnected = hasKey || hasOauth;
+  const connected = nativeConnected || hasEnabledProvider;
+  const connectionVia = hasOauth
+    ? "OAuth"
+    : hasKey
+      ? "API key"
+      : hasEnabledProvider
+        ? "custom provider"
+        : null;
+
+  const renderProfileRow = (p: (typeof profiles)[number], i: number, list: typeof profiles) => {
     const hue = avatarHue(p.id);
     const color = `oklch(0.55 0.12 ${hue})`;
     const isManaging = managingId === p.id;
-    const restBg = i % 2 === 1 ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))" : "transparent";
+    const restBg =
+      i % 2 === 1 ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))" : "transparent";
     return (
       <div key={p.id}>
         <div
@@ -437,8 +496,12 @@ function AgentsPane({
             background: restBg,
             transition: "background 0.12s ease",
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = restBg; }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-hover)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = restBg;
+          }}
         >
           <div
             style={{
@@ -459,9 +522,7 @@ function AgentsPane({
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
-                {p.label}
-              </span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{p.label}</span>
               {p.source === "vault" && (
                 <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
                   keychain
@@ -550,51 +611,31 @@ function AgentsPane({
   const compatiblePresets = COMPATIBLE_PROVIDERS[selectedAgent];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        flex: 1,
+        minHeight: 0,
+        overflow: "hidden",
+      }}
+    >
       {/* ── Agent tab bar ────────────────────────────────────────────── */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          borderBottom: "1px solid var(--bd-soft)",
-          marginBottom: 24,
-          flexShrink: 0,
-        }}
-      >
+      <TabBar style={{ marginBottom: 24 }}>
         {CLIS.map((c) => {
           const sel = selectedAgent === c.id;
           return (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setSelectedAgent(c.id)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "10px 16px",
-                border: "none",
-                cursor: "pointer",
-                background: "transparent",
-                borderBottom: sel ? "2px solid var(--fg-0)" : "2px solid transparent",
-                color: sel ? "var(--fg-0)" : "var(--fg-2)",
-                fontSize: 13,
-                fontFamily: "var(--sans)",
-                fontWeight: sel ? 500 : 400,
-                marginBottom: -1,
-                transition: "color 0.12s ease",
-              }}
-            >
+            <Tab key={c.id} active={sel} onClick={() => setSelectedAgent(c.id)}>
               <AgentGlyph
                 agent={c.id}
                 size={14}
                 color={sel ? AGENT_META[c.id].accent : "var(--fg-3)"}
               />
               {c.label}
-            </button>
+            </Tab>
           );
         })}
-      </div>
+      </TabBar>
 
       {/* ── Agent hero (compact) ─────────────────────────────────────── */}
       <div
@@ -633,26 +674,30 @@ function AgentsPane({
               {cliSpec.label}
             </span>
             {ver?.version && <Tag>v{ver.version}</Tag>}
-            {key && (
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "2px 8px",
-                  borderRadius: 999,
-                  fontSize: 10.5,
-                  fontWeight: 600,
-                  letterSpacing: "0.03em",
-                  textTransform: "uppercase",
-                  background: key.present
-                    ? "color-mix(in oklab, var(--live) 12%, transparent)"
-                    : "color-mix(in oklab, var(--wait) 12%, transparent)",
-                  color: key.present ? "var(--live)" : "var(--wait)",
-                }}
-              >
-                <StatusDot status={key.present ? "live" : "wait"} />
-                {key.present ? "Connected" : "Key needed"}
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "2px 9px",
+                borderRadius: 999,
+                fontSize: 10.5,
+                fontWeight: 600,
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+                background: connected
+                  ? "color-mix(in oklab, var(--live) 12%, transparent)"
+                  : "var(--bg-2)",
+                color: connected ? "var(--live)" : "var(--fg-3)",
+                border: connected ? "1px solid transparent" : "1px solid var(--bd-soft)",
+              }}
+            >
+              <StatusDot status={connected ? "live" : "idle"} />
+              {connected ? "Connected" : "Not connected"}
+            </span>
+            {connected && connectionVia && (
+              <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                via {connectionVia}
               </span>
             )}
           </div>
@@ -672,13 +717,14 @@ function AgentsPane({
           overflow: "auto",
           display: "flex",
           flexDirection: "column",
-          gap: 16,
+          // No flex-gap: each SectionHead already carries its own 24/12 margins,
+          // so a gap here would double the spacing and push content past the fold.
           paddingBottom: 24,
         }}
       >
         {/* ── Credentials ─────────────────────────────────────────── */}
         <SectionHead label="Credentials" />
-        <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
           {/* ── API Keys ───────────────────────────────────────────── */}
           <section
             className="ch-card"
@@ -711,16 +757,13 @@ function AgentsPane({
                 </Button>
               )}
             </div>
-            <div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
               {apiKeyProfiles.length > 0 ? (
-                <div>
-                  {apiKeyProfiles.map((p, i) => renderProfileRow(p, i, apiKeyProfiles))}
-                </div>
+                <div>{apiKeyProfiles.map((p, i) => renderProfileRow(p, i, apiKeyProfiles))}</div>
               ) : (
-                <AgentSectionEmpty
-                  message={`No API keys for ${cliSpec.label}`}
-                  actionLabel="Add API key"
-                  onAction={() => setKeyDialog(selectedAgent)}
+                <AddRow
+                  label="Add an API key — connect without signing in"
+                  onClick={() => setKeyDialog(selectedAgent)}
                 />
               )}
             </div>
@@ -766,111 +809,112 @@ function AgentsPane({
                 </Button>
               )}
             </div>
-          <div>
-            {oauthProfiles.length > 0 ? (
-              <div>
-                {oauthProfiles.map((p, i) => renderProfileRow(p, i, oauthProfiles))}
-              </div>
-            ) : (
-              <AgentSectionEmpty
-                message={`No OAuth accounts for ${cliSpec.label}`}
-                actionLabel={`Sign in with ${cliSpec.alias}`}
-                onAction={() => startLogin(selectedAgent, selectedAgent)}
-                disabled={loginBusy != null}
-                busy={loginBusy === selectedAgent}
-              />
-            )}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+              {oauthProfiles.length > 0 ? (
+                <div>{oauthProfiles.map((p, i) => renderProfileRow(p, i, oauthProfiles))}</div>
+              ) : (
+                <AddRow
+                  label={`Sign in with ${cliSpec.alias} — use your subscription, no API key`}
+                  onClick={() => startLogin(selectedAgent, selectedAgent)}
+                  disabled={loginBusy != null}
+                  busy={loginBusy === selectedAgent}
+                />
+              )}
 
-            {loginProgress && loginProgress.stage !== "success" && (
-              <div
-                className="mono"
-                style={{
-                  padding: "10px 14px",
-                  margin: "0 14px 10px",
-                  fontSize: 11.5,
-                  color: loginProgress.stage === "error" ? "var(--err)" : "var(--fg-1)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 6,
-                  background: "var(--bg-2)",
-                  border: "1px solid var(--bd-soft)",
-                  borderRadius: 8,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {loginProgress.stage === "starting" && (
-                    <span style={{ color: "var(--fg-2)" }}>Starting...</span>
-                  )}
-                  {loginProgress.stage === "url" && (
-                    <span>Browser opened — authenticate to continue</span>
-                  )}
-                  {loginProgress.stage === "device_code" && <span>Enter code in your browser:</span>}
-                  {loginProgress.stage === "waiting" && (
-                    <span style={{ color: "var(--fg-2)" }}>Waiting for authentication...</span>
-                  )}
-                  {loginProgress.stage === "error" && <span>{loginProgress.message}</span>}
-                </div>
-                {loginProgress.userCode && (
-                  <div
-                    style={{
-                      padding: "6px 12px",
-                      background: "var(--bg-0)",
-                      border: "1px solid var(--bd)",
-                      borderRadius: 6,
-                      fontSize: 18,
-                      fontWeight: 700,
-                      letterSpacing: "0.15em",
-                      color: "var(--fg-0)",
-                      textAlign: "center",
-                    }}
-                  >
-                    {loginProgress.userCode}
+              {loginProgress && loginProgress.stage !== "success" && (
+                <div
+                  className="mono"
+                  style={{
+                    padding: "10px 14px",
+                    margin: "0 14px 10px",
+                    fontSize: 11.5,
+                    color: loginProgress.stage === "error" ? "var(--err)" : "var(--fg-1)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    background: "var(--bg-2)",
+                    border: "1px solid var(--bd-soft)",
+                    borderRadius: 8,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {loginProgress.stage === "starting" && (
+                      <span style={{ color: "var(--fg-2)" }}>Starting...</span>
+                    )}
+                    {loginProgress.stage === "url" && (
+                      <span>Browser opened — authenticate to continue</span>
+                    )}
+                    {loginProgress.stage === "device_code" && (
+                      <span>Enter code in your browser:</span>
+                    )}
+                    {loginProgress.stage === "waiting" && (
+                      <span style={{ color: "var(--fg-2)" }}>Waiting for authentication...</span>
+                    )}
+                    {loginProgress.stage === "error" && <span>{loginProgress.message}</span>}
                   </div>
-                )}
-                {loginProgress.url && loginProgress.stage !== "error" && (
-                  <div style={{ fontSize: 10.5, color: "var(--fg-3)" }}>{loginProgress.url}</div>
-                )}
-                {loginProgress.message && loginProgress.stage !== "error" && (
-                  <div style={{ fontSize: 10.5, color: "var(--fg-2)" }}>{loginProgress.message}</div>
-                )}
-              </div>
-            )}
+                  {loginProgress.userCode && (
+                    <div
+                      style={{
+                        padding: "6px 12px",
+                        background: "var(--bg-0)",
+                        border: "1px solid var(--bd)",
+                        borderRadius: 6,
+                        fontSize: 18,
+                        fontWeight: 700,
+                        letterSpacing: "0.15em",
+                        color: "var(--fg-0)",
+                        textAlign: "center",
+                      }}
+                    >
+                      {loginProgress.userCode}
+                    </div>
+                  )}
+                  {loginProgress.url && loginProgress.stage !== "error" && (
+                    <div style={{ fontSize: 10.5, color: "var(--fg-3)" }}>{loginProgress.url}</div>
+                  )}
+                  {loginProgress.message && loginProgress.stage !== "error" && (
+                    <div style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
+                      {loginProgress.message}
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {loginProgress?.stage === "success" && (
-              <div
-                className="mono"
-                style={{
-                  margin: "0 14px 10px",
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  background: "color-mix(in oklab, var(--live) 8%, var(--bg-2))",
-                  border: "1px solid color-mix(in oklab, var(--live) 30%, var(--bd))",
-                  fontSize: 11.5,
-                  color: "var(--live)",
-                }}
-              >
-                {loginProgress.message ?? "Signed in successfully"}
-              </div>
-            )}
+              {loginProgress?.stage === "success" && (
+                <div
+                  className="mono"
+                  style={{
+                    margin: "0 14px 10px",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    background: "color-mix(in oklab, var(--live) 8%, var(--bg-2))",
+                    border: "1px solid color-mix(in oklab, var(--live) 30%, var(--bd))",
+                    fontSize: 11.5,
+                    color: "var(--live)",
+                  }}
+                >
+                  {loginProgress.message ?? "Signed in successfully"}
+                </div>
+              )}
 
-            {loginError && !loginProgress && (
-              <div
-                className="mono"
-                style={{
-                  margin: "0 14px 10px",
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  background: "color-mix(in oklab, var(--err) 8%, var(--bg-2))",
-                  border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
-                  fontSize: 11.5,
-                  color: "var(--err)",
-                }}
-              >
-                {loginError}
-              </div>
-            )}
-          </div>
-        </section>
+              {loginError && !loginProgress && (
+                <div
+                  className="mono"
+                  style={{
+                    margin: "0 14px 10px",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    background: "color-mix(in oklab, var(--err) 8%, var(--bg-2))",
+                    border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
+                    fontSize: 11.5,
+                    color: "var(--err)",
+                  }}
+                >
+                  {loginError}
+                </div>
+              )}
+            </div>
+          </section>
         </div>
 
         {/* ── Model Providers ────────────────────────────────────────── */}
@@ -896,7 +940,7 @@ function AgentsPane({
             }}
           >
             <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-              {providers.length + 1} configured
+              {providers.length} added
             </span>
             <span style={{ flex: 1 }} />
             {compatiblePresets.length > 0 && (
@@ -906,64 +950,8 @@ function AgentsPane({
             )}
           </div>
           <div>
-            {/* native provider row — left accent stripe marks it as the default */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "10px 14px",
-                borderBottom: "1px solid var(--bd-soft)",
-                borderLeft: `3px solid ${meta.accent}`,
-                transition: "background 0.12s ease",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-            >
-              <div
-                style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: 8,
-                  background: `color-mix(in oklab, ${meta.accent} 12%, var(--bg-3))`,
-                  border: `1px solid color-mix(in oklab, ${meta.accent} 25%, var(--bd))`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "var(--fg-0)",
-                  flexShrink: 0,
-                }}
-              >
-                {NATIVE_PROVIDERS[selectedAgent][0]}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 1 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>
-                    {NATIVE_PROVIDERS[selectedAgent]}
-                  </span>
-                  <Tag>default</Tag>
-                </div>
-                <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
-                  Native · keychain
-                </div>
-              </div>
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontSize: 11,
-                  color: key?.present ? "var(--live)" : "var(--fg-3)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <StatusDot status={key?.present ? "live" : "idle"} />
-                {key?.present ? "Connected" : "Disconnected"}
-              </span>
-            </div>
-            {/* custom provider rows */}
+            {/* custom provider rows — the built-in/default provider and its auth
+                live in the Credentials sections above, not here */}
             {providers.map((p, i) => {
               const hue = avatarHue(p.name);
               const color = `oklch(0.55 0.12 ${hue})`;
@@ -976,13 +964,26 @@ function AgentsPane({
                       alignItems: "center",
                       gap: 12,
                       padding: "10px 14px",
-                      borderBottom: (i === providers.length - 1 && !isManagingProvider) ? "none" : "1px solid var(--bd-soft)",
+                      borderBottom:
+                        i === providers.length - 1 && !isManagingProvider
+                          ? "none"
+                          : "1px solid var(--bd-soft)",
                       borderLeft: `3px solid color-mix(in oklab, ${color} 50%, var(--bd))`,
-                      background: i % 2 === 0 ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))" : "transparent",
+                      background:
+                        i % 2 === 0
+                          ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))"
+                          : "transparent",
                       transition: "background 0.12s ease",
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = i % 2 === 0 ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))" : "transparent"; }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "var(--bg-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background =
+                        i % 2 === 0
+                          ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))"
+                          : "transparent";
+                    }}
                   >
                     <div
                       style={{
@@ -1034,13 +1035,19 @@ function AgentsPane({
                       checked={p.enabled}
                       onCheckedChange={async (checked) => {
                         const list = await ipc.updateProvider(p.id, undefined, undefined, checked);
-                        useStore.setState((s) => ({ config: s.config ? { ...s.config, providers: list } : s.config }));
+                        useStore.setState((s) => ({
+                          config: s.config ? { ...s.config, providers: list } : s.config,
+                        }));
                       }}
                     />
                     <Button
                       variant="outline"
                       size="xs"
-                      onClick={() => isManagingProvider ? setManagingProviderId(null) : setManagingProviderId(p.id)}
+                      onClick={() =>
+                        isManagingProvider
+                          ? setManagingProviderId(null)
+                          : setManagingProviderId(p.id)
+                      }
                     >
                       {isManagingProvider ? "Done" : "Manage"}
                     </Button>
@@ -1050,7 +1057,8 @@ function AgentsPane({
                       style={{
                         padding: "10px 16px 12px",
                         background: "var(--bg-1)",
-                        borderBottom: i === providers.length - 1 ? "none" : "1px solid var(--bd-soft)",
+                        borderBottom:
+                          i === providers.length - 1 ? "none" : "1px solid var(--bd-soft)",
                         display: "flex",
                         alignItems: "center",
                         gap: 10,
@@ -1059,7 +1067,10 @@ function AgentsPane({
                       <Button
                         variant="outline"
                         size="xs"
-                        onClick={() => { setProviderDialog({ editing: p }); setManagingProviderId(null); }}
+                        onClick={() => {
+                          setProviderDialog({ editing: p });
+                          setManagingProviderId(null);
+                        }}
                       >
                         Edit
                       </Button>
@@ -1070,7 +1081,9 @@ function AgentsPane({
                         onClick={async () => {
                           if (!window.confirm(`Remove provider "${p.name}"?`)) return;
                           const list = await ipc.removeProvider(p.id);
-                          useStore.setState((s) => ({ config: s.config ? { ...s.config, providers: list } : s.config }));
+                          useStore.setState((s) => ({
+                            config: s.config ? { ...s.config, providers: list } : s.config,
+                          }));
                           setManagingProviderId(null);
                         }}
                       >
@@ -1094,7 +1107,10 @@ function AgentsPane({
               </div>
             )}
             {compatiblePresets.length > 0 && providers.length === 0 && (
-              <ProviderEmptyHint onAdd={() => setProviderDialog({})} />
+              <AddRow
+                label="Add a provider — Bedrock, Vertex AI, MiniMax, or any OpenAI-compatible endpoint"
+                onClick={() => setProviderDialog({})}
+              />
             )}
           </div>
         </section>
@@ -1127,101 +1143,63 @@ function AgentsPane({
   );
 }
 
-function AgentSectionEmpty({
-  message,
-  actionLabel,
-  onAction,
+// Shared full-width "add" row — the single add affordance used by every
+// Coding-Agents section (API Keys, OAuth, Model Providers) so they read alike:
+// a dashed plus-tile + a descriptive label, row-hover highlight.
+function AddRow({
+  label,
+  onClick,
   disabled,
   busy,
 }: {
-  message: string;
-  actionLabel: string;
-  onAction: () => void;
+  label: string;
+  onClick: () => void;
   disabled?: boolean;
   busy?: boolean;
 }) {
   return (
-    <div style={{ padding: 10 }}>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onAction()}
-        style={{
-          width: "100%",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-          padding: "18px 16px",
-          border: "1px dashed var(--bd)",
-          borderRadius: 8,
-          background: "transparent",
-          cursor: disabled ? "default" : "pointer",
-          color: "var(--fg-3)",
-          fontFamily: "var(--sans)",
-          fontSize: 12,
-          transition: "border-color 0.15s ease, background 0.15s ease",
-        }}
-        onMouseEnter={(e) => {
-          if (!disabled) {
-            e.currentTarget.style.borderColor = "var(--fg-2)";
-            e.currentTarget.style.background = "var(--bg-hover)";
-          }
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = "var(--bd)";
-          e.currentTarget.style.background = "transparent";
-        }}
-      >
-        <span style={{ fontSize: 11.5, color: "var(--fg-3)" }}>{message}</span>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            fontSize: 12,
-            fontWeight: 500,
-            color: "var(--fg-2)",
-          }}
-        >
-          {Ico.plus} {busy ? "Working…" : actionLabel}
-        </span>
-      </button>
-    </div>
-  );
-}
-
-function ProviderEmptyHint({ onAdd }: { onAdd: () => void }) {
-  return (
     <button
       type="button"
-      onClick={onAdd}
+      onClick={onClick}
+      disabled={disabled || busy}
       style={{
         width: "100%",
-        padding: "14px 16px",
+        padding: "13px 14px",
         display: "flex",
         alignItems: "center",
         gap: 10,
         border: "none",
         background: "transparent",
-        cursor: "pointer",
+        cursor: disabled || busy ? "default" : "pointer",
         fontFamily: "var(--sans)",
         transition: "background 0.12s ease",
+        opacity: disabled ? 0.55 : 1,
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+      onMouseEnter={(e) => {
+        if (!disabled && !busy) e.currentTarget.style.background = "var(--bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
     >
-      <span style={{
-        width: 30, height: 30, borderRadius: 8,
-        border: "1px dashed var(--bd)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 14, color: "var(--fg-3)", flexShrink: 0,
-      }}>
+      <span
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          border: "1px dashed var(--bd)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 14,
+          color: "var(--fg-3)",
+          flexShrink: 0,
+        }}
+      >
         {Ico.plus}
       </span>
       <span style={{ fontSize: 12, color: "var(--fg-2)", textAlign: "left" }}>
-        Add a provider — Bedrock, Vertex AI, MiniMax, or any OpenAI-compatible endpoint
+        {busy ? "Working…" : label}
       </span>
     </button>
   );
@@ -1231,7 +1209,14 @@ function ProviderDialog({
   editing,
   onClose,
 }: {
-  editing?: { id: string; name: string; kind: string; endpoint: string | null; models: string[]; enabled: boolean };
+  editing?: {
+    id: string;
+    name: string;
+    kind: string;
+    endpoint: string | null;
+    models: string[];
+    enabled: boolean;
+  };
   agent?: AgentCli;
   onClose: () => void;
 }) {
@@ -1251,18 +1236,42 @@ function ProviderDialog({
     setModelsStr(p.models.join(", "));
   };
 
+  // Managed cloud services (Bedrock / Vertex) authenticate via the host's cloud
+  // credentials, so they carry no endpoint; every other kind needs an explicit
+  // base URL — enforce that rather than silently saving a dead provider.
+  const managed = kind === "bedrock" || kind === "vertex";
+  const endpointMissing = !managed && !endpoint.trim();
+  const canSave = Boolean(name.trim()) && !endpointMissing && !saving;
+
   const handleSave = async () => {
-    if (!name.trim()) return;
+    if (!canSave) return;
     setSaving(true);
     try {
-      const models = modelsStr.split(",").map((s) => s.trim()).filter(Boolean);
+      const models = modelsStr
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       let list;
       if (editing) {
-        list = await ipc.updateProvider(editing.id, name.trim(), endpoint.trim() || undefined, undefined, models);
+        list = await ipc.updateProvider(
+          editing.id,
+          name.trim(),
+          endpoint.trim() || undefined,
+          undefined,
+          models,
+        );
       } else {
-        list = await ipc.addProvider(name.trim(), kind, endpoint.trim() || undefined, undefined, models);
+        list = await ipc.addProvider(
+          name.trim(),
+          kind,
+          endpoint.trim() || undefined,
+          undefined,
+          models,
+        );
       }
-      useStore.setState((s) => ({ config: s.config ? { ...s.config, providers: list } : s.config }));
+      useStore.setState((s) => ({
+        config: s.config ? { ...s.config, providers: list } : s.config,
+      }));
       onClose();
     } catch (e) {
       console.error("provider save failed", e);
@@ -1271,76 +1280,26 @@ function ProviderDialog({
     }
   };
 
-  const inputStyle: CSSProperties = {
-    width: "100%",
-    padding: "7px 10px",
-    border: "1px solid var(--bd)",
-    borderRadius: 6,
-    background: "var(--bg-0)",
-    color: "var(--fg-0)",
-    fontSize: 12.5,
-    fontFamily: "var(--sans)",
-    outline: "none",
+  const onEnter = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && canSave) void handleSave();
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "rgba(0,0,0,0.5)",
-        backdropFilter: "blur(4px)",
-      }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div
-        style={{
-          width: 480,
-          background: "var(--bg-2)",
-          border: "1px solid var(--bd)",
-          borderRadius: 12,
-          boxShadow: "var(--shadow-3)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "16px 20px 12px",
-            borderBottom: "1px solid var(--bd-soft)",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg-0)", flex: 1 }}>
-            {editing ? "Edit provider" : "Add model provider"}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              border: "none",
-              background: "transparent",
-              color: "var(--fg-2)",
-              fontSize: 18,
-              cursor: "pointer",
-              padding: "2px 6px",
-            }}
-          >
-            ×
-          </button>
-        </div>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>{editing ? "Edit provider" : "Add model provider"}</DialogTitle>
+          <DialogDescription>
+            {editing
+              ? "Update this provider's endpoint and available models."
+              : "Connect an OpenAI- or Anthropic-compatible endpoint, or a managed cloud model service."}
+          </DialogDescription>
+        </DialogHeader>
 
-        <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="flex flex-col gap-3.5">
           {!editing && (
-            <div>
-              <label className="lbl" style={{ display: "block", marginBottom: 8, fontSize: 10.5 }}>
-                Quick start
-              </label>
+            <div className="flex flex-col gap-2">
+              <Label className="lbl">Quick start</Label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {PROVIDER_PRESETS.map((p, i) => (
                   <button
@@ -1350,12 +1309,8 @@ function ProviderDialog({
                     style={{
                       padding: "6px 12px",
                       borderRadius: 6,
-                      border: selectedPreset === i
-                        ? "1px solid var(--pri)"
-                        : "1px solid var(--bd)",
-                      background: selectedPreset === i
-                        ? "var(--pri-dim)"
-                        : "var(--bg-3)",
+                      border: selectedPreset === i ? "1px solid var(--pri)" : "1px solid var(--bd)",
+                      background: selectedPreset === i ? "var(--pri-dim)" : "var(--bg-3)",
                       color: selectedPreset === i ? "var(--fg-0)" : "var(--fg-1)",
                       fontSize: 12,
                       fontFamily: "var(--sans)",
@@ -1370,56 +1325,65 @@ function ProviderDialog({
             </div>
           )}
 
-          <div>
-            <label style={{ display: "block", fontSize: 12, color: "var(--fg-1)", marginBottom: 4 }}>
-              Name
-            </label>
-            <input
-              type="text"
+          <div className="flex flex-col gap-1.5">
+            <Label className="lbl">Name</Label>
+            {/* biome-ignore lint/a11y/noAutofocus: modal opens explicitly on user action */}
+            <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. MiniMax Production"
-              style={inputStyle}
+              onKeyDown={onEnter}
+              autoFocus
             />
           </div>
 
-          <div>
-            <label style={{ display: "block", fontSize: 12, color: "var(--fg-1)", marginBottom: 4 }}>
-              Type
-            </label>
-            <select
-              className="mono"
-              value={kind}
-              onChange={(e) => setKind(e.target.value)}
-              style={{
-                ...inputStyle,
-                fontFamily: "var(--mono)",
-              }}
-            >
-              <option value="anthropic-compatible">Anthropic-compatible</option>
-              <option value="openai-compatible">OpenAI-compatible</option>
-              <option value="bedrock">AWS Bedrock</option>
-              <option value="vertex">Vertex AI</option>
-              <option value="azure">Azure OpenAI</option>
-            </select>
+          <div className="flex flex-col gap-1.5">
+            <Label className="lbl">Type</Label>
+            <Select value={kind} onValueChange={setKind} disabled={Boolean(editing)}>
+              <SelectTrigger className="w-full font-mono bg-[var(--bg-0)] border-[var(--bd)] text-[var(--fg-0)]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[var(--bg-2)] border-[var(--bd-strong)] font-mono">
+                {[
+                  ["anthropic-compatible", "Anthropic-compatible"],
+                  ["openai-compatible", "OpenAI-compatible"],
+                  ["bedrock", "AWS Bedrock"],
+                  ["vertex", "Vertex AI"],
+                  ["azure", "Azure OpenAI"],
+                ].map(([value, label]) => (
+                  <SelectItem
+                    key={value}
+                    value={value}
+                    className="text-[var(--fg-1)] focus:bg-[var(--bg-hover)] focus:text-[var(--fg-0)]"
+                  >
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <div>
-            <label style={{ display: "block", fontSize: 12, color: "var(--fg-1)", marginBottom: 4 }}>
-              Endpoint URL
-            </label>
-            <input
-              type="text"
+          <div className="flex flex-col gap-1.5">
+            <Label className="lbl">Endpoint URL</Label>
+            <Input
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
               placeholder="https://api.example.com/v1"
-              style={inputStyle}
+              onKeyDown={onEnter}
+              spellCheck={false}
+              disabled={managed}
+              aria-invalid={endpointMissing}
             />
-            <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 4 }}>
-              {selectedPreset != null && PROVIDER_PRESETS[selectedPreset]?.baseUrl
-                ? "Pre-filled from preset"
-                : "Leave empty for managed services (Bedrock, Vertex)."}
-            </div>
+            <span
+              className="mono"
+              style={{ fontSize: 10.5, color: endpointMissing ? "var(--err)" : "var(--fg-3)" }}
+            >
+              {managed
+                ? "Managed service — authenticates via host cloud credentials, no endpoint needed."
+                : endpointMissing
+                  ? "Endpoint URL is required for this provider type."
+                  : "Base URL for the provider's API."}
+            </span>
           </div>
 
           {selectedPreset != null && PROVIDER_PRESETS[selectedPreset]?.note && (
@@ -1438,41 +1402,32 @@ function ProviderDialog({
             </div>
           )}
 
-          <div>
-            <label style={{ display: "block", fontSize: 12, color: "var(--fg-1)", marginBottom: 4 }}>
-              Models
-            </label>
-            <input
-              type="text"
+          <div className="flex flex-col gap-1.5">
+            <Label className="lbl">Models</Label>
+            <Input
+              className="font-mono"
               value={modelsStr}
               onChange={(e) => setModelsStr(e.target.value)}
               placeholder="model-1, model-2"
-              style={inputStyle}
+              onKeyDown={onEnter}
+              spellCheck={false}
             />
-            <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 4 }}>
+            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
               Comma-separated model IDs available from this provider.
-            </div>
+            </span>
           </div>
         </div>
 
-        <div
-          style={{
-            padding: "12px 20px 16px",
-            borderTop: "1px solid var(--bd-soft)",
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 8,
-          }}
-        >
+        <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" disabled={!name.trim() || saving} onClick={() => void handleSave()}>
+          <Button size="sm" disabled={!canSave} onClick={() => void handleSave()}>
             {saving ? "Saving…" : editing ? "Save changes" : "Add provider"}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -3106,4 +3061,3 @@ function SettingRow({
     </div>
   );
 }
-

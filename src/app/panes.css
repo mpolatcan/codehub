@@ -727,14 +727,27 @@ body.dragging .divider::after {
   background: currentColor;
   box-shadow: 0 4px 0 currentColor;
 }
-.ch-tab:hover {
-  background: var(--bg-3) !important;
-  color: var(--fg-0) !important;
+/* Carved tabs (workspace / group / shell). The ACTIVE tab carries an inline
+   fill (a subtle tint of its color) + an inset shadow so it reads as pressed-in,
+   plus a thin top accent bar in its color. INACTIVE tabs set no inline
+   background, so the CSS owns their resting + hover surface. Hover on an active
+   tab just brightens so the inline fill/shadow survive. */
+.ch-tab,
+.shell-tab,
+.group-tab {
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
 }
-.ch-tab.active {
-  background: var(--bg-2) !important;
+.ch-tab:not(.active):hover,
+.shell-tab:not(.active):hover,
+.group-tab:not(.active):hover {
+  background: var(--bg-3);
+  color: var(--fg-0);
 }
-
+.ch-tab.active:hover,
+.shell-tab.active:hover,
+.group-tab.active:hover {
+  filter: brightness(1.06);
+}
 
 /* ---- Welcome launcher ------------------------------------------------- */
 /* Saved-workspace + template cards on the Welcome screen. Both lift on hover;

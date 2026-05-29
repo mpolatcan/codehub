@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { groupKey, splitKey, useLauncher } from "../lib/launcher";
 import { useOverlay } from "../lib/overlay";
 import * as registry from "../lib/panes";
-import { confirmCloseRunningSession, useStore } from "../lib/store";
+import { confirmCloseRunningSession, isSpawnPlaceholder, useStore } from "../lib/store";
 import type { Group, LayoutNode, SplitNode, Workspace } from "../lib/tree";
 import { activeGroup, leavesList, leavesOf } from "../lib/tree";
 import { PaneHead } from "./PaneHead";
 import { PaneMount } from "./PaneMount";
+import { SpawnPane } from "./SpawnPane";
 import { PaneContextMenu, type PaneMenuItem } from "./hub/PaneContextMenu";
 import { AgentGlyph } from "./primitives/AgentGlyph";
+import { IconBtn } from "./primitives/IconBtn";
 import { StatusDot } from "./primitives/StatusDot";
 import { Ico } from "./primitives/icons";
 
@@ -34,19 +35,15 @@ export function Grid({ ws }: { ws: Workspace }) {
 // a quick-spawn CTA. The CTA opens the shared launcher targeted at this group
 // (groupKey ctx), so the spawn lands here rather than in a new tab.
 function EmptyGroup({ ws, group }: { ws: Workspace; group: Group }) {
-  const open = useLauncher((s) => s.open);
+  const beginGroupSpawn = useStore((s) => s.beginGroupSpawn);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // Drop a configuring pane into this group (the pane carries the full picker;
+  // the CTA just seeds the agent).
   const spawn = (cli: "claude" | "codex" | "antigravity") => {
     setMenu(null);
-    open(groupKey(group.id), {
-      dir: "row",
-      groupId: group.id,
-      workspaceId: ws.id,
-      preferredCli: cli,
-    });
+    beginGroupSpawn(ws.id, group.id, cli);
   };
-  const openMore = () =>
-    open(groupKey(group.id), { dir: "row", groupId: group.id, workspaceId: ws.id });
+  const openMore = () => beginGroupSpawn(ws.id, group.id);
   const items: PaneMenuItem[] = [
     {
       icon: <AgentGlyph agent="claude" size={14} />,
@@ -151,16 +148,91 @@ function RenderNode({
   leaves,
 }: { node: LayoutNode; ws: Workspace; group: Group; leaves: string[] }) {
   if (node.kind === "leaf") {
-    return (
-      <Leaf
-        session={node.session}
-        group={group}
-        wsId={ws.id}
-        index={leaves.indexOf(node.session)}
-      />
-    );
+    // A configuring pane (placeholder, no session yet) renders the spawn form;
+    // a real leaf renders its terminal.
+    if (isSpawnPlaceholder(node.session)) {
+      return <ConfiguringLeaf id={node.session} group={group} />;
+    }
+    return <Leaf session={node.session} group={group} wsId={ws.id} />;
   }
   return <Split node={node} ws={ws} group={group} leaves={leaves} />;
+}
+
+// A pane being configured (design "New agent · configuring") holding the
+// SpawnPane form. A neutral head (agent glyph + title + close ×, same as a
+// normal PaneHead) sits inside a single complete dashed enclosure themed in the
+// theme primary (purple) that wraps the whole pane — marking it a not-yet-spawned
+// draft. No drag/rename/xterm. The SpawnPane card fills the body below the head.
+function ConfiguringLeaf({ id, group }: { id: string; group: Group }) {
+  const focused = group.focused === id;
+  const draft = useStore((s) => s.spawnDrafts[id]);
+  const cancel = useStore((s) => s.cancelSpawn);
+  const agent = draft?.cli ?? "claude";
+  // Only the dashed enclosure is themed purple (same hue as the Spawn button).
+  // The head glyph + title stay neutral, identical to a normal pane head.
+  const frame = "color-mix(in oklab, var(--pri) 78%, var(--bd))";
+  return (
+    <div
+      className={`pane-leaf${focused ? " focused" : ""}`}
+      data-session={id}
+      style={{ position: "relative" }}
+    >
+      {/* Complete dashed enclosure around the WHOLE pane (title + body). An
+          absolute overlay border — not `outline` — guarantees all four edges
+          render in every engine (WKWebView clips outlines at split/window
+          edges). pointer-events:none keeps the head controls clickable. */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          border: `2px dashed ${frame}`,
+          pointerEvents: "none",
+          zIndex: 5,
+        }}
+      />
+      <div
+        style={{
+          flex: "0 0 auto",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "7px 12px",
+          // No fill, no divider — the dashed frame is the only boundary, so the
+          // title reads as inside one complete box (not a separate title bar).
+          background: "transparent",
+          userSelect: "none",
+        }}
+      >
+        {/* Filled identity dot in the agent accent — same look as a live pane
+            head's ColorDot, so the configuring head reads identically. */}
+        <span
+          aria-hidden
+          style={{
+            width: 12,
+            height: 12,
+            flexShrink: 0,
+            borderRadius: "50%",
+            background: `var(--a-${agent})`,
+            border: `1px solid color-mix(in oklab, var(--a-${agent}) 60%, black)`,
+          }}
+        />
+        <span className="mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+          {draft?.resume ? "Resume agent" : "New agent"}
+        </span>
+        <span className="mono" style={{ fontSize: 12, color: "var(--fg-3)" }}>
+          · configuring
+        </span>
+        <span style={{ flex: 1 }} />
+        <IconBtn title="Cancel (Esc)" style={{ width: 22, height: 22 }} onClick={() => cancel(id)}>
+          {Ico.close}
+        </IconBtn>
+      </div>
+      <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+        <SpawnPane id={id} />
+      </div>
+    </div>
+  );
 }
 
 // Drop zones over a pane while another pane is being dragged (design hub-states
@@ -180,12 +252,7 @@ function zoneFromEvent(e: React.DragEvent, el: HTMLElement): DropZone {
   return "center";
 }
 
-function Leaf({
-  session,
-  group,
-  wsId,
-  index,
-}: { session: string; group: Group; wsId: string; index: number }) {
+function Leaf({ session, group, wsId }: { session: string; group: Group; wsId: string }) {
   const focusSession = useStore((s) => s.focusSession);
   const closeSession = useStore((s) => s.closeSession);
   const swapPanes = useStore((s) => s.swapPanes);
@@ -195,7 +262,7 @@ function Leaf({
   const setFocusMode = useOverlay((s) => s.setFocusMode);
   const dragSession = useOverlay((s) => s.dragSession);
   const setDragSession = useOverlay((s) => s.setDragSession);
-  const openLaunch = useLauncher((s) => s.open);
+  const beginSplitSpawn = useStore((s) => s.beginSplitSpawn);
   const siblings = leavesList(group.root).length;
   const focused = group.focused === session;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -221,15 +288,15 @@ function Leaf({
   const items: PaneMenuItem[] = [
     {
       icon: Ico.splitV,
-      label: "Split right",
+      label: "Split vertically",
       kbd: "⌘\\",
-      onClick: () => openLaunch(splitKey(session), { dir: "row", session }),
+      onClick: () => beginSplitSpawn(session, "row"),
     },
     {
       icon: Ico.splitH,
-      label: "Split down",
+      label: "Split horizontally",
       kbd: "⌘⇧\\",
-      onClick: () => openLaunch(splitKey(session), { dir: "col", session }),
+      onClick: () => beginSplitSpawn(session, "col"),
     },
     {
       icon: Ico.expand,
@@ -280,8 +347,12 @@ function Leaf({
     >
       <PaneHead
         session={session}
-        index={index}
         draggable={siblings > 1}
+        onMenu={(e) => {
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          focusSession(session);
+          setMenu({ x: r.right - 216, y: r.bottom + 4 });
+        }}
         onDragStart={(e) => {
           e.dataTransfer.effectAllowed = "move";
           e.dataTransfer.setData("text/plain", session);
@@ -478,7 +549,7 @@ function FocusLayout({ group, leaves }: { group: Group; leaves: string[] }) {
   return (
     <div style={{ flex: 1, display: "flex", minHeight: 0, gap: 1, background: "var(--bd-soft)" }}>
       <div className="pane-leaf focused" data-session={focused} style={{ flex: 1, minWidth: 0 }}>
-        <PaneHead session={focused} index={leaves.indexOf(focused)} />
+        <PaneHead session={focused} />
         <div className="pane-body">
           <PaneMount session={focused} />
         </div>

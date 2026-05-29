@@ -15,8 +15,8 @@
         "title": "CodeHub",
         "width": 1280,
         "height": 800,
-        "minWidth": 800,
-        "minHeight": 500,
+        "minWidth": 1000,
+        "minHeight": 640,
         "decorations": true,
         "transparent": false,
         "resizable": true

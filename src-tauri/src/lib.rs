@@ -1175,6 +1175,7 @@ async fn create_session(
     account: Option<String>,
     workspace: String,
     workspace_dir: Option<String>,
+    cwd: Option<String>,
     task_description: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
@@ -1282,6 +1283,7 @@ async fn create_session(
             account_var: account_var.as_deref(),
             session_env: &session_env,
             account_env: &launch_account_env,
+            cwd: cwd.as_deref(),
         })
         .await
         .map_err(|e| e.to_string())?;

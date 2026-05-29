@@ -9,6 +9,11 @@ export interface IconBtnProps {
   danger?: boolean;
   disabled?: boolean;
   style?: CSSProperties;
+  // Foreground/hover overrides for use on a colored surface (e.g. a tinted pane
+  // header). Default to the standard fg tokens so existing callers are unchanged.
+  idleColor?: string;
+  hoverColor?: string;
+  hoverBg?: string;
 }
 
 export function IconBtn({
@@ -19,7 +24,13 @@ export function IconBtn({
   danger = false,
   disabled = false,
   style,
+  idleColor,
+  hoverColor,
+  hoverBg,
 }: IconBtnProps) {
+  // An explicit idleColor wins over the danger/active defaults so a tinted header
+  // can recolor every control (including close) to its contrast ink.
+  const restColor = idleColor ?? (danger ? "var(--err)" : active ? "var(--fg-0)" : "var(--fg-2)");
   const btn = (
     <button
       type="button"
@@ -31,7 +42,7 @@ export function IconBtn({
         borderRadius: 6,
         border: "none",
         background: active ? "var(--bg-active)" : "transparent",
-        color: danger ? "var(--err)" : active ? "var(--fg-0)" : "var(--fg-2)",
+        color: restColor,
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.4 : 1,
         display: "inline-flex",
@@ -43,14 +54,14 @@ export function IconBtn({
       }}
       onMouseEnter={(e) => {
         if (!active && !disabled) {
-          e.currentTarget.style.background = "var(--bg-3)";
-          e.currentTarget.style.color = "var(--fg-0)";
+          e.currentTarget.style.background = hoverBg ?? "var(--bg-3)";
+          e.currentTarget.style.color = hoverColor ?? "var(--fg-0)";
         }
       }}
       onMouseLeave={(e) => {
         if (!active && !disabled) {
           e.currentTarget.style.background = "transparent";
-          e.currentTarget.style.color = danger ? "var(--err)" : "var(--fg-2)";
+          e.currentTarget.style.color = restColor;
         }
       }}
     >

@@ -14,17 +14,18 @@ import type {
   ContainerStatus,
   DockerInfo,
   DockerRuntimeDetection,
-  WorkspaceContainer,
   GitStatus,
   GithubRepo,
   GithubStatus,
   KeyStatus,
   Mode,
   PendingPrompt,
+  RuntimeHealth,
   SavedWorkspace,
   SessionActivity,
   SessionInfo,
   UpdateStatus,
+  WorkspaceContainer,
   WorkspaceInfo,
 } from "./ipc";
 import { ipc, onLifecycle, onLifecycleError } from "./ipc";
@@ -37,6 +38,7 @@ import {
   type SplitDir,
   type Workspace,
   activeGroup,
+  buildGridTree,
   findGroupOf,
   firstLeaf,
   leafNode,
@@ -59,12 +61,51 @@ import {
 // drawer over the hub (useOverlay.resume). Integrations is no longer a view
 // either — it's a Settings pane (settingsSection === "integrations"), reached by
 // deep-linking into Settings.
-export type HubView = "hub" | "dashboard" | "containers" | "settings";
+export type HubView = "hub" | "dashboard" | "settings";
+
+// A pane being CONFIGURED inline (design "New agent · configuring"): a grid leaf
+// that holds a draft config but no tmux session yet. It occupies a real slot in
+// the split tree (leaf `session` = a `__spawn-N` placeholder id); the Grid renders
+// the config form for it instead of an xterm. `commitSpawn` creates the session
+// and swaps the placeholder leaf for the live one; `cancelSpawn` removes it.
+export interface SpawnDraft {
+  id: string;
+  workspaceId: string;
+  groupId: string;
+  cli: Cli;
+  mode: Mode;
+  account?: string;
+  // Working directory (a path under /workspace) the agent starts in.
+  cwd?: string;
+  // First-create mount dir, only when this draft is the first pane of a NEW
+  // workspace (its container doesn't exist until commit).
+  workspaceDir?: string;
+  // Resume target (a prior agent session id). Set when this pane was opened from
+  // the Resume drawer: Claude resumes its transcript via `--resume`, other CLIs
+  // honestly start fresh (no backend resume path). Commit threads it to the
+  // backend and pins the Claude id so the Hub reads the resumed transcript.
+  resume?: string;
+}
+
+let spawnCounter = 0;
+const nextSpawnId = (): string => {
+  spawnCounter += 1;
+  return `__spawn-${spawnCounter.toString(36)}`;
+};
+
+// A grid leaf whose `session` is a configuring-pane placeholder (no tmux session
+// behind it yet). Used to keep placeholders out of agent-session counts.
+export function isSpawnPlaceholder(session: string): boolean {
+  return session.startsWith("__spawn-");
+}
 
 interface CodeHubState {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   sessionMeta: Record<string, SessionMeta>;
+  // Configuring panes (design "New agent · configuring"), keyed by placeholder
+  // leaf id. Each is an in-grid spawn form awaiting "Spawn agent".
+  spawnDrafts: Record<string, SpawnDraft>;
   status: ContainerStatus | null;
   error: string | null;
   view: HubView;
@@ -94,6 +135,17 @@ interface CodeHubState {
   // single docker `stats` call (~1-2s, stream:false) feeds all consumers instead
   // of each screen polling independently and contending on the daemon.
   containerStats: ContainerStats | null;
+  // Live liveness of the active workspace's container (container_health): uptime
+  // start, restart count, OOM flag. Polled alongside containerStats (same hook,
+  // same active container) so the bottom-bar runtime dot + the Details panel read
+  // one shared snapshot. Null while down / before first read.
+  containerHealth: RuntimeHealth | null;
+  // Rolling window of the most recent container_stats samples (newest last) for
+  // the active container, maintained by setContainerStats. Shared so the bottom
+  // status bar's inline sparklines and the Details dock's gauges draw the same
+  // real series instead of each keeping its own ring. Cleared on container switch
+  // (clearStatsHistory) and whenever the runtime goes down (setContainerStats(null)).
+  statsHistory: ContainerStats[];
   // Live /workspace git status (branch + ahead/behind + uncommitted count),
   // polled app-wide while the runtime is up (useGitStatusPoll). Shared by the
   // activity rail's Changes list and the Hub meta strip so they don't each poll
@@ -143,6 +195,14 @@ interface CodeHubState {
   plateCounter: number;
   sessionCounter: number;
   bootstrapped: boolean;
+  // True once the first restore attempt has SETTLED (succeeded, errored, was
+  // skipped, or the daemon is known unreachable). Gates the empty-state: until
+  // it flips we show a blank pane to avoid flashing the launcher mid-restore;
+  // after it flips, "no active workspace" always resolves to Welcome/EmptyHero —
+  // never a permanent blank. Decoupled from `workspaceContainers`/`dockerInfo`
+  // being non-null because either can stay null forever if its IPC throws,
+  // which previously trapped the Hub blank after closing the last tab.
+  bootSettled: boolean;
 
   setBusy: (msg: string | null) => void;
   setStatus: (s: ContainerStatus) => void;
@@ -159,6 +219,14 @@ interface CodeHubState {
   closeDetail: () => void;
   setSessionActivity: (list: SessionActivity[]) => void;
   setContainerStats: (s: ContainerStats | null) => void;
+  setContainerHealth: (h: RuntimeHealth | null) => void;
+  // Drop the rolling stats window — called by the poll on container switch so two
+  // containers' series never splice together.
+  clearStatsHistory: () => void;
+  // Re-read the per-workspace container fleet into `workspaceContainers`. Used by
+  // the launcher after a lifecycle action (stop-idle / prune-stopped / card
+  // remove) so the cards + counts reflect the change without a full reboot.
+  refreshWorkspaceContainers: () => Promise<void>;
   setGitStatus: (g: GitStatus | null) => void;
   ensureDockedShell: () => Promise<string | null>;
   createExtraShell: () => Promise<string | null>;
@@ -177,13 +245,52 @@ interface CodeHubState {
     mode: Mode,
     initialPrompt?: string,
     account?: string,
+    cwd?: string,
   ) => Promise<void>;
   closeSession: (name: string) => Promise<void>;
   closeWorkspace: (id: string) => Promise<void>;
   closeAllSessions: () => Promise<void>;
+  // ── Inline configuring-pane spawn (design "New agent · configuring") ────────
+  // Each begin* drops a placeholder leaf + draft into the grid (no session yet);
+  // the Grid renders a config form for it. updateSpawnDraft edits the draft;
+  // commitSpawn creates the session and swaps the placeholder leaf for the live
+  // pane; cancelSpawn removes it (collapsing the split / closing an empty
+  // group/workspace, like closeSession).
+  beginSplitSpawn: (target: string, dir: SplitDir, cli?: Cli) => void;
+  beginGroupSpawn: (wsId: string, groupId: string, cli?: Cli, resume?: string) => void;
+  beginNewWorkspaceSpawn: (
+    cli?: Cli,
+    workspaceMeta?: { title?: string; dir?: string; savedWorkspaceId?: string },
+    resume?: string,
+  ) => void;
+  // "New agent" from anywhere (command palette, Dashboard, empty-state hero,
+  // Resume drawer): switch to the Hub and drop an inline configuring pane — into
+  // the active group (rebalanced grid), a fresh group if it's full, or a new
+  // workspace when none is open. `resume` pre-loads a prior session to continue.
+  // The single front door so every "new agent" CTA opens the pane, never the
+  // legacy modal.
+  newAgent: (cli?: Cli, resume?: string) => void;
+  updateSpawnDraft: (id: string, patch: Partial<SpawnDraft>) => void;
+  commitSpawn: (id: string, initialPrompt?: string) => Promise<void>;
+  cancelSpawn: (id: string) => void;
+  // Resume a running per-workspace container into the Hub as a tab: adopt its
+  // live tmux sessions (or open an empty tab bound to it when its agents have
+  // exited). Focuses an already-open workspace instead of duplicating. Backs the
+  // Workspaces inspector's "Open in Hub" — without it a running container that
+  // launch-time restore didn't adopt (or whose tab was closed) is unreachable.
+  openContainerWorkspace: (containerKey: string) => Promise<void>;
   focusSession: (name: string) => void;
   switchWorkspace: (id: string) => void;
   renameSession: (name: string, alias: string) => void;
+  // Recolor a pane's header tint (a PANE_COLORS fill), or undefined to reset to
+  // the agent accent. Persisted by session name across reloads.
+  setSessionColor: (name: string, color?: string) => void;
+  // Recolor a workspace tab (a PANE_COLORS fill), or undefined for the neutral
+  // tab. Persisted by containerKey across reloads.
+  setWorkspaceColor: (wsId: string, color?: string) => void;
+  // Rename a workspace tab; also updates the saved-workspace entry when this tab
+  // is a saved workspace, so the name persists.
+  renameWorkspace: (wsId: string, title: string) => void;
   commitRatio: (wsId: string, nodeId: number, ratio: number) => void;
   // Drag-to-rearrange within the active group's grid (design hub-states
   // HubStateDragging). swapPanes exchanges two panes' slots; movePane removes the
@@ -210,6 +317,7 @@ interface CodeHubState {
     mode: Mode,
     initialPrompt?: string,
     account?: string,
+    cwd?: string,
   ) => Promise<void>;
   loadConfig: () => Promise<void>;
   // Merge a patch into the persisted settings. Optimistic: applies locally, then
@@ -271,12 +379,64 @@ function resetGridOverlays() {
   const o = useOverlay.getState();
   if (o.focusMode) o.setFocusMode(false);
   if (o.dragSession) o.setDragSession(null);
+  // Opening / switching to a workspace leaves the launcher tab (it's shown in
+  // the hub content slot, so a stale `launcher` would keep covering the grid).
+  if (o.launcher) o.setLauncher(false);
 }
 
-// Display alias for a session, e.g. "Claude 1". Shared by the session metadata and
-// the tmux window name passed at create time, so both read identically.
-function aliasFor(cli: Cli, num: number): string {
-  return `${SPEC_BY_CLI[cli].alias} ${num}`;
+// Display alias for a session, e.g. "honey-badger · Claude 1". The workspace
+// label prefixes the per-workspace, per-CLI sequence number so a terminal reads
+// which workspace it belongs to — in the UI pane head AND the tmux `#W` status
+// bar (the alias is passed as the tmux window name at create time, so both read
+// identically).
+function aliasFor(label: string, cli: Cli, num: number): string {
+  return `${label} · ${SPEC_BY_CLI[cli].alias} ${num}`;
+}
+
+// Next per-(workspace, cli) sequence number: existing sessions of that CLI in
+// the workspace, +1. Numbering restarts per workspace instead of running global,
+// and shells count separately from agents. Called before the new session's meta
+// is added, so it excludes the one being created.
+function nextSeq(meta: Record<string, SessionMeta>, workspaceId: string, cli: Cli): number {
+  return (
+    Object.values(meta).filter((m) => m.workspaceId === workspaceId && m.cli === cli).length + 1
+  );
+}
+
+// Lossy, Docker-name-safe slug of a workspace label, mirroring the backend
+// `sanitize_key` slug rules (lowercase, non-alphanumerics → single dash,
+// trimmed, capped). Only the READABLE lead of the container key — uniqueness
+// comes from the suffix `containerKeyFor` appends.
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32)
+    .replace(/-+$/g, "");
+}
+
+function dirBasename(dir?: string): string {
+  return dir?.split("/").filter(Boolean).pop() ?? "";
+}
+
+// Per-workspace container ROUTING key. A SAVED workspace keys off its stable
+// `savedWorkspaceId` so reopening lands in the SAME container instead of
+// spawning a fresh one each time (and leaking the old one); the title slug is
+// the readable lead, so the container reads as `codehub-ws-<name>-…`. An ad-hoc
+// tab has no stable identity, so it gets a readable slug + a per-open random
+// suffix. The backend `sanitize_key` appends a hash of the FULL key, so distinct
+// keys never collide onto one container.
+export function containerKeyFor(meta?: {
+  title?: string;
+  dir?: string;
+  savedWorkspaceId?: string;
+}): string {
+  const lead = slugify(meta?.title ?? "") || slugify(dirBasename(meta?.dir));
+  if (meta?.savedWorkspaceId) {
+    return lead ? `${lead}-${meta.savedWorkspaceId}` : meta.savedWorkspaceId;
+  }
+  return `${lead || "workspace"}-${Date.now().toString(36)}`;
 }
 
 // Pre-fill a freshly-spawned pane's agent input with the spawn dialog's initial
@@ -310,18 +470,20 @@ export const useStore = create<CodeHubState>((set, get) => {
     workspaceId: string,
     groupId: string,
     containerKey: string,
+    alias: string,
     claudeId?: string,
   ) => {
-    const num = get().sessionCounter;
     const meta: SessionMeta = {
       cli,
-      num,
-      alias: aliasFor(cli, num),
+      num: nextSeq(get().sessionMeta, workspaceId, cli),
+      alias,
       mode,
       workspaceId,
       groupId,
       claudeId,
       containerKey,
+      // Restore a persisted pane color (survives reload / session adoption).
+      color: recallPaneColor(name),
     };
     set((s) => ({ sessionMeta: { ...s.sessionMeta, [name]: meta } }));
     // Pin the transcript id to the session name so a restart can recover it.
@@ -337,6 +499,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     }
     await registry.destroyPane(name);
     forgetClaudeId(name);
+    forgetPaneColor(name);
     set((s) => {
       const sessionMeta = { ...s.sessionMeta };
       delete sessionMeta[name];
@@ -361,6 +524,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     workspaces: [],
     activeWorkspaceId: null,
     sessionMeta: {},
+    spawnDrafts: {},
     status: null,
     error: null,
     view: "hub",
@@ -370,6 +534,8 @@ export const useStore = create<CodeHubState>((set, get) => {
     utilityShells: {},
     sessionActivity: {},
     containerStats: null,
+    containerHealth: null,
+    statsHistory: [],
     gitStatus: null,
     dockerInfo: null,
     dockerRuntime: null,
@@ -392,6 +558,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     plateCounter: 0,
     sessionCounter: 0,
     bootstrapped: false,
+    bootSettled: false,
 
     setBusy: (msg) => set({ busyMessage: msg }),
 
@@ -448,8 +615,12 @@ export const useStore = create<CodeHubState>((set, get) => {
       }
     },
 
-    // Switching to a top-level view leaves any open session-detail view.
-    setView: (view) => set({ view, detailSession: null }),
+    // Switching to a top-level view leaves any open session-detail view + the
+    // launcher tab (a sidebar-nav switch is a deliberate context change).
+    setView: (view) => {
+      if (useOverlay.getState().launcher) useOverlay.getState().setLauncher(false);
+      set({ view, detailSession: null });
+    },
 
     // Deep-link a Settings sub-pane (the caller usually also setView("settings")).
     setSettingsSection: (settingsSection) => set({ settingsSection }),
@@ -466,7 +637,26 @@ export const useStore = create<CodeHubState>((set, get) => {
       set({ sessionActivity: next });
     },
 
-    setContainerStats: (containerStats) => set({ containerStats }),
+    setContainerStats: (containerStats) =>
+      set((s) => ({
+        containerStats,
+        // Append to the rolling window (newest last, ~1 min at the 2s poll); a
+        // null snapshot (runtime down) clears it so a restart starts fresh.
+        statsHistory: containerStats ? [...s.statsHistory, containerStats].slice(-30) : [],
+      })),
+
+    setContainerHealth: (containerHealth) => set({ containerHealth }),
+
+    clearStatsHistory: () => set({ statsHistory: [] }),
+
+    refreshWorkspaceContainers: async () => {
+      try {
+        const workspaceContainers = await ipc.listWorkspaceContainers();
+        set({ workspaceContainers });
+      } catch {
+        // best-effort — keep the last snapshot rather than blanking the launcher
+      }
+    },
 
     setGitStatus: (gitStatus) => set({ gitStatus }),
 
@@ -490,18 +680,23 @@ export const useStore = create<CodeHubState>((set, get) => {
         }
 
         const name = uniqueName("shell");
+        const alias = aliasFor(
+          workspaceTitle(ws),
+          "shell",
+          nextSeq(get().sessionMeta, ws.id, "shell"),
+        );
         await ipc.createSession(
           name,
           "shell",
           "standard",
-          aliasFor("shell", get().sessionCounter),
+          alias,
           undefined,
           undefined,
           undefined,
           ws.containerKey,
         );
         await registry.spawnPane(name, ws.containerKey);
-        registerMeta(name, "shell", "standard", ws.id, ws.activeGroupId, ws.containerKey);
+        registerMeta(name, "shell", "standard", ws.id, ws.activeGroupId, ws.containerKey, alias);
         set((s) => ({
           utilityShells: { ...s.utilityShells, [ws.containerKey]: name },
         }));
@@ -519,22 +714,38 @@ export const useStore = create<CodeHubState>((set, get) => {
       const ws = get().workspaces.find((w) => w.id === get().activeWorkspaceId);
       if (!ws) return null;
       const name = uniqueName("shell");
+      const alias = aliasFor(
+        workspaceTitle(ws),
+        "shell",
+        nextSeq(get().sessionMeta, ws.id, "shell"),
+      );
       await ipc.createSession(
         name,
         "shell",
         "standard",
-        aliasFor("shell", get().sessionCounter),
+        alias,
         undefined,
         undefined,
         undefined,
         ws.containerKey,
       );
       await registry.spawnPane(name, ws.containerKey);
-      registerMeta(name, "shell", "standard", ws.id, ws.activeGroupId, ws.containerKey);
+      registerMeta(name, "shell", "standard", ws.id, ws.activeGroupId, ws.containerKey, alias);
       return name;
     },
 
     newPlate: async (cli, mode, resume, initialPrompt, account, workspaceMeta) => {
+      // Reopening a saved workspace that is already open must not spawn a second
+      // tab onto the same (now-stable) container — focus the existing tab instead.
+      if (workspaceMeta?.savedWorkspaceId) {
+        const open = get().workspaces.find(
+          (w) => w.savedWorkspaceId === workspaceMeta.savedWorkspaceId,
+        );
+        if (open) {
+          get().switchWorkspace(open.id);
+          return;
+        }
+      }
       set({ busyMessage: "Starting session…" });
       try {
         const name = uniqueName(cli);
@@ -542,17 +753,20 @@ export const useStore = create<CodeHubState>((set, get) => {
         // A resume carries its id via --resume; a fresh Claude session pins a new
         // one via --session-id (same value, so we can read its transcript back).
         const sessionId = resume ? undefined : claudeId;
-        // The workspace id is computed up front so it can be passed as the
-        // per-workspace-container key to createSession/attach: every session in
-        // this tab lives in one container (`codehub-ws-<id>`).
         const plate = get().plateCounter + 1;
+        // The UI tab id is unique per tab; the CONTAINER key is a stable, readable
+        // identity (the saved-workspace id when present) so reopening reuses the
+        // same container and the name reads as `codehub-ws-<workspace-name>-…`
+        // instead of an opaque random id. Splits + later panes route by it.
         const wsId = `ws-${plate}-${Date.now().toString(36)}`;
-        const containerKey = wsId;
+        const containerKey = containerKeyFor(workspaceMeta);
+        const label = workspaceMeta?.title?.trim() || `Workspace ${plate}`;
+        const alias = aliasFor(label, cli, 1);
         await ipc.createSession(
           name,
           cli,
           mode,
-          aliasFor(cli, get().sessionCounter),
+          alias,
           resume,
           sessionId,
           account,
@@ -566,16 +780,15 @@ export const useStore = create<CodeHubState>((set, get) => {
         const ws: Workspace = {
           id: wsId,
           plate,
-          title: workspaceMeta?.title,
+          title: recallWsTitle(containerKey) ?? workspaceMeta?.title,
           dir: workspaceMeta?.dir,
           savedWorkspaceId: workspaceMeta?.savedWorkspaceId,
           groups: [group],
           activeGroupId: group.id,
-          // Container keyed by the workspace id (= what we created/attached with).
-          // Splits + later panes route by this.
+          color: recallWsColor(containerKey),
           containerKey,
         };
-        registerMeta(name, cli, mode, ws.id, group.id, containerKey, claudeId);
+        registerMeta(name, cli, mode, ws.id, group.id, containerKey, alias, claudeId);
         const status = await ipc.containerStatus(containerKey).catch(() => null);
         // New tab becomes active — clear focus mode / drag from the old workspace.
         resetGridOverlays();
@@ -593,7 +806,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       }
     },
 
-    splitSession: async (target, dir, cli, mode, initialPrompt, account) => {
+    splitSession: async (target, dir, cli, mode, initialPrompt, account, cwd) => {
       if (!isRunning()) return;
       const ws = get().workspaces.find((w) => w.id === get().sessionMeta[target]?.workspaceId);
       const grp = ws && findGroupOf(ws, target);
@@ -607,19 +820,22 @@ export const useStore = create<CodeHubState>((set, get) => {
         // restored workspace (fresh `ws.id`, original key kept on the workspace).
         // Splitting must land the new pane in the same container as its siblings.
         const containerKey = ws.containerKey;
+        const alias = aliasFor(workspaceTitle(ws), cli, nextSeq(get().sessionMeta, ws.id, cli));
         await ipc.createSession(
           name,
           cli,
           mode,
-          aliasFor(cli, get().sessionCounter),
+          alias,
           undefined,
           claudeId,
           account,
           containerKey,
+          undefined,
+          cwd,
         );
         await registry.spawnPane(name, containerKey);
         prefillPrompt(name, initialPrompt);
-        registerMeta(name, cli, mode, ws.id, grp.id, containerKey, claudeId);
+        registerMeta(name, cli, mode, ws.id, grp.id, containerKey, alias, claudeId);
 
         set((s) => ({
           workspaces: updateWs(s.workspaces, ws.id, (w) =>
@@ -711,7 +927,9 @@ export const useStore = create<CodeHubState>((set, get) => {
       const utilityShell = get().utilityShells[ws.containerKey];
       const sessions = [
         ...new Set([...workspaceLeaves(ws), ...(utilityShell ? [utilityShell] : [])]),
-      ];
+        // Configuring panes have no tmux session to kill — removeWorkspace drops
+        // their drafts.
+      ].filter((s) => !isSpawnPlaceholder(s));
       for (const session of sessions) {
         await destroySessionRecord(
           session,
@@ -721,6 +939,29 @@ export const useStore = create<CodeHubState>((set, get) => {
       removeWorkspace(get, set, id);
     },
 
+    openContainerWorkspace: async (containerKey) => {
+      // Already a Hub tab → just focus it (don't duplicate onto one container).
+      const existing = get().workspaces.find((w) => w.containerKey === containerKey);
+      if (existing) {
+        get().switchWorkspace(existing.id);
+        get().setView("hub");
+        return;
+      }
+      set({ busyMessage: "Opening workspace…" });
+      try {
+        const members = (await ipc.listSessions().catch(() => [])).filter(
+          (s) => s.workspace === containerKey,
+        );
+        resetGridOverlays();
+        await adoptWorkspace(get, set, registerMeta, members, containerKey, true);
+        get().setView("hub");
+        const focused = members.find((s) => !s.name.startsWith("shell"))?.name;
+        if (focused) registry.focus(focused);
+      } finally {
+        set({ busyMessage: null });
+      }
+    },
+
     // Stop-all (Settings danger zone). Kills every session in every workspace;
     // closeWorkspace already SIGTERMs each session and persists tmux scrollback.
     // Snapshot the ids first — closeWorkspace mutates the workspace list.
@@ -728,6 +969,265 @@ export const useStore = create<CodeHubState>((set, get) => {
       for (const id of get().workspaces.map((w) => w.id)) {
         await get().closeWorkspace(id);
       }
+    },
+
+    // ── Inline configuring-pane spawn ──────────────────────────────────────
+    beginSplitSpawn: (target, dir, cli) => {
+      if (!isRunning()) return;
+      // Resolve the workspace by LEAF membership, not sessionMeta: the focused
+      // pane may itself be a configuring placeholder (`__spawn-N`) with no meta,
+      // so a meta lookup would fail and splitting again would no-op.
+      const ws = get().workspaces.find((w) =>
+        w.groups.some((g) => leavesList(g.root).includes(target)),
+      );
+      const grp = ws && findGroupOf(ws, target);
+      if (!ws || !grp || !grp.root) return;
+      if (leavesList(grp.root).length >= MAX_GROUP_PANES) return;
+      const id = nextSpawnId();
+      const draft: SpawnDraft = {
+        id,
+        workspaceId: ws.id,
+        groupId: grp.id,
+        cli: cli ?? ((get().config?.defaultAgent ?? "claude") as Cli),
+        mode: "standard",
+        cwd: "/workspace",
+      };
+      set((s) => ({
+        spawnDrafts: { ...s.spawnDrafts, [id]: draft },
+        workspaces: updateWs(s.workspaces, ws.id, (w) =>
+          updateGroup(w, grp.id, (g) => ({
+            ...g,
+            root: g.root
+              ? replaceLeaf(g.root, target, (lf) => ({
+                  kind: "split",
+                  id: nid(),
+                  dir,
+                  ratio: 0.5,
+                  a: lf,
+                  b: leafNode(id),
+                }))
+              : leafNode(id),
+            focused: id,
+          })),
+        ),
+      }));
+    },
+
+    beginGroupSpawn: (wsId, groupId, cli, resume) => {
+      if (!isRunning()) return;
+      const ws = get().workspaces.find((w) => w.id === wsId);
+      const grp = ws?.groups.find((g) => g.id === groupId);
+      if (!ws || !grp) return;
+      if (leavesList(grp.root).length >= MAX_GROUP_PANES) return;
+      const id = nextSpawnId();
+      const draft: SpawnDraft = {
+        id,
+        workspaceId: ws.id,
+        groupId,
+        cli: cli ?? ((get().config?.defaultAgent ?? "claude") as Cli),
+        mode: "standard",
+        cwd: "/workspace",
+        resume,
+      };
+      set((s) => ({
+        spawnDrafts: { ...s.spawnDrafts, [id]: draft },
+        workspaces: updateWs(s.workspaces, wsId, (w) =>
+          updateGroup(w, groupId, (g) => ({
+            ...g,
+            // Auto-placement rebalances the whole group into an EVEN ≤3-col grid
+            // (append the new pane, rebuild) — no lopsided nested halves. Manual
+            // splits (beginSplitSpawn) stay freeform.
+            root: buildGridTree([...leavesList(g.root), id]),
+            focused: id,
+          })),
+        ),
+      }));
+    },
+
+    beginNewWorkspaceSpawn: (cli, workspaceMeta, resume) => {
+      // Already-open saved workspace → focus it (same guard as newPlate).
+      if (workspaceMeta?.savedWorkspaceId) {
+        const open = get().workspaces.find(
+          (w) => w.savedWorkspaceId === workspaceMeta.savedWorkspaceId,
+        );
+        if (open) {
+          get().switchWorkspace(open.id);
+          return;
+        }
+      }
+      const plate = get().plateCounter + 1;
+      const wsId = `ws-${plate}-${Date.now().toString(36)}`;
+      const containerKey = containerKeyFor(workspaceMeta);
+      const id = nextSpawnId();
+      const group = makeGroup("Group 1", leafNode(id), id);
+      const ws: Workspace = {
+        id: wsId,
+        plate,
+        title: recallWsTitle(containerKey) ?? workspaceMeta?.title,
+        dir: workspaceMeta?.dir,
+        savedWorkspaceId: workspaceMeta?.savedWorkspaceId,
+        groups: [group],
+        activeGroupId: group.id,
+        color: recallWsColor(containerKey),
+        containerKey,
+      };
+      const draft: SpawnDraft = {
+        id,
+        workspaceId: wsId,
+        groupId: group.id,
+        cli: cli ?? ((get().config?.defaultAgent ?? "claude") as Cli),
+        mode: "standard",
+        cwd: "/workspace",
+        workspaceDir: workspaceMeta?.dir,
+        resume,
+      };
+      resetGridOverlays();
+      set((s) => ({
+        plateCounter: plate,
+        workspaces: [...s.workspaces, ws],
+        activeWorkspaceId: wsId,
+        spawnDrafts: { ...s.spawnDrafts, [id]: draft },
+      }));
+    },
+
+    newAgent: (cli, resume) => {
+      // setView("hub") also clears the launcher overlay so the configuring pane
+      // is actually visible (the launcher tab renders over the grid).
+      get().setView("hub");
+      const s = get();
+      const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+      if (!ws) {
+        s.beginNewWorkspaceSpawn(cli, undefined, resume);
+        return;
+      }
+      const grp = activeGroup(ws);
+      if (leavesList(grp.root).length >= MAX_GROUP_PANES) {
+        const gid = s.addGroup(ws.id);
+        s.beginGroupSpawn(ws.id, gid, cli, resume);
+      } else {
+        s.beginGroupSpawn(ws.id, ws.activeGroupId, cli, resume);
+      }
+    },
+
+    updateSpawnDraft: (id, patch) => {
+      set((s) => {
+        const d = s.spawnDrafts[id];
+        if (!d) return {};
+        return { spawnDrafts: { ...s.spawnDrafts, [id]: { ...d, ...patch } } };
+      });
+    },
+
+    commitSpawn: async (id, initialPrompt) => {
+      const draft = get().spawnDrafts[id];
+      if (!draft) return;
+      const ws = get().workspaces.find((w) => w.id === draft.workspaceId);
+      if (!ws) {
+        get().cancelSpawn(id);
+        return;
+      }
+      set({ busyMessage: "Starting session…" });
+      try {
+        const name = uniqueName(draft.cli);
+        const claudeId = claudeIdFor(draft.cli, draft.resume);
+        // A resume carries its id via --resume; a fresh Claude session pins a new
+        // one via --session-id (same value, so we can read its transcript back).
+        const sessionId = draft.resume ? undefined : claudeId;
+        const alias = aliasFor(
+          workspaceTitle(ws),
+          draft.cli,
+          nextSeq(get().sessionMeta, ws.id, draft.cli),
+        );
+        await ipc.createSession(
+          name,
+          draft.cli,
+          draft.mode,
+          alias,
+          draft.resume,
+          sessionId,
+          draft.account,
+          ws.containerKey,
+          draft.workspaceDir,
+          draft.cwd,
+        );
+        await registry.spawnPane(name, ws.containerKey);
+        prefillPrompt(name, initialPrompt);
+        registerMeta(
+          name,
+          draft.cli,
+          draft.mode,
+          ws.id,
+          draft.groupId,
+          ws.containerKey,
+          alias,
+          claudeId,
+        );
+        // A NEW-workspace draft created the container just now → refresh status.
+        const status = draft.workspaceDir
+          ? await ipc.containerStatus(ws.containerKey).catch(() => null)
+          : null;
+        set((s) => {
+          const spawnDrafts = { ...s.spawnDrafts };
+          delete spawnDrafts[id];
+          return {
+            spawnDrafts,
+            status: status ?? s.status,
+            bootstrapped: status?.state === "running" ? true : s.bootstrapped,
+            workspaces: updateWs(s.workspaces, ws.id, (w) =>
+              updateGroup(w, draft.groupId, (g) => ({
+                ...g,
+                // Swap the placeholder leaf for the live session leaf in place.
+                root: g.root ? replaceLeaf(g.root, id, () => leafNode(name)) : leafNode(name),
+                focused: name,
+              })),
+            ),
+          };
+        });
+        registry.focus(name);
+      } finally {
+        set({ busyMessage: null });
+      }
+    },
+
+    cancelSpawn: (id) => {
+      const draft = get().spawnDrafts[id];
+      if (!draft) return;
+      const ws = get().workspaces.find((w) => w.id === draft.workspaceId);
+      set((s) => {
+        const spawnDrafts = { ...s.spawnDrafts };
+        delete spawnDrafts[id];
+        return { spawnDrafts };
+      });
+      if (!ws) return;
+      const grp = ws.groups.find((g) => g.id === draft.groupId);
+      if (!grp) return;
+      const nextRoot = grp.root ? removeLeaf(grp.root, id) : null;
+      if (nextRoot) {
+        set((s) => ({
+          workspaces: updateWs(s.workspaces, ws.id, (w) =>
+            updateGroup(w, grp.id, (g) => ({
+              ...g,
+              root: nextRoot,
+              focused: g.focused === id ? firstLeaf(nextRoot) : g.focused,
+            })),
+          ),
+        }));
+        return;
+      }
+      // Group emptied → last group closes the tab; otherwise drop just the group.
+      if (ws.groups.length <= 1) {
+        removeWorkspace(get, set, ws.id);
+        return;
+      }
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, ws.id, (w) => {
+          const groups = w.groups.filter((g) => g.id !== grp.id);
+          return {
+            ...w,
+            groups,
+            activeGroupId: w.activeGroupId === grp.id ? groups[0].id : w.activeGroupId,
+          };
+        }),
+      }));
     },
 
     focusSession: (name) => {
@@ -787,6 +1287,15 @@ export const useStore = create<CodeHubState>((set, get) => {
           console.warn(`rename_session(${name}) failed:`, e);
         });
       }
+    },
+
+    setSessionColor: (name, color) => {
+      set((s) => {
+        const meta = s.sessionMeta[name];
+        if (!meta) return {};
+        return { sessionMeta: { ...s.sessionMeta, [name]: { ...meta, color } } };
+      });
+      persistPaneColor(name, color);
     },
 
     commitRatio: (wsId, nodeId, ratio) => {
@@ -892,6 +1401,26 @@ export const useStore = create<CodeHubState>((set, get) => {
       }));
     },
 
+    setWorkspaceColor: (wsId, color) => {
+      const ws = get().workspaces.find((w) => w.id === wsId);
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) => ({ ...w, color })),
+      }));
+      if (ws) persistWsColor(ws.containerKey, color);
+    },
+
+    renameWorkspace: (wsId, title) => {
+      const next = title.trim();
+      if (!next) return;
+      const ws = get().workspaces.find((w) => w.id === wsId);
+      set((s) => ({
+        workspaces: updateWs(s.workspaces, wsId, (w) => ({ ...w, title: next })),
+      }));
+      // Persist by containerKey (NOT the saved-workspace name — that would shift
+      // the derived container key). Survives reload via recallWsTitle.
+      if (ws) persistWsTitle(ws.containerKey, next);
+    },
+
     setActiveGroup: (wsId, groupId) => {
       // Focus mode + any in-flight drag are scoped to the group they were set
       // in; clear them so switching groups doesn't carry a maximized pane (or a
@@ -909,7 +1438,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       else (document.activeElement as HTMLElement | null)?.blur();
     },
 
-    addPaneToGroup: async (wsId, groupId, cli, mode, initialPrompt, account) => {
+    addPaneToGroup: async (wsId, groupId, cli, mode, initialPrompt, account, cwd) => {
       if (!isRunning()) return;
       const ws = get().workspaces.find((w) => w.id === wsId);
       const grp = ws?.groups.find((g) => g.id === groupId);
@@ -922,19 +1451,22 @@ export const useStore = create<CodeHubState>((set, get) => {
       // workspace's container even when this group, or the whole workspace, is
       // currently empty.
       const containerKey = ws.containerKey;
+      const alias = aliasFor(workspaceTitle(ws), cli, nextSeq(get().sessionMeta, ws.id, cli));
       await ipc.createSession(
         name,
         cli,
         mode,
-        aliasFor(cli, get().sessionCounter),
+        alias,
         undefined,
         claudeId,
         account,
         containerKey,
+        undefined,
+        cwd,
       );
       await registry.spawnPane(name, containerKey);
       prefillPrompt(name, initialPrompt);
-      registerMeta(name, cli, mode, ws.id, grp.id, containerKey, claudeId);
+      registerMeta(name, cli, mode, ws.id, grp.id, containerKey, alias, claudeId);
       set((s) => ({
         workspaces: updateWs(s.workspaces, wsId, (w) =>
           updateGroup(w, groupId, (g) => ({
@@ -1208,6 +1740,16 @@ function removeWorkspace(get: Get, set: Set, id: string) {
   if (idx === -1) return;
   const ws = list[idx];
   const next = list.filter((w) => w.id !== id);
+  // Closing the tab frees its container's CPU/mem instead of leaving it running
+  // idle. Stop (not remove) so a reopen restarts it fast and keeps its state;
+  // the Workspaces view prunes it for good. Only when no remaining tab still
+  // routes to that container. Fire-and-forget — a stop failure (already gone,
+  // daemon down) must never block the UI close.
+  if (!next.some((w) => w.containerKey === ws.containerKey)) {
+    void ipc.containerStop(ws.containerKey).catch((e) => {
+      console.warn(`container_stop(${ws.containerKey}) on close failed:`, e);
+    });
+  }
   const wasActive = get().activeWorkspaceId === id;
   const nextActive = wasActive
     ? (next[idx]?.id ?? next[idx - 1]?.id ?? null)
@@ -1218,7 +1760,11 @@ function removeWorkspace(get: Get, set: Set, id: string) {
   set((s) => {
     const utilityShells = { ...s.utilityShells };
     delete utilityShells[ws.containerKey];
-    return { workspaces: next, activeWorkspaceId: nextActive, utilityShells };
+    // Drop any configuring-pane drafts that belonged to this workspace.
+    const spawnDrafts = Object.fromEntries(
+      Object.entries(s.spawnDrafts).filter(([, d]) => d.workspaceId !== id),
+    );
+    return { workspaces: next, activeWorkspaceId: nextActive, utilityShells, spawnDrafts };
   });
 }
 
@@ -1262,6 +1808,143 @@ function recallClaudeId(name: string): string | undefined {
   return readClaudeIds()[name];
 }
 
+// User-picked pane-head color, persisted by session NAME (stable across restarts
+// — it's the tmux session id) so a restored pane keeps its color. Mirrors the
+// claudeId persistence. A small JSON map in localStorage; best-effort.
+function readStrMap(key: string): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+function writeStrEntry(key: string, id: string, value?: string): void {
+  try {
+    const m = readStrMap(key);
+    if (value) m[id] = value;
+    else delete m[id];
+    localStorage.setItem(key, JSON.stringify(m));
+  } catch {
+    // localStorage unavailable — value just won't survive a reload this session.
+  }
+}
+
+const PANE_COLOR_KEY = "codehub.paneColors";
+const recallPaneColor = (name: string): string | undefined => readStrMap(PANE_COLOR_KEY)[name];
+const persistPaneColor = (name: string, color?: string): void =>
+  writeStrEntry(PANE_COLOR_KEY, name, color);
+const forgetPaneColor = (name: string): void => writeStrEntry(PANE_COLOR_KEY, name, undefined);
+
+// Workspace tab color + name override, persisted by the stable containerKey (the
+// UI workspace id regenerates every launch) so a reopened workspace keeps both.
+// The title is persisted HERE rather than on the saved-workspace entry on
+// purpose: the container key is derived from the saved NAME, so editing that name
+// would shift the key and orphan the running container — keying the override by
+// containerKey sidesteps that.
+const WS_COLOR_KEY = "codehub.wsColors";
+const recallWsColor = (containerKey: string): string | undefined =>
+  readStrMap(WS_COLOR_KEY)[containerKey];
+const persistWsColor = (containerKey: string, color?: string): void =>
+  writeStrEntry(WS_COLOR_KEY, containerKey, color);
+
+const WS_TITLE_KEY = "codehub.wsTitles";
+const recallWsTitle = (containerKey: string): string | undefined =>
+  readStrMap(WS_TITLE_KEY)[containerKey];
+const persistWsTitle = (containerKey: string, title?: string): void =>
+  writeStrEntry(WS_TITLE_KEY, containerKey, title);
+
+type RegisterMeta = (
+  name: string,
+  cli: Cli,
+  mode: Mode,
+  workspaceId: string,
+  groupId: string,
+  containerKey: string,
+  alias: string,
+  claudeId?: string,
+) => void;
+
+// Adopt one container's surviving tmux sessions into a workspace tab — the unit
+// shared by launch-time restore (bootstrap) and on-demand "Open in Hub"
+// (openContainerWorkspace). Recovers the saved name/dir by matching the container
+// key, lays the grid out alternating row/col, and routes the docked shell to
+// utilityShells. `members` may be empty (a running container whose agents exited)
+// → an empty tab bound to the container so the user can launch into it. Returns
+// the new workspace id. `activate` makes it the active tab (resume); restore
+// passes false so only the FIRST adopted workspace becomes active.
+async function adoptWorkspace(
+  get: Get,
+  set: Set,
+  registerMeta: RegisterMeta,
+  members: SessionInfo[],
+  containerKey: string,
+  activate: boolean,
+): Promise<string> {
+  // Recover the saved identity (name / dir) by matching the container key — the
+  // key is derived from the saved id, so a restored/resumed tab shows its REAL
+  // name and is recognized as that saved workspace. No match → generic fallback.
+  const saved = (get().config?.savedWorkspaces ?? []).find(
+    (sw) => containerKeyFor({ title: sw.name, savedWorkspaceId: sw.id }) === containerKey,
+  );
+  for (const s of members) await registry.spawnPane(s.name, containerKey);
+  // Shell sessions map back to the docked Shell panel; agent sessions are grid leaves.
+  const utilityShell = members.find((s) => s.name.startsWith("shell"));
+  const gridMembers = members.filter((s) => !s.name.startsWith("shell"));
+  // Saved layout (ratios/dirs) isn't persisted; stack members alternating row/col.
+  const root =
+    gridMembers.length > 0
+      ? gridMembers.slice(1).reduce<LayoutNode>(
+          (acc, s, i) => ({
+            kind: "split",
+            id: nid(),
+            dir: i % 2 === 0 ? "row" : "col",
+            ratio: 0.5,
+            a: acc,
+            b: leafNode(s.name),
+          }),
+          leafNode(gridMembers[0].name),
+        )
+      : null;
+  const plate = get().plateCounter + 1;
+  const label = saved?.name?.trim() || `Workspace ${plate}`;
+  const group = makeGroup("Group 1", root, gridMembers[0]?.name ?? null);
+  const ws: Workspace = {
+    id: `ws-${plate}-${Date.now().toString(36)}`,
+    plate,
+    title: recallWsTitle(containerKey) ?? saved?.name,
+    dir: saved?.dir,
+    savedWorkspaceId: saved?.id,
+    groups: [group],
+    activeGroupId: group.id,
+    color: recallWsColor(containerKey),
+    // Keep the ORIGINAL container key so splits + later panes rejoin this
+    // workspace's container — surviving even after every pane is closed.
+    containerKey,
+  };
+  set((st) => ({
+    plateCounter: plate,
+    sessionCounter: st.sessionCounter + members.length,
+    workspaces: [...st.workspaces, ws],
+    activeWorkspaceId: activate ? ws.id : (st.activeWorkspaceId ?? ws.id),
+    utilityShells: utilityShell
+      ? { ...st.utilityShells, [containerKey]: utilityShell.name }
+      : st.utilityShells,
+  }));
+  // Mode of a pre-existing tmux session is unknown; show it as Standard. The
+  // original alias lived only in the tmux window name (not returned by
+  // list_sessions), so reconstruct a workspace-prefixed one.
+  for (const s of members) {
+    const cli =
+      (["claude", "codex", "antigravity", "shell"] as Cli[]).find((c) => s.name.startsWith(c)) ??
+      "claude";
+    // Recover the persisted transcript id so restored Claude panes show live usage.
+    const claudeId = cli === "claude" ? recallClaudeId(s.name) : undefined;
+    const alias = aliasFor(label, cli, nextSeq(get().sessionMeta, ws.id, cli));
+    registerMeta(s.name, cli, "standard", ws.id, group.id, containerKey, alias, claudeId);
+  }
+  return ws.id;
+}
+
 async function bootstrap(
   get: Get,
   set: Set,
@@ -1272,6 +1955,7 @@ async function bootstrap(
     workspaceId: string,
     groupId: string,
     containerKey: string,
+    alias: string,
     claudeId?: string,
   ) => void,
 ) {
@@ -1280,9 +1964,18 @@ async function bootstrap(
   // initLifecycle (they don't need a running container). Refresh them here too
   // so bootstrap picks up any state that changed between app-load and the
   // lifecycle event arriving.
-  void ipc.dockerInfo().then((dockerInfo) => set({ dockerInfo })).catch(() => {});
-  void ipc.detectDockerRuntime().then((dockerRuntime) => set({ dockerRuntime })).catch(() => {});
-  void ipc.listWorkspaceContainers().then((wc) => set({ workspaceContainers: wc })).catch(() => {});
+  void ipc
+    .dockerInfo()
+    .then((dockerInfo) => set({ dockerInfo }))
+    .catch(() => {});
+  void ipc
+    .detectDockerRuntime()
+    .then((dockerRuntime) => set({ dockerRuntime }))
+    .catch(() => {});
+  void ipc
+    .listWorkspaceContainers()
+    .then((wc) => set({ workspaceContainers: wc }))
+    .catch(() => {});
   void ipc
     .agentKeyStatus()
     .then((keyStatus) => set({ keyStatus }))
@@ -1303,7 +1996,10 @@ async function bootstrap(
   // "Restore sessions on launch" (default on): adopt the tmux sessions that
   // survived the last quit. When off we leave them running in the container
   // untouched (non-destructive) but start the Hub clean.
-  if (cfg && !cfg.restoreSessionsOnLaunch) return;
+  if (cfg && !cfg.restoreSessionsOnLaunch) {
+    set({ bootSettled: true });
+    return;
+  }
 
   try {
     const sessions = await ipc.listSessions();
@@ -1321,61 +2017,36 @@ async function bootstrap(
     }
 
     for (const members of byWorkspace.values()) {
-      const containerKey = members[0].workspace;
-      for (const s of members) await registry.spawnPane(s.name, containerKey);
-      // Shell sessions restored from a workspace container map back to the
-      // design's docked Shell panel. Agent sessions remain grid leaves.
-      const utilityShell = members.find((s) => s.name.startsWith("shell"));
-      const gridMembers = members.filter((s) => !s.name.startsWith("shell"));
-      // Build a default split tree: the saved layout (ratios/dirs) isn't
-      // persisted, so stack the members alternating row/col at even ratios.
-      const root =
-        gridMembers.length > 0
-          ? gridMembers.slice(1).reduce<LayoutNode>(
-              (acc, s, i) => ({
-                kind: "split",
-                id: nid(),
-                dir: i % 2 === 0 ? "row" : "col",
-                ratio: 0.5,
-                a: acc,
-                b: leafNode(s.name),
-              }),
-              leafNode(gridMembers[0].name),
-            )
-          : null;
-      const plate = get().plateCounter + 1;
-      const group = makeGroup("Group 1", root, gridMembers[0]?.name ?? null);
-      const ws: Workspace = {
-        id: `ws-${plate}-${Date.now().toString(36)}`,
-        plate,
-        groups: [group],
-        activeGroupId: group.id,
-        // Restored: keep the ORIGINAL container key (from the label) so splits +
-        // later panes rejoin this workspace's container — surviving even after
-        // every pane is closed.
-        containerKey,
-      };
-      set((st) => ({
-        plateCounter: plate,
-        sessionCounter: st.sessionCounter + members.length,
-        workspaces: [...st.workspaces, ws],
-        activeWorkspaceId: st.activeWorkspaceId ?? ws.id,
-        utilityShells: utilityShell
-          ? { ...st.utilityShells, [containerKey]: utilityShell.name }
-          : st.utilityShells,
-      }));
-      // Mode of a pre-existing tmux session is unknown; show it as Standard.
-      for (const s of members) {
-        const cli =
-          (["claude", "codex", "antigravity", "shell"] as Cli[]).find((c) =>
-            s.name.startsWith(c),
-          ) ?? "claude";
-        // Recover the persisted transcript id so restored Claude panes show live
-        // usage instead of "—" (it was minted with --session-id last run).
-        const claudeId = cli === "claude" ? recallClaudeId(s.name) : undefined;
-        registerMeta(s.name, cli, "standard", ws.id, group.id, containerKey, claudeId);
-      }
+      // Adopt each container's surviving sessions into a tab. `activate: false`
+      // — only the FIRST adopted workspace becomes active (reopenLastWorkspace
+      // below may re-point it).
+      await adoptWorkspace(get, set, registerMeta, members, members[0].workspace, false);
     }
+
+    // Auto-stop pure orphans: managed containers that are RUNNING but have no
+    // live sessions AND no saved-workspace entry — cruft from past runs that
+    // can't be reopened as a named workspace and would otherwise leak CPU/mem
+    // forever. Saved workspaces are EXEMPT (the user may resume them — Q: "leave
+    // as-is"); a container that has sessions was just adopted above. Best-effort.
+    void (async () => {
+      try {
+        const fleet = await ipc.listWorkspaceContainers();
+        const withSessions = new Set(sessions.map((s) => s.workspace));
+        const savedKeys = new Set(
+          (get().config?.savedWorkspaces ?? []).map((sw) =>
+            containerKeyFor({ title: sw.name, savedWorkspaceId: sw.id }),
+          ),
+        );
+        for (const c of fleet) {
+          if (c.status.state === "running" && !withSessions.has(c.key) && !savedKeys.has(c.key)) {
+            void ipc.containerStop(c.key).catch(() => {});
+          }
+        }
+      } catch {
+        // best-effort cleanup — never block restore
+      }
+    })();
+
     // "Reopen last workspace" (default on): re-select the tab whose session was
     // focused at quit, if it's among the adopted ones. Otherwise the first
     // adopted workspace stays active (set in the loop above).
@@ -1389,6 +2060,8 @@ async function bootstrap(
     }
   } catch (e) {
     console.error("list_sessions failed", e);
+  } finally {
+    set({ bootSettled: true });
   }
 }
 
@@ -1406,10 +2079,32 @@ export async function initLifecycle(): Promise<void> {
   // Docker status + runtime detection + workspace containers are independent of
   // the lifecycle event — load eagerly so the empty-state hero renders correctly
   // on first paint (not after the lifecycle event arrives).
+  //
+  // Trigger restore from daemon reachability, NOT only the backend's one-time
+  // synthetic lifecycle push: the Tauri backend emits that event once in its
+  // `setup` hook (process startup). A webview reload (⌘R) re-runs THIS but not
+  // `setup`, so the reloaded frontend would never receive the event and never
+  // bootstrap — the Hub would come up empty until a full app restart. (The dev
+  // bridge re-emits on every WS connect, which is why `make dev-web` reloads
+  // worked and masked this.) Synthesizing a "running" status here makes every
+  // (re)load self-sufficient; it's idempotent with the real event via the
+  // `bootstrapped` guard in setStatus.
   void ipc
     .dockerInfo()
-    .then((dockerInfo) => set({ dockerInfo }))
-    .catch((e) => console.warn("docker_info failed", e));
+    .then((dockerInfo) => {
+      set({ dockerInfo });
+      if (dockerInfo.reachable) {
+        setStatus({ state: "running", id: null, image: "", name: "daemon" });
+      } else {
+        // No reachable daemon → bootstrap (which sets bootSettled) never runs.
+        // Settle here so the empty-state hero renders instead of a blank pane.
+        set({ bootSettled: true });
+      }
+    })
+    .catch((e) => {
+      console.warn("docker_info failed", e);
+      set({ bootSettled: true });
+    });
   void ipc
     .detectDockerRuntime()
     .then((dockerRuntime) => set({ dockerRuntime }))
@@ -1418,11 +2113,10 @@ export async function initLifecycle(): Promise<void> {
     .listWorkspaceContainers()
     .then((workspaceContainers) => set({ workspaceContainers }))
     .catch((e) => console.warn("list_workspace_containers failed", e));
+  // Still subscribe to the live lifecycle event — it carries real start/stop
+  // transitions after launch (and is the redundant first-launch trigger).
   void onLifecycle(setStatus);
   void onLifecycleError(setError);
-  // No initial containerStatus() call — there's no default container to query.
-  // The backend emits a synthetic codehub://lifecycle "running" event on startup
-  // when the Docker daemon is reachable, which triggers bootstrap via setStatus.
 }
 
 // Guard for close actions (⌘W, pane + sidebar close buttons). Returns true when
@@ -1455,20 +2149,21 @@ export function confirmCloseGroup(sessions: string[], groupName: string): boolea
 }
 
 // Workspace-close guard: a single confirmation covering every working agent in
-// the workspace. Returns "close" to proceed (keep container), "close-stop" to
-// close and stop the container, or null to abort. Same preference + live signal.
-export function confirmCloseWorkspace(wsId: string): "close" | "close-stop" | null {
+// the workspace. Returns "close" to proceed, or null to abort. The
+// `confirmCloseRunningAgent` pref is specifically about RUNNING agents, so an
+// idle workspace closes silently rather than nagging. Closing always stops the
+// container (see removeWorkspace) — reopen restarts it.
+export function confirmCloseWorkspace(wsId: string): "close" | null {
   const s = useStore.getState();
   const ws = s.workspaces.find((w) => w.id === wsId);
   if (!ws) return "close";
   const sessions = workspaceLeaves(ws);
   const needsConfirm = s.config?.confirmCloseRunningAgent ?? true;
   const working = sessions.filter((n) => s.sessionActivity[n]?.state === "working").length;
-  if (!needsConfirm && working === 0) return "close";
+  if (!needsConfirm || working === 0) return "close";
   const title = workspaceTitle(ws);
-  const workingMsg =
-    working > 0 ? `${working} agent${working === 1 ? " is" : "s are"} still working. ` : "";
-  const msg = `Close ${title}?\n\n${workingMsg}Sessions will be killed. The workspace container keeps running — you can stop it from the Workspaces view.`;
+  const plural = working === 1 ? "agent is" : "agents are";
+  const msg = `Close ${title}?\n\n${working} ${plural} still working. Sessions will be killed and the workspace container will stop (reopen to resume).`;
   return window.confirm(msg) ? "close" : null;
 }
 

@@ -142,11 +142,9 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
         `/account-profiles/${encodeURIComponent(String(args.id))}`,
       ) as Promise<T>;
     case "rename_account_profile":
-      return jsend(
-        "PATCH",
-        `/account-profiles/${encodeURIComponent(String(args.id))}`,
-        { label: args.label },
-      ) as Promise<T>;
+      return jsend("PATCH", `/account-profiles/${encodeURIComponent(String(args.id))}`, {
+        label: args.label,
+      }) as Promise<T>;
     // Vault: OS-keychain ops — Tauri-only, degrade to no-op in browser mode.
     case "vault_store_key":
     case "vault_delete_key":
@@ -303,6 +301,7 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
         account: args.account,
         workspace: args.workspace,
         workspace_dir: args.workspaceDir,
+        cwd: args.cwd,
       }) as Promise<T>;
     case "kill_session": {
       const ws = args.workspace ? `?workspace=${encodeURIComponent(String(args.workspace))}` : "";

@@ -1,20 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { confirmCloseGroup, useStore } from "../../lib/store";
-import {
-  GROUP_COLORS,
-  type Group,
-  MAX_GROUP_PANES,
-  type Workspace,
-  leavesList,
-} from "../../lib/tree";
+import { type Group, MAX_GROUP_PANES, type Workspace, leavesList } from "../../lib/tree";
+import { ColorDot } from "../primitives/ColorDot";
 import { IconBtn } from "../primitives/IconBtn";
+import { Tip } from "../primitives/Tip";
 import { Ico } from "../primitives/icons";
 
 // Pane-group tab strip for the active workspace (design/screens/main-hub-a.jsx
-// `GroupsBar`). Sits between the workspace tab bar and the grid. Each group owns
-// its own split tree + focus; selecting a group swaps the grid. The "+" adds an
-// empty group (its grid shows the empty-state CTA). Carved tab styling + the
-// per-group color accent mirror the design.
+// `GroupsBar`). Sits between the workspace tab bar and the grid, flush-left and
+// aligned with it. A subtle inset top shadow makes it read as RECESSED into the
+// workspace bar above (carved-in) — no window-spanning colored frames. Group
+// tabs match the workspace tabs: active = square raised surface + a thin top
+// accent line in its color + a ColorDot for identity.
 export function GroupsBar({ ws }: { ws: Workspace }) {
   const addGroup = useStore((s) => s.addGroup);
   const setActiveGroup = useStore((s) => s.setActiveGroup);
@@ -23,13 +20,15 @@ export function GroupsBar({ ws }: { ws: Workspace }) {
   return (
     <div
       style={{
-        height: 32,
+        height: 30,
         flexShrink: 0,
         display: "flex",
         alignItems: "stretch",
         borderBottom: "1px solid var(--bd-soft)",
         background: "var(--bg-1)",
-        paddingLeft: 8,
+        // Recessed into the workspace bar above — a subtle "carved in" cue
+        // (no window-spanning colored frame).
+        boxShadow: "inset 0 4px 6px -4px rgba(0,0,0,0.55)",
       }}
     >
       {groups.map((g) => (
@@ -74,9 +73,15 @@ function GroupTab({
 }) {
   const renameGroup = useStore((s) => s.renameGroup);
   const closeGroup = useStore((s) => s.closeGroup);
+  const setGroupColor = useStore((s) => s.setGroupColor);
   const count = leavesList(group.root).length;
   const full = count >= MAX_GROUP_PANES;
   const [editing, setEditing] = useState(false);
+
+  // Active = raised neutral surface (no tint) with a square top accent line in
+  // the group color; identity lives on the ColorDot. Square, flush.
+  const accent = group.color;
+  const fg = active ? "var(--fg-0)" : "var(--fg-2)";
 
   const close = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -87,38 +92,31 @@ function GroupTab({
 
   return (
     <div
+      className={`group-tab${active ? " active" : ""}`}
       onClick={onSelect}
       onDoubleClick={() => setEditing(true)}
       style={{
         display: "flex",
         alignItems: "center",
         gap: 9,
-        padding: "0 10px 0 6px",
+        padding: "0 8px",
         height: "100%",
         borderRight: "1px solid var(--bd-soft)",
-        background: active ? "var(--bg-2)" : "transparent",
-        color: active ? "var(--fg-0)" : "var(--fg-2)",
+        ...(active ? { background: "var(--bg-2)", boxShadow: `inset 0 3px 0 ${accent}` } : {}),
+        color: fg,
         cursor: "pointer",
         position: "relative",
         fontSize: 12,
-        boxShadow: active
-          ? "inset 0 1px 3px rgba(0,0,0,0.35), inset 0 0 0 1px var(--bd-soft)"
-          : "none",
       }}
     >
-      {active && (
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 2,
-            background: group.color,
-          }}
-        />
-      )}
-      <ColorDot ws={ws} group={group} />
+      <ColorDot
+        size={10}
+        display={group.color}
+        selected={group.color}
+        onPick={(c) => c && setGroupColor(ws.id, group.id, c)}
+        allowDefault={false}
+        title="Group color"
+      />
       {editing ? (
         <input
           className="pane-name-input"
@@ -149,7 +147,11 @@ function GroupTab({
           }}
         />
       ) : (
-        <span style={{ fontWeight: active ? 500 : 400 }}>{group.name}</span>
+        <Tip text="Double-click to rename">
+          <span className="ch-rename" style={{ fontWeight: active ? 500 : 400, color: fg }}>
+            {group.name}
+          </span>
+        </Tip>
       )}
       <span
         className="mono"
@@ -166,86 +168,9 @@ function GroupTab({
       >
         {full ? `${count}/${MAX_GROUP_PANES}` : count}
       </span>
-      <IconBtn title="Close group" onClick={close} style={{ width: 18, height: 18, marginLeft: 4 }}>
+      <button type="button" className="tab-close" title="Close group" onClick={close}>
         {Ico.close}
-      </IconBtn>
-    </div>
-  );
-}
-
-// Small clickable color swatch → a palette popover (design ColorDot). Recolors
-// the group's accent line.
-function ColorDot({ ws, group }: { ws: Workspace; group: Group }) {
-  const setGroupColor = useStore((s) => s.setGroupColor);
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  return (
-    <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
-      <button
-        type="button"
-        title="Group color"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-        style={{
-          width: 10,
-          height: 10,
-          borderRadius: "50%",
-          border: "none",
-          padding: 0,
-          background: group.color,
-          cursor: "pointer",
-        }}
-      />
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            left: 0,
-            zIndex: 30,
-            display: "flex",
-            gap: 6,
-            padding: 7,
-            background: "var(--bg-2)",
-            border: "1px solid var(--bd)",
-            borderRadius: 6,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
-          }}
-        >
-          {GROUP_COLORS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setGroupColor(ws.id, group.id, c);
-                setOpen(false);
-              }}
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: "50%",
-                border: c === group.color ? "2px solid var(--fg-0)" : "1px solid var(--bd)",
-                padding: 0,
-                background: c,
-                cursor: "pointer",
-              }}
-            />
-          ))}
-        </div>
-      )}
+      </button>
     </div>
   );
 }

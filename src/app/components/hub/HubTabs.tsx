@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
+import { ColorDot } from "../../components/primitives/ColorDot";
 import { IconBtn } from "../../components/primitives/IconBtn";
+import { Tip } from "../../components/primitives/Tip";
 import { Ico } from "../../components/primitives/icons";
 import { useOverlay } from "../../lib/overlay";
-import { confirmCloseWorkspace, useStore } from "../../lib/store";
-import { workspaceLeaves, workspaceTitle } from "../../lib/tree";
+import { confirmCloseWorkspace, isSpawnPlaceholder, useStore } from "../../lib/store";
+import { type Workspace, workspaceLeaves, workspaceTitle } from "../../lib/tree";
+
+// Real agent sessions in a workspace — excludes configuring panes (placeholders
+// with no tmux session yet) so the tab count reflects live agents.
+const realSessions = (ws: Parameters<typeof workspaceLeaves>[0]) =>
+  workspaceLeaves(ws).filter((s) => !isSpawnPlaceholder(s));
 
 // Workspace tab strip, ported from design/screens/main-hub-a.jsx. Each tab is a
 // live workspace. The visual anatomy mirrors the design: drag handle, workspace
@@ -20,9 +27,9 @@ export function HubTabs() {
   const activeId = useStore((s) => s.activeWorkspaceId);
   const git = useStore((s) => s.gitStatus);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
-  const closeWorkspace = useStore((s) => s.closeWorkspace);
   const setPalette = useOverlay((s) => s.setPalette);
-  const setNewWorkspace = useOverlay((s) => s.setNewWorkspace);
+  const launcher = useOverlay((s) => s.launcher);
+  const setLauncher = useOverlay((s) => s.setLauncher);
   // Awaiting-input signal for the bell dot: any session with a pending prompt
   // (← pending_prompts / live agent-event, §7). Real for Claude/Codex; empty
   // (no dot) for Antigravity and until the BE track lands.
@@ -36,6 +43,10 @@ export function HubTabs() {
   // True when the tab strip is scrolled past its viewport (more tabs than fit).
   // Drives the trailing "⌄" overflow affordance (design HubStateTabOverflow).
   const [overflowing, setOverflowing] = useState(false);
+  // Scroll-extent flags: hide the ‹ arrow at the far left, the › at the far
+  // right, so a dead-end arrow never shows.
+  const [atStart, setAtStart] = useState(true);
+  const [atEnd, setAtEnd] = useState(false);
 
   useEffect(() => {
     const strip = stripRef.current;
@@ -45,16 +56,32 @@ export function HubTabs() {
     prevCount.current = workspaces.length;
   }, [workspaces.length]);
 
-  // Measure overflow whenever tabs change or the window resizes.
+  // Measure overflow + scroll extents whenever tabs change, the strip scrolls,
+  // or the window resizes.
   useEffect(() => {
     const strip = stripRef.current;
     if (!strip) return;
-    const measure = () => setOverflowing(strip.scrollWidth > strip.clientWidth + 4);
+    const measure = () => {
+      setOverflowing(strip.scrollWidth > strip.clientWidth + 4);
+      setAtStart(strip.scrollLeft <= 0);
+      setAtEnd(strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(strip);
-    return () => ro.disconnect();
+    strip.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      ro.disconnect();
+      strip.removeEventListener("scroll", measure);
+    };
   }, []);
+
+  // Page the tab strip by ~one tab-width-and-a-half so the back/forward arrows
+  // move a predictable chunk (tabs are fixed-width + flexShrink:0, so the strip
+  // overflows and scrolls instead of squeezing each tab).
+  const scrollTabs = (dir: -1 | 1) => {
+    stripRef.current?.scrollBy({ left: dir * 264, behavior: "smooth" });
+  };
 
   return (
     <div
@@ -64,144 +91,103 @@ export function HubTabs() {
         alignItems: "stretch",
         borderBottom: "1px solid var(--bd-soft)",
         background: "var(--bg-1)",
-        paddingLeft: 8,
         flexShrink: 0,
       }}
     >
+      {overflowing && !atStart && (
+        <IconBtn
+          title="Scroll tabs left"
+          onClick={() => scrollTabs(-1)}
+          style={{ alignSelf: "center", flexShrink: 0 }}
+        >
+          {Ico.chevL}
+        </IconBtn>
+      )}
       <div
         ref={stripRef}
         style={{ display: "flex", minWidth: 0, overflowX: "auto", scrollbarWidth: "none" }}
       >
-        {workspaces.map((ws) => {
-          const sessions = workspaceLeaves(ws);
-          const active = ws.id === activeId;
-          const waits = sessions.filter((session) => pendingSessions.includes(session)).length;
-          const state = waits > 0 ? "wait" : sessions.length > 0 ? "live" : "idle";
-          const chipLabel =
-            waits > 0 ? `${waits} wait` : sessions.length > 0 ? String(sessions.length) : "—";
-          const chipBg =
-            state === "wait"
-              ? "var(--wait)"
-              : state === "live"
-                ? "color-mix(in oklab, var(--live) 18%, transparent)"
-                : "transparent";
-          const chipFg =
-            state === "wait" ? "var(--bg-0)" : state === "live" ? "var(--live)" : "var(--fg-3)";
-          const color = ws.groups[0]?.color ?? "var(--pri)";
-          const repoLabel = active && git?.isRepo ? "1 repo" : (dirName(ws.dir) ?? "workspace");
-          const title = workspaceTitle(ws);
-          return (
-            <div
-              key={ws.id}
-              className={`ch-tab${active ? " active" : ""}`}
-              title={`${title} · ${sessions.length} session${sessions.length === 1 ? "" : "s"}${waits > 0 ? ` · ${waits} awaiting input` : ""}`}
-              onClick={() => switchWorkspace(ws.id)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 9,
-                padding: "0 10px 0 6px",
-                height: "100%",
-                borderRight: "1px solid var(--bd-soft)",
-                background: active ? "var(--bg-2)" : "transparent",
-                color: active ? "var(--fg-0)" : "var(--fg-1)",
-                cursor: "pointer",
-                position: "relative",
-                whiteSpace: "nowrap",
-                minWidth: 0,
+        {workspaces.map((ws) => (
+          <WorkspaceTab
+            key={ws.id}
+            ws={ws}
+            // While the launcher tab is showing, NO workspace tab is the active
+            // one (the launcher is) — so none render the active fill.
+            active={!launcher && ws.id === activeId}
+            git={git?.isRepo ?? false}
+            pendingSessions={pendingSessions}
+            onSelect={() => {
+              setLauncher(false);
+              switchWorkspace(ws.id);
+            }}
+          />
+        ))}
+
+        {/* Browser-style "new workspace" tab: a chip while the launcher is open,
+            the "+" affordance while it's closed. The launcher fills the content
+            area below (HubView), so other tabs + the sidebar stay visible. */}
+        {launcher ? (
+          <div
+            className="ch-tab active"
+            title="New workspace — recent, resume, or create"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "0 8px 0 11px",
+              height: "100%",
+              borderRight: "1px solid var(--bd-soft)",
+              background: "var(--bg-2)",
+              color: "var(--fg-0)",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ color: "var(--pri)", display: "inline-flex" }}>{Ico.plus}</span>
+            <span style={{ fontSize: 12, fontWeight: 500 }}>New workspace</span>
+            <button
+              type="button"
+              className="tab-close"
+              title="Close (esc)"
+              style={{ marginLeft: 2 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setLauncher(false);
               }}
             >
-              <span className="tab-handle" title="Drag to reorder / dock" />
-              <span
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  background: color,
-                  border: `1px solid color-mix(in oklab, ${color} 60%, #000)`,
-                  flexShrink: 0,
-                }}
-              />
-              <div
-                style={{ display: "flex", flexDirection: "column", lineHeight: 1.15, minWidth: 0 }}
-              >
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 500,
-                    color: active ? "var(--fg-0)" : "var(--fg-1)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {title}
-                </span>
-                <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-                  {repoLabel}
-                </span>
-              </div>
-              <span
-                className="mono"
-                style={{
-                  fontSize: 10,
-                  fontWeight: state === "wait" ? 600 : 500,
-                  color: chipFg,
-                  background: chipBg,
-                  padding: "1px 5px",
-                  borderRadius: 999,
-                  lineHeight: 1,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  flexShrink: 0,
-                }}
-              >
-                {state === "live" && (
-                  <span
-                    style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: "50%",
-                      background: "var(--live)",
-                    }}
-                  />
-                )}
-                {chipLabel}
-              </span>
-              <IconBtn
-                title="Close workspace"
-                style={{ width: 18, height: 18, marginLeft: 4 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const result = confirmCloseWorkspace(ws.id);
-                  if (result) void closeWorkspace(ws.id);
-                }}
-              >
-                {Ico.close}
-              </IconBtn>
-            </div>
-          );
-        })}
-
-        {/* new workspace — opens the workspace wizard */}
-        <button
-          type="button"
-          title="New workspace (⌘⇧N)"
-          onClick={() => setNewWorkspace(true)}
-          style={{
-            alignSelf: "center",
-            marginLeft: 6,
-            padding: "4px 6px",
-            background: "transparent",
-            border: "none",
-            color: "var(--fg-2)",
-            cursor: "pointer",
-            display: "inline-flex",
-          }}
-        >
-          {Ico.plus}
-        </button>
+              {Ico.close}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            title="Open workspace — recent, resume, or new (⌘T)"
+            onClick={() => setLauncher(true)}
+            style={{
+              alignSelf: "center",
+              marginLeft: 6,
+              padding: "4px 6px",
+              background: "transparent",
+              border: "none",
+              color: "var(--fg-2)",
+              cursor: "pointer",
+              display: "inline-flex",
+            }}
+          >
+            {Ico.plus}
+          </button>
+        )}
       </div>
+
+      {overflowing && !atEnd && (
+        <IconBtn
+          title="Scroll tabs right"
+          onClick={() => scrollTabs(1)}
+          style={{ alignSelf: "center", flexShrink: 0 }}
+        >
+          {Ico.chevR}
+        </IconBtn>
+      )}
 
       <div style={{ flex: 1 }} />
 
@@ -295,9 +281,9 @@ export function HubTabs() {
                 </span>
               </div>
               {workspaces.map((ws) => {
-                const sessions = workspaceLeaves(ws);
+                const sessions = realSessions(ws);
                 const waits = sessions.filter((s) => pendingSessions.includes(s)).length;
-                const color = ws.groups[0]?.color ?? "var(--pri)";
+                const color = ws.color ?? ws.groups[0]?.color ?? "var(--pri)";
                 return (
                   <div
                     key={ws.id}
@@ -314,7 +300,7 @@ export function HubTabs() {
                         height: 10,
                         borderRadius: "50%",
                         background: color,
-                        border: `1px solid color-mix(in oklab, ${color} 60%, #000)`,
+                        border: `1px solid color-mix(in oklab, ${color} 60%, black)`,
                         flexShrink: 0,
                       }}
                     />
@@ -399,6 +385,184 @@ export function HubTabs() {
           </span>
         </IconBtn>
       </div>
+    </div>
+  );
+}
+
+// One workspace tab. A carved browser tab: the ACTIVE tab is pressed-in (inset
+// shadow) over a subtle tint of its color, with a thin top accent bar; inactive
+// tabs are flat with the color shown only by the leading ColorDot. Double-click
+// the name to rename.
+function WorkspaceTab({
+  ws,
+  active,
+  git,
+  pendingSessions,
+  onSelect,
+}: {
+  ws: Workspace;
+  active: boolean;
+  git: boolean;
+  pendingSessions: string[];
+  onSelect: () => void;
+}) {
+  const closeWorkspace = useStore((s) => s.closeWorkspace);
+  const renameWorkspace = useStore((s) => s.renameWorkspace);
+  const setWorkspaceColor = useStore((s) => s.setWorkspaceColor);
+  const [editing, setEditing] = useState(false);
+
+  const sessions = realSessions(ws);
+  const waits = sessions.filter((session) => pendingSessions.includes(session)).length;
+  const state = waits > 0 ? "wait" : sessions.length > 0 ? "live" : "idle";
+  const chipLabel =
+    waits > 0 ? `${waits} wait` : sessions.length > 0 ? String(sessions.length) : "—";
+  const title = workspaceTitle(ws);
+  const repoLabel = active && git ? "1 repo" : (dirName(ws.dir) ?? "workspace");
+
+  // Active tab = raised neutral surface (no tint) with a square top accent line
+  // in its color; the color identity lives on the ColorDot. Square, flush — no
+  // rounded floating-chip look. Inactive sets no inline background so the CSS
+  // owns its hover.
+  const wsColor = ws.color;
+  const accent = wsColor ?? "var(--pri)";
+  const tabFg = active ? "var(--fg-0)" : "var(--fg-1)";
+  const subFg = "var(--fg-3)";
+
+  const chipBg =
+    state === "wait"
+      ? "var(--wait)"
+      : state === "live"
+        ? "color-mix(in oklab, var(--live) 18%, transparent)"
+        : "transparent";
+  const chipFg = state === "wait" ? "var(--bg-0)" : state === "live" ? "var(--live)" : subFg;
+
+  return (
+    <div
+      className={`ch-tab${active ? " active" : ""}`}
+      title={`${title} · ${sessions.length} session${sessions.length === 1 ? "" : "s"}${waits > 0 ? ` · ${waits} awaiting input` : ""}`}
+      onClick={onSelect}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 9,
+        padding: "0 10px 0 8px",
+        height: "100%",
+        borderRight: "1px solid var(--bd-soft)",
+        ...(active ? { background: "var(--bg-2)", boxShadow: `inset 0 3px 0 ${accent}` } : {}),
+        color: tabFg,
+        cursor: "pointer",
+        position: "relative",
+        whiteSpace: "nowrap",
+        width: 212,
+        flexShrink: 0,
+      }}
+    >
+      <ColorDot
+        size={10}
+        display={accent}
+        selected={wsColor}
+        onPick={(c) => setWorkspaceColor(ws.id, c)}
+        title="Workspace color"
+      />
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          lineHeight: 1.15,
+          flex: 1,
+          minWidth: 0,
+        }}
+      >
+        {editing ? (
+          <input
+            className="pane-name-input"
+            defaultValue={title}
+            // biome-ignore lint/a11y/noAutofocus: rename input is opened by an explicit user action
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={(e) => {
+              renameWorkspace(ws.id, e.currentTarget.value);
+              setEditing(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                renameWorkspace(ws.id, e.currentTarget.value);
+                setEditing(false);
+              } else if (e.key === "Escape") {
+                setEditing(false);
+              }
+            }}
+            style={{
+              width: "100%",
+              background: "var(--bg-0)",
+              border: "1px solid var(--bd)",
+              borderRadius: 4,
+              color: "var(--fg-0)",
+              font: "inherit",
+              fontSize: 12,
+              padding: "1px 4px",
+            }}
+          />
+        ) : (
+          <Tip text="Double-click to rename">
+            <span
+              className="ch-rename"
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
+              style={{
+                fontSize: 12,
+                fontWeight: 500,
+                color: tabFg,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {title}
+            </span>
+          </Tip>
+        )}
+        <span className="mono" style={{ fontSize: 10, color: subFg }}>
+          {repoLabel}
+        </span>
+      </div>
+      <span
+        className="mono"
+        style={{
+          fontSize: 10,
+          fontWeight: state === "wait" ? 600 : 500,
+          color: chipFg,
+          background: chipBg,
+          padding: "1px 5px",
+          borderRadius: 999,
+          lineHeight: 1,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          flexShrink: 0,
+        }}
+      >
+        {state === "live" && (
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--live)" }} />
+        )}
+        {chipLabel}
+      </span>
+      <button
+        type="button"
+        className="tab-close"
+        title="Close workspace"
+        style={{ marginLeft: 2 }}
+        onClick={(e) => {
+          e.stopPropagation();
+          const result = confirmCloseWorkspace(ws.id);
+          if (result) void closeWorkspace(ws.id);
+        }}
+      >
+        {Ico.close}
+      </button>
     </div>
   );
 }

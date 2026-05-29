@@ -2,10 +2,12 @@ import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Ico } from "../../components/primitives/icons";
-import { slideRight } from "../../hooks/useSlideIn";
+import { useResizableDock } from "../../hooks/useResizableDock";
+import { EASE } from "../../hooks/useSlideIn";
 import { ipc } from "../../lib/ipc";
 import { activeWorkspace, useStore } from "../../lib/store";
 import { DiffBody, diffCounts, parseDiff } from "./DiffBody";
+import { ResizeHandle } from "./ResizeHandle";
 
 // A unified diff docked on the right (design/screens/hub-states.jsx DiffPanel),
 // toggled from the hub ActionBar (⌘D) or opened on a specific file from the
@@ -25,6 +27,11 @@ export function DiffViewer({ path, onClose }: { path: string; onClose: () => voi
   const [diff, setDiff] = useState<string | null>(null);
   // The diff is for the active workspace's container.
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
+  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.diff.w", WIDTH, {
+    min: 300,
+    max: 700,
+    edge: "left",
+  });
 
   useEffect(() => {
     let alive = true;
@@ -44,65 +51,75 @@ export function DiffViewer({ path, onClose }: { path: string; onClose: () => voi
 
   return (
     <motion.aside
-      {...slideRight}
-      style={{
-        width: WIDTH,
-        flexShrink: 0,
-        background: "var(--bg-1)",
-        borderLeft: "1px solid var(--bd-soft)",
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-        color: "var(--fg-1)",
-      }}
+      ref={ref}
+      initial={{ width: 0 }}
+      animate={{ width: size }}
+      exit={{ width: 0 }}
+      transition={{ duration: dragging ? 0 : 0.28, ease: EASE }}
+      style={{ flexShrink: 0, overflow: "hidden", position: "relative" }}
     >
+      {/* fixed-width inner so content doesn't reflow while the outer width animates */}
       <div
         style={{
-          padding: "8px 10px",
-          borderBottom: "1px solid var(--bd-soft)",
+          width: size,
+          height: "100%",
+          background: "var(--bg-1)",
+          borderLeft: "1px solid var(--bd-soft)",
           display: "flex",
-          alignItems: "center",
-          gap: 7,
+          flexDirection: "column",
+          minHeight: 0,
+          color: "var(--fg-1)",
         }}
       >
-        <span style={{ color: "var(--wait)", display: "inline-flex" }}>{Ico.diff}</span>
-        <span
-          className="mono"
-          title={path === "" ? "All tracked changes" : path}
+        <div
           style={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: "var(--fg-0)",
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            direction: path === "" ? "ltr" : "rtl",
-            textAlign: "left",
+            padding: "8px 10px",
+            borderBottom: "1px solid var(--bd-soft)",
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
           }}
         >
-          {path === "" ? "All changes" : path}
-        </span>
-        {counts && (counts.added > 0 || counts.removed > 0) && (
-          <span className="mono tnum" style={{ fontSize: 11, flexShrink: 0 }}>
-            <span style={{ color: "var(--live)" }}>+{counts.added}</span>{" "}
-            <span style={{ color: "var(--err)" }}>−{counts.removed}</span>
+          <span style={{ color: "var(--wait)", display: "inline-flex" }}>{Ico.diff}</span>
+          <span
+            className="mono"
+            title={path === "" ? "All tracked changes" : path}
+            style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: "var(--fg-0)",
+              flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              direction: path === "" ? "ltr" : "rtl",
+              textAlign: "left",
+            }}
+          >
+            {path === "" ? "All changes" : path}
           </span>
-        )}
-        <IconBtn title="Hide diff panel (⌘D)" onClick={onClose}>
-          {Ico.close}
-        </IconBtn>
+          {counts && (counts.added > 0 || counts.removed > 0) && (
+            <span className="mono tnum" style={{ fontSize: 11, flexShrink: 0 }}>
+              <span style={{ color: "var(--live)" }}>+{counts.added}</span>{" "}
+              <span style={{ color: "var(--err)" }}>−{counts.removed}</span>
+            </span>
+          )}
+          <IconBtn title="Hide diff panel (⌘D)" onClick={onClose}>
+            {Ico.close}
+          </IconBtn>
+        </div>
+        <DiffBody
+          diff={diff}
+          emptyLabel={
+            path === ""
+              ? "No tracked changes — the working tree is clean."
+              : "No diff to show — the file may be unchanged or binary."
+          }
+          style={{ flex: 1, minHeight: 0, overflow: "auto" }}
+        />
       </div>
-      <DiffBody
-        diff={diff}
-        emptyLabel={
-          path === ""
-            ? "No tracked changes — the working tree is clean."
-            : "No diff to show — the file may be unchanged or binary."
-        }
-        style={{ flex: 1, minHeight: 0, overflow: "auto" }}
-      />
+      <ResizeHandle edge="left" onMouseDown={beginResize} onDoubleClick={reset} />
     </motion.aside>
   );
 }

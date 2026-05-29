@@ -43,7 +43,7 @@ export function ActionBar() {
       />
       <PaneAddBtn
         kind="shell"
-        kbd="⌘⇧B"
+        kbd="⌘J"
         active={shellOpen}
         onClick={() => setShell(!shellOpen)}
         showLabel
@@ -61,22 +61,18 @@ export function ActionBar() {
       <Button
         variant="ghost"
         size="xs"
+        // Match the spawn button's 28px height so the Resume / New-agent pair lines up.
+        className="h-7"
         onClick={() => setResume(!resumeOpen)}
-        title={resumeOpen ? "Hide Resume drawer (⌘R)" : "Resume a past session (⌘R)"}
+        title={resumeOpen ? "Hide Resume drawer" : "Resume a past session"}
         style={
           resumeOpen
-            ? {
-                background: "var(--bg-3)",
-                color: "var(--fg-0)",
-                outline: "1px solid var(--bd-soft)",
-                outlineOffset: -1,
-              }
+            ? { background: "var(--bg-3)", color: "var(--fg-0)", borderColor: "var(--bd)" }
             : undefined
         }
       >
         {Ico.clock}
         Resume
-        <span className="kbd">⌘R</span>
       </Button>
       <SpawnSplitBtn />
     </div>

@@ -1,7 +1,7 @@
 /**
  * ResumeDrawer — a docked right-side drawer over the live hub (NOT a top-level
- * view), opened from the ActionBar "Resume" button, ⌘R, or Welcome's "Browse
- * sessions" card. Resuming an agent session is per-workspace, so the drawer keeps
+ * view), opened from the ActionBar "Resume" button, the command palette, or the
+ * launcher's "Resume session" card. Resuming an agent session is per-workspace, so the drawer keeps
  * the hub mounted behind it: you pull a past session back INTO the current tab.
  *
  * Library of past agent conversations read from their on-disk session
@@ -18,7 +18,8 @@
  * live in the per-id session-usage read, one docker exec per row), so they are
  * NOT rendered here rather than fabricated. The row shows what each transcript
  * factually carries: branch, age, turn count, model. The design's dock-left/right
- * toggle is omitted (not half-wired) — the drawer docks right; ⌘R / close toggle it.
+ * toggle is omitted (not half-wired) — the drawer docks right; the ActionBar
+ * Resume button / close toggle it.
  *
  * Resume action wires only to what the backend supports (docker.rs:710):
  *   - Claude reopens the exact conversation through the shared spawn dialog
@@ -34,7 +35,6 @@ import { Ico } from "../components/primitives/icons";
 import { slideLeft, slideRight } from "../hooks/useSlideIn";
 import type { AgentCli, ClaudeSession, CodexSession } from "../lib/ipc";
 import { ipc } from "../lib/ipc";
-import { useLauncher } from "../lib/launcher";
 import { useOverlay } from "../lib/overlay";
 import { useStore } from "../lib/store";
 import { Button } from "../ui/button";
@@ -78,8 +78,7 @@ export function ResumeDrawer() {
   const side = useOverlay((s) => s.resumeSide);
   const setSide = useOverlay((s) => s.setResumeSide);
   const status = useStore((s) => s.status);
-  const setView = useStore((s) => s.setView);
-  const openLaunch = useLauncher((s) => s.open);
+  const newAgent = useStore((s) => s.newAgent);
   const state = status?.state ?? "missing";
   const running = state === "running";
 
@@ -168,13 +167,11 @@ export function ResumeDrawer() {
   // a fresh Codex session honestly (not a restore). Both still go through the
   // shared spawn dialog so account selection is consistent.
   const resume = (row: ResumeRow) => {
-    setView("hub");
     setResume(false);
-    openLaunch(`resume:${row.id}`, {
-      dir: "row",
-      preferredCli: row.agent,
-      resume: row.agent === "claude" ? row.id : undefined,
-    });
+    // Inline configuring pane (newAgent switches to the Hub). Claude resumes its
+    // transcript via --resume; other CLIs have no backend resume path, so they
+    // honestly start a fresh session of that agent.
+    newAgent(row.agent, row.agent === "claude" ? row.id : undefined);
   };
 
   if (!open) return null;
@@ -410,6 +407,7 @@ function DrawerRow({
   const action = row.agent === "claude" ? "Resume" : "New Codex";
   return (
     <div
+      className="rail-file"
       style={{
         padding: "8px 14px 8px 10px",
         display: "flex",
@@ -420,8 +418,9 @@ function DrawerRow({
         borderBottom: "1px solid var(--bd-soft)",
       }}
     >
-      {/* row 1 — branch + age */}
+      {/* row 1 — agent glyph + branch + age */}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <AgentGlyph agent={row.agent} size={12} color={accent} />
         {row.branch ? (
           <span
             className="mono"
@@ -503,12 +502,7 @@ function DrawerRow({
           </span>
         )}
         <span style={{ flex: 1 }} />
-        <Button
-          size="xs"
-          variant={row.agent === "claude" ? "default" : "outline"}
-          onClick={onResume}
-          disabled={disabled}
-        >
+        <Button size="xs" variant="outline" onClick={onResume} disabled={disabled}>
           {busy ? "Opening…" : action}
         </Button>
       </div>
@@ -533,12 +527,12 @@ function Pill({
       onClick={onClick}
       className="mono"
       style={{
-        padding: "2px 8px",
+        padding: "3px 9px",
         borderRadius: 5,
         fontSize: 10.5,
         background: active ? "var(--bg-3)" : "transparent",
         border: `1px solid ${active ? "var(--bd-soft)" : "transparent"}`,
-        color: active ? "var(--fg-0)" : "var(--fg-3)",
+        color: active ? "var(--fg-0)" : "var(--fg-2)",
         cursor: "pointer",
       }}
     >

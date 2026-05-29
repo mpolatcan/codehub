@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useOverlay } from "../../lib/overlay";
 import { Button } from "../../ui/button";
-import { Input } from "../../ui/input";
 import {
   Dialog,
   DialogContent,
@@ -9,98 +8,64 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../ui/dialog";
+import { Input } from "../../ui/input";
 
 type Sc = { keys: string[]; desc: string };
 
+// EVERY entry here is a real, implemented binding (useKeyboard.ts, or the
+// process-global ⌘⇧J in the Rust backend). No aspirational/fictional rows — the
+// cheat sheet is a contract with the handler. Add a row only when its handler
+// exists, and keep the keys identical to useKeyboard + the matching UI control.
 export const SHORTCUT_GROUPS: { title: string; items: Sc[] }[] = [
   {
     title: "Workspace",
     items: [
-      { keys: ["⌘", "N"], desc: "New agent session" },
-      { keys: ["⌘", "T"], desc: "New workspace tab" },
-      { keys: ["⌘", "W"], desc: "Close current pane" },
+      { keys: ["⌘", "T"], desc: "Open / new workspace" },
+      { keys: ["⌘", "N"], desc: "New agent (current workspace)" },
+      { keys: ["⌘", "⇧", "N"], desc: "New agent in a new group" },
+      { keys: ["⌘", "W"], desc: "Close pane" },
       { keys: ["⌘", "⇧", "W"], desc: "Close workspace tab" },
-      { keys: ["⌘", "\\"], desc: "Split pane vertically" },
-      { keys: ["⌘", "⇧", "\\"], desc: "Split pane horizontally" },
-      { keys: ["⌘", "E"], desc: "Toggle files pane" },
-      { keys: ["⌘", "⇧", "B"], desc: "Toggle shell pane" },
-      { keys: ["⌘", "D"], desc: "Toggle diff inspector" },
+      { keys: ["⌘", "\\"], desc: "Split pane" },
+      { keys: ["⌘", "⇧", "\\"], desc: "Split pane (other axis)" },
+    ],
+  },
+  {
+    title: "Panels",
+    items: [
+      { keys: ["⌘", "E"], desc: "Files" },
+      { keys: ["⌘", "D"], desc: "Diff" },
+      { keys: ["⌘", "J"], desc: "Shell" },
+      { keys: ["⌘", "I"], desc: "Resource graphs" },
+      { keys: ["⌘", "B"], desc: "Sidebar" },
     ],
   },
   {
     title: "Navigation",
     items: [
-      { keys: ["⌘", "1–9"], desc: "Jump to workspace tab" },
+      { keys: ["⌘", "1–9"], desc: "Jump to tab" },
       { keys: ["⌘", "["], desc: "Previous tab" },
       { keys: ["⌘", "]"], desc: "Next tab" },
       { keys: ["⌘", "K"], desc: "Command palette" },
-      { keys: ["⌘", "⇧", "F"], desc: "Search across sessions" },
-      { keys: ["⌘", "⇧", "J"], desc: "Expand dynamic island" },
-      { keys: ["⌥", "tab"], desc: "Cycle agent panes" },
-      { keys: ["⌘", "⇧", "P"], desc: "Pin / docks sidebar" },
-      { keys: ["⌘", "↑"], desc: "Top of scrollback" },
-    ],
-  },
-  {
-    title: "Agent · Turn",
-    items: [
-      { keys: ["↵"], desc: "Send / approve" },
-      { keys: ["⇧", "↵"], desc: "New line in prompt" },
-      { keys: ["⌘", "↵"], desc: "Send to all visible agents" },
-      { keys: ["esc"], desc: "Cancel turn" },
-      { keys: ["⌘", "."], desc: "Stop agent" },
-      { keys: ["⌘", "R"], desc: "Restart turn from last prompt" },
-      { keys: ["⌘", "⇧", "R"], desc: "Restart with same context" },
-      { keys: ["⌘", "Z"], desc: "Undo last agent edit" },
-      { keys: ["tab"], desc: "Cycle auto-mode" },
+      { keys: ["esc"], desc: "Exit focus / close overlay" },
     ],
   },
   {
     title: "System",
     items: [
-      { keys: ["⌘", ","], desc: "Open settings" },
-      { keys: ["?"], desc: "This help" },
+      { keys: ["⌘", ","], desc: "Settings" },
       { keys: ["⌘", "⇧", "L"], desc: "Cycle theme (dark / gray / light)" },
-      { keys: ["⌘", "⇧", "C"], desc: "Toggle companion" },
-      { keys: ["⌘", "⇧", "N"], desc: "New workspace" },
-      { keys: ["⌘", "⌥", "I"], desc: "Open dev tools" },
-      { keys: ["⌘", "Q"], desc: "Quit CodeHub" },
+      { keys: ["⌘", "⇧", "J"], desc: "Expand companion" },
+      { keys: ["⌘", "/"], desc: "This help" },
+      { keys: ["?"], desc: "This help" },
     ],
   },
   {
-    title: "Diff Inspector",
+    title: "In a terminal pane",
     items: [
-      { keys: ["j", "k"], desc: "Next / previous hunk" },
-      { keys: ["s"], desc: "Stage hunk" },
-      { keys: ["u"], desc: "Unstage hunk" },
-      { keys: ["⌘", "P"], desc: "Open PR…" },
-      { keys: ["c"], desc: "Commit staged" },
-    ],
-  },
-  {
-    title: "Container",
-    items: [
-      { keys: ["⌘", "⇧", "X"], desc: "Exec shell in container" },
-      { keys: ["⌘", "⌥", "R"], desc: "Restart container" },
-      { keys: ["⌘", "⌥", "."], desc: "Stop container" },
-      { keys: ["⌘", "⌥", "L"], desc: "Tail container logs" },
-    ],
-  },
-  {
-    title: "Selection / Scroll",
-    items: [
-      { keys: ["⌘", "F"], desc: "Find in pane" },
-      { keys: ["⌘", "A"], desc: "New agent (split)" },
-      { keys: ["⌘", "C"], desc: "Copy" },
-      { keys: ["⌘", "⇧", "V"], desc: "Paste as plain" },
-      { keys: ["/"], desc: "Search scrollback" },
-    ],
-  },
-  {
-    title: "Accounts",
-    items: [
-      { keys: ["⌘", "⇧", "A"], desc: "Switch account on active pane" },
-      { keys: ["⌘", "⌥", "B"], desc: "Open billing" },
+      { keys: ["↵"], desc: "Send to the agent" },
+      { keys: ["⇧", "↵"], desc: "New line" },
+      { keys: ["esc"], desc: "Cancel the current turn" },
+      { keys: ["⌘", "C"], desc: "Copy selection" },
     ],
   },
 ];
@@ -239,15 +204,9 @@ export function Shortcuts() {
             background: "var(--bg-1)",
           }}
         >
-          <p
-            className="mono"
-            style={{ margin: 0, fontSize: 11, color: "var(--fg-3)", flex: 1 }}
-          >
+          <p className="mono" style={{ margin: 0, fontSize: 11, color: "var(--fg-3)", flex: 1 }}>
             vim-style keys also work inside terminal panes (handled by tmux)
           </p>
-          <Button variant="outline" size="sm" onClick={() => {}}>
-            Customize…
-          </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             Print
           </Button>

@@ -1,8 +1,11 @@
 /**
- * Dashboard — read-only overview of the workspace runtime, laid out to match
- * design/screens/dashboard.jsx exactly: a 5-metric row, a sessions table beside
- * an attention queue + runtime resource card, then an activity chart beside a
- * per-agent token-usage card.
+ * Dashboard — read-only overview of the workspace runtime. A 5-metric row, a
+ * sessions table beside an attention queue + runtime resource card, a full-width
+ * activity chart, then the Usage analytics section (per-agent token/cost detail).
+ *
+ * Each value appears in exactly ONE place — the live overview (top metrics +
+ * sessions + activity) and the all-time Usage analytics deliberately do not
+ * restate each other (the top metrics are 24h/live windows; Usage is all-time).
  *
  * The design mocks a multi-container fleet with rich per-row telemetry and a
  * multi-account billing card. CodeHub's current reads expose workspace
@@ -17,16 +20,17 @@
  *    design's 42% gauge is impossible — the gauge is dropped, the count kept.
  *  - Sessions table: Session/Status real; Task = the session's latest activity
  *    message; Branch = the active /workspace branch (one repo, not per-row); Turns
- *    + Tokens real for Claude (transcript id), em-dash for Codex/Antigravity; the
- *    per-pane CPU column is dropped (only container-wide stats exist); $ is
- *    em-dash (no per-session model split). All/Running filter is real; "Mine" is
- *    dropped (single user).
+ *    + Tokens real for Claude (transcript id), em-dash for Codex/Antigravity. The
+ *    per-pane CPU and per-session $ columns are dropped (no per-pane stats nor
+ *    per-session model split exist — cost lives only in Usage analytics).
+ *    All/Running filter is real; "Mine" is dropped (single user).
  *  - Right card: real pending_prompts attention queue + runtime resource bar
  *    (container_stats cpu/mem) in place of the design's per-workspace fan-out.
  *  - Activity chart: turns/hour by agent from session_activity_history (Claude +
  *    Codex; Antigravity never emits hook events, so no third series).
- *  - Token usage card: per-agent real totals (Claude/Codex), the closest-real
- *    stand-in for the design's per-account billing rows.
+ *  - Usage analytics: per-agent real totals + by-model breakdown (Claude/Codex),
+ *    the closest-real stand-in for the design's per-account billing rows;
+ *    Antigravity is a one-line "not installed" note (no readable usage data).
  *
  * Honesty contract: absent data → em-dash / honest-empty, never fabricated.
  */
@@ -36,7 +40,6 @@ import { Segmented } from "@/app/components/primitives/Segmented";
 import { Spark } from "@/app/components/primitives/Spark";
 import { StatusBadge } from "@/app/components/primitives/StatusBadge";
 import type { StatusKey } from "@/app/components/primitives/StatusDot";
-import { Tag } from "@/app/components/primitives/Tag";
 import { Ico } from "@/app/components/primitives/icons";
 import { MODE_BY_ID } from "@/app/lib/catalog";
 import {
@@ -54,7 +57,6 @@ import {
   type TokenTotals,
   ipc,
 } from "@/app/lib/ipc";
-import { useLauncher } from "@/app/lib/launcher";
 import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
 import { useEffect, useMemo, useState } from "react";
@@ -68,7 +70,7 @@ export function Dashboard() {
   const workspaces = useStore((s) => s.workspaces);
   const focusSession = useStore((s) => s.focusSession);
   const setView = useStore((s) => s.setView);
-  const openLaunch = useLauncher((s) => s.open);
+  const newAgent = useStore((s) => s.newAgent);
   // App-wide polls (single source): active runtime stats + /workspace git status.
   const stats = useStore((s) => s.containerStats);
   const git = useStore((s) => s.gitStatus);
@@ -155,9 +157,15 @@ export function Dashboard() {
       ),
       poll(
         () => ipc.codexRateLimits(),
-        (v) => { setRates(v); setUsageLoaded(true); },
+        (v) => {
+          setRates(v);
+          setUsageLoaded(true);
+        },
         10000,
-        () => { setRates(null); setUsageLoaded(true); },
+        () => {
+          setRates(null);
+          setUsageLoaded(true);
+        },
       ),
       poll(
         () => ipc.claudeIntegrations().then((i) => i.account),
@@ -258,13 +266,9 @@ export function Dashboard() {
   // ── Usage analytics computed values ────────────────────────────────────────
   const claudeHas = claude !== null && claude.turns > 0;
   const codexHas = codex !== null && codex.turns > 0;
-  const totalTokens =
-    (claude ? claude.totals.input + claude.totals.output : 0) +
-    (codex ? codex.totals.input + codex.totals.output : 0);
   const totalTurns = allTurns;
   const totalCost = allCost;
   const totalSessions = (claude?.sessions ?? 0) + (codex?.sessions ?? 0);
-  const avgPerTurn = totalTurns > 0 ? totalCost / totalTurns : 0;
   const claudeCount = claude?.sessions ?? 0;
   const codexCount = codex?.sessions ?? 0;
   const showClaude = usageFilter === "all" || usageFilter === "claude";
@@ -284,9 +288,9 @@ export function Dashboard() {
       .catch((e) => console.warn("respond_prompt failed", e));
   };
 
-  // header sub: agents · workspaces · today's est cost (all real).
+  // header sub: agents · workspaces (cost lives in the Cost·24h metric, not here).
   const headerSub = running
-    ? `${sessions.length} agent${sessions.length === 1 ? "" : "s"} · ${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"}${haveUsage ? ` · ${fmtUsd(costToday)} today` : ""}`
+    ? `${sessions.length} agent${sessions.length === 1 ? "" : "s"} · ${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"}`
     : `runtime ${state}`;
 
   // Apply the table filter.
@@ -315,7 +319,7 @@ export function Dashboard() {
             {headerSub}
           </span>
           <span style={{ flex: 1 }} />
-          <Button size="sm" onClick={() => openLaunch("newtab")}>
+          <Button size="sm" onClick={() => newAgent()}>
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {Ico.plus}New agent
             </span>
@@ -389,12 +393,20 @@ export function Dashboard() {
             display: "grid",
             gridTemplateColumns: "minmax(0, 1fr) clamp(280px, 22%, 360px)",
             gap: 12,
-            flex: 1,
-            minHeight: 200,
           }}
         >
           {/* table */}
-          <div className="ch-card" style={{ padding: 0, minWidth: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div
+            className="ch-card"
+            style={{
+              padding: 0,
+              minWidth: 0,
+              minHeight: 264,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
             <div
               style={{
                 padding: "12px 16px",
@@ -446,7 +458,6 @@ export function Dashboard() {
                     <Th>Branch</Th>
                     <Th align="right">Turns</Th>
                     <Th align="right">Tokens</Th>
-                    <Th align="right">$</Th>
                     <Th />
                   </tr>
                 </thead>
@@ -527,13 +538,6 @@ export function Dashboard() {
                           </span>
                         </Td>
                         <Td align="right">
-                          {/* per-session cost has no per-model split in the live
-                              tally — honest em-dash; aggregate is in Token usage. */}
-                          <span className="mono tnum" style={{ color: "var(--fg-3)" }}>
-                            —
-                          </span>
-                        </Td>
-                        <Td align="right">
                           <IconBtn
                             title="Open in Hub"
                             onClick={(e) => {
@@ -555,7 +559,7 @@ export function Dashboard() {
           {/* attention queue + workspace resource bar (one card, design layout) */}
           <div
             className="ch-card"
-            style={{ display: "flex", flexDirection: "column", minWidth: 0 }}
+            style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 264 }}
           >
             <div
               style={{
@@ -684,46 +688,29 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* BOTTOM: activity chart + per-agent token usage */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-          <div className="ch-card" style={{ padding: 16, minWidth: 0 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                gap: 14,
-                marginBottom: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
-                Activity · last 24h
-              </span>
-              <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
-                turns / hour
-              </span>
-              <span style={{ flex: 1 }} />
-              <Legend color="var(--a-claude)" label="Claude" />
-              <Legend color="var(--a-codex)" label="Codex" />
-            </div>
-            <ActivityChart history={history} sessionMeta={sessionMeta} running={running} />
+        {/* BOTTOM: full-width activity chart (per-agent token usage now lives only
+            in the Usage analytics section below — no duplicate mini-card here). */}
+        <div className="ch-card" style={{ padding: 16, minWidth: 0, marginTop: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 14,
+              marginBottom: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+              Activity · last 24h
+            </span>
+            <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
+              turns / hour
+            </span>
+            <span style={{ flex: 1 }} />
+            <Legend color="var(--a-claude)" label="Claude" />
+            <Legend color="var(--a-codex)" label="Codex" />
           </div>
-
-          <div className="ch-card" style={{ padding: 16, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
-                Token usage
-              </span>
-              <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
-                all-time · est. cost
-              </span>
-              <span style={{ flex: 1 }} />
-              <Button size="sm" variant="ghost" onClick={exportCsv} disabled={!running || (!claudeHas && !codexHas)}>
-                Export CSV
-              </Button>
-            </div>
-            <AgentUsageRows claude={claude} codex={codex} running={running} />
-          </div>
+          <ActivityChart history={history} sessionMeta={sessionMeta} running={running} />
         </div>
 
         {/* ── USAGE ANALYTICS (formerly the standalone Usage screen) ────────── */}
@@ -748,50 +735,11 @@ export function Dashboard() {
             </Button>
           </div>
 
-          {/* aggregate strip */}
+          {/* agent filter (aggregate totals live in the section header above;
+              per-agent detail in the cards below — no duplicate strip) */}
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 12,
-              marginBottom: 14,
-            }}
-          >
-            <UsageSummaryCell
-              label="tokens · all-time"
-              value={running ? fmtNum(totalTokens) : "—"}
-              subtle={running ? "input + output · Claude + Codex" : "runtime not running"}
-            />
-            <UsageSummaryCell
-              label="est. cost · all-time"
-              value={running ? `≈ ${fmtUsd(totalCost)}` : "—"}
-              subtle="estimate — not billed"
-            />
-            <UsageSummaryCell
-              label="turns · all-time"
-              value={running ? String(totalTurns) : "—"}
-              subtle={
-                running && totalTurns > 0 ? `${fmtUsd(avgPerTurn)} est. avg / turn` : "no turns yet"
-              }
-            />
-            <UsageSummaryCell
-              label="sessions · all-time"
-              value={running ? String(totalSessions) : "—"}
-              subtle={running ? `Claude ${claudeCount} · Codex ${codexCount}` : "—"}
-            />
-            <UsageSummaryCell
-              label="codex quota"
-              value={running ? rateHeadline(rates) : "—"}
-              subtle={running ? rateHeadlineSub(rates) : "runtime not running"}
-              tone={rateTone(rates)}
-            />
-          </div>
-
-          {/* agent filter */}
-          <div
-            style={{
-              padding: "10px 0",
-              marginBottom: 12,
+              padding: "2px 0 14px",
               display: "flex",
               alignItems: "center",
               gap: 10,
@@ -807,10 +755,6 @@ export function Dashboard() {
                 { key: "antigravity", label: "Antigravity · 0" },
               ]}
             />
-            <span style={{ flex: 1 }} />
-            <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
-              {running ? `updated ${fmtSince(updatedAt)}` : "runtime offline"}
-            </span>
           </div>
 
           {/* per-agent cards */}
@@ -820,7 +764,9 @@ export function Dashboard() {
             ) : !usageLoaded ? (
               <UsageNote>Reading session transcripts…</UsageNote>
             ) : claude === null && codex === null ? (
-              <UsageNote>No session transcripts found — start an agent to begin tracking usage.</UsageNote>
+              <UsageNote>
+                No session transcripts found — start an agent to begin tracking usage.
+              </UsageNote>
             ) : (
               <>
                 {showClaude &&
@@ -831,8 +777,7 @@ export function Dashboard() {
                       totals={claudeTotalsToCard(claude as ClaudeUsage)}
                       rateMeters={null}
                       plan={claudeAccount?.plan ?? null}
-                      onNew={() => openLaunch("newtab")}
-                      onExport={exportCsv}
+                      onNew={() => newAgent("claude")}
                     />
                   ) : (
                     <EmptyAgentCard
@@ -843,7 +788,7 @@ export function Dashboard() {
                           : "No Claude turns recorded yet. Usage appears once an agent responds."
                       }
                       source="on-disk transcripts"
-                      onNew={() => openLaunch("newtab")}
+                      onNew={() => newAgent("claude")}
                     />
                   ))}
 
@@ -855,8 +800,7 @@ export function Dashboard() {
                       totals={codexTotalsToTokenTotals(codex as CodexUsage)}
                       rateMeters={rates}
                       plan={rates?.planType ?? null}
-                      onNew={() => openLaunch("newtab")}
-                      onExport={exportCsv}
+                      onNew={() => newAgent("codex")}
                     />
                   ) : (
                     <EmptyAgentCard
@@ -870,18 +814,30 @@ export function Dashboard() {
                       rateNote={
                         rates === null ? "No rate-limit data on disk yet." : rateHeadlineSub(rates)
                       }
-                      onNew={() => openLaunch("newtab")}
+                      onNew={() => newAgent("codex")}
                     />
                   ))}
 
                 {showAntigravity && (
-                  <EmptyAgentCard
-                    agent="antigravity"
-                    note="Not installed in the runtime image — no readable usage data."
-                    source="runtime image"
-                    rateNote="No local Antigravity reader is available."
-                    disabled
-                  />
+                  <div
+                    className="ch-card"
+                    style={{
+                      padding: "12px 16px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 11,
+                      opacity: 0.7,
+                    }}
+                  >
+                    <AgentGlyph agent="antigravity" size={18} color="var(--a-antigravity)" />
+                    <span style={{ fontSize: 12.5, color: "var(--fg-1)" }}>
+                      {AGENT_META.antigravity.name}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                      not installed in runtime image · no usage data
+                    </span>
+                  </div>
                 )}
               </>
             )}
@@ -1016,78 +972,138 @@ function ActivityChart({
     }
   }
 
-  if (!any) {
-    return (
-      <div
-        className="mono"
-        style={{
-          height: 146,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 11,
-          color: "var(--fg-3)",
-          textAlign: "center",
-          lineHeight: 1.5,
-        }}
-      >
-        {running ? "No turn activity in the last 24h." : "Runtime not running — no activity feed."}
-      </div>
-    );
-  }
+  const max = any ? Math.max(1, ...claude.map((c, i) => c + codex[i])) : 1;
+  const PLOT = 200;
+  const GUTTER = 30;
+  // 5 evenly-spaced rules; the bottom one (0) is the solid baseline/x-axis.
+  const rules = [0, 0.25, 0.5, 0.75, 1];
 
-  const max = Math.max(1, ...claude.map((c, i) => c + codex[i]));
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 120 }}>
-        {claude.map((c, i) => {
-          const x = codex[i];
-          return (
+      <div style={{ display: "flex", gap: 8 }}>
+        {/* y-axis gutter — only labels the scale when there's data to scale */}
+        <div
+          className="mono tnum"
+          style={{
+            position: "relative",
+            width: GUTTER,
+            height: PLOT,
+            flexShrink: 0,
+            fontSize: 9.5,
+            color: "var(--fg-3)",
+          }}
+        >
+          {any && (
+            <>
+              <span style={{ position: "absolute", top: -4, right: 0 }}>{max}</span>
+              <span style={{ position: "absolute", bottom: -4, right: 0 }}>0</span>
+            </>
+          )}
+        </div>
+
+        {/* plot — gridlines always render so an empty window reads as a calm
+            chart with an overlaid note, not a blank rectangle */}
+        <div style={{ position: "relative", flex: 1, height: PLOT, minWidth: 0 }}>
+          {rules.map((f) => (
             <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: 24 fixed hourly buckets, never reordered.
-              key={i}
-              title={`${hourLabel(now - (23 - i) * 3600000)} · claude ${c} · codex ${x}`}
+              key={f}
               style={{
-                flex: 1,
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: `${f * 100}%`,
+                height: 1,
+                background: f === 0 ? "var(--bd)" : "var(--bd-soft)",
+                opacity: f === 0 ? 1 : 0.7,
+              }}
+            />
+          ))}
+
+          {any && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
                 display: "flex",
-                flexDirection: "column",
-                justifyContent: "flex-end",
-                gap: 1,
+                alignItems: "flex-end",
+                gap: 3,
               }}
             >
-              <div
-                style={{
-                  height: `${(x / max) * 100}%`,
-                  background: "var(--a-codex)",
-                  minHeight: x > 0 ? 2 : 0,
-                  borderRadius: "2px 2px 0 0",
-                }}
-              />
-              <div
-                style={{
-                  height: `${(c / max) * 100}%`,
-                  background: "var(--a-claude)",
-                  minHeight: c > 0 ? 2 : 0,
-                }}
-              />
+              {claude.map((c, i) => {
+                const x = codex[i];
+                return (
+                  <div
+                    // biome-ignore lint/suspicious/noArrayIndexKey: 24 fixed hourly buckets, never reordered.
+                    key={i}
+                    title={`${hourLabel(now - (23 - i) * 3600000)} · claude ${c} · codex ${x}`}
+                    className="bar-col"
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: `${(x / max) * 100}%`,
+                        background: "var(--a-codex)",
+                        minHeight: x > 0 ? 3 : 0,
+                        borderRadius: "3px 3px 0 0",
+                      }}
+                    />
+                    <div
+                      style={{
+                        height: `${(c / max) * 100}%`,
+                        background: "var(--a-claude)",
+                        minHeight: c > 0 ? 3 : 0,
+                        borderRadius: x > 0 ? 0 : "3px 3px 0 0",
+                      }}
+                    />
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          )}
+
+          {!any && (
+            <div
+              className="mono"
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 11,
+                color: "var(--fg-3)",
+                textAlign: "center",
+              }}
+            >
+              {running
+                ? "No turn activity in the last 24h."
+                : "Runtime not running — no activity feed."}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* hour axis — aligned past the gutter + plot gap */}
       <div
         style={{
           display: "flex",
-          gap: 4,
-          marginTop: 6,
+          gap: 3,
+          marginTop: 7,
+          paddingLeft: GUTTER + 8,
           fontFamily: "var(--mono)",
-          fontSize: 10,
+          fontSize: 9.5,
           color: "var(--fg-3)",
         }}
       >
         {claude.map((_, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: 24 fixed hourly buckets, never reordered.
           <div key={i} style={{ flex: 1, textAlign: "center" }}>
-            {i % 4 === 0 ? hourLabel(now - (23 - i) * 3600000) : "·"}
+            {i % 4 === 0 ? hourLabel(now - (23 - i) * 3600000) : ""}
           </div>
         ))}
       </div>
@@ -1097,128 +1113,6 @@ function ActivityChart({
 
 function hourLabel(epochMs: number): string {
   return `${String(new Date(epochMs).getHours()).padStart(2, "0")}:00`;
-}
-
-// ── per-agent token usage ───────────────────────────────────────────────────
-
-function AgentUsageRows({
-  claude,
-  codex,
-  running,
-}: {
-  claude: ClaudeUsage | null;
-  codex: CodexUsage | null;
-  running: boolean;
-}) {
-  if (!running) {
-    return (
-      <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)", padding: "8px 0" }}>
-        Runtime not running — no usage to read.
-      </div>
-    );
-  }
-  const claudeTok = claude ? claude.totals.input + claude.totals.output : 0;
-  const codexTok = codex ? codex.totals.input + codex.totals.output : 0;
-  const maxTok = Math.max(1, claudeTok, codexTok);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-      <UsageRow
-        agent="claude"
-        ready={claude !== null}
-        tokens={claudeTok}
-        turns={claude?.turns ?? 0}
-        cost={claude?.estCostUsd ?? 0}
-        pct={claudeTok / maxTok}
-      />
-      <UsageRow
-        agent="codex"
-        ready={codex !== null}
-        tokens={codexTok}
-        turns={codex?.turns ?? 0}
-        cost={codex?.estCostUsd ?? 0}
-        pct={codexTok / maxTok}
-      />
-      <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: 0.6 }}>
-        <AgentGlyph agent="antigravity" size={16} color="var(--a-antigravity)" />
-        <span style={{ flex: 1, fontSize: 12.5, color: "var(--fg-2)" }}>
-          {AGENT_META.antigravity.name}
-        </span>
-        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-          not installed — no usage data
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function UsageRow({
-  agent,
-  ready,
-  tokens,
-  turns,
-  cost,
-  pct,
-}: {
-  agent: "claude" | "codex";
-  ready: boolean;
-  tokens: number;
-  turns: number;
-  cost: number;
-  pct: number;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <AgentGlyph agent={agent} size={16} color={`var(--a-${agent})`} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-          <span style={{ fontSize: 12.5, color: "var(--fg-0)" }}>{AGENT_META[agent].name}</span>
-          <span style={{ flex: 1 }} />
-          {ready ? (
-            <span
-              className="mono tnum"
-              style={{ fontSize: 10.5, color: "var(--fg-2)", whiteSpace: "nowrap" }}
-            >
-              {turns} turns
-            </span>
-          ) : (
-            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-              reading…
-            </span>
-          )}
-        </div>
-        <div
-          style={{ height: 4, background: "var(--bg-3)", borderRadius: 999, overflow: "hidden" }}
-        >
-          <div
-            style={{
-              width: `${ready ? Math.max(2, pct * 100) : 0}%`,
-              height: "100%",
-              background: `var(--a-${agent})`,
-            }}
-          />
-        </div>
-      </div>
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          fontFamily: "var(--mono)",
-          fontSize: 11,
-          color: "var(--fg-1)",
-          whiteSpace: "nowrap",
-        }}
-      >
-        <span className="tnum">
-          <span style={{ color: "var(--fg-3)" }}>tok </span>
-          {ready ? fmtNum(tokens) : "—"}
-        </span>
-        <span className="tnum" style={{ color: ready ? "var(--fg-1)" : "var(--fg-3)" }}>
-          {ready ? `≈ ${fmtUsd(cost)}` : "—"}
-        </span>
-      </div>
-    </div>
-  );
 }
 
 // ── table cells / legend ────────────────────────────────────────────────────
@@ -1411,7 +1305,8 @@ function fmtResets(resetsAt: string): string {
 
 // ── Usage analytics components ─────────────────────────────────────────────
 // Migrated from the standalone Usage screen into Dashboard as a scrollable
-// extension below the Activity + Token usage row.
+// extension below the activity chart — the single home for all-time per-agent
+// token/cost detail (the top metrics row stays 24h/live, never restated here).
 
 interface CardTokenTotals {
   input: number;
@@ -1427,7 +1322,6 @@ function AgentUsageCard({
   rateMeters,
   plan,
   onNew,
-  onExport,
 }: {
   agent: "claude" | "codex";
   usage: ClaudeUsage | CodexUsage;
@@ -1435,7 +1329,6 @@ function AgentUsageCard({
   rateMeters: CodexRateLimits | null;
   plan: string | null;
   onNew: () => void;
-  onExport: () => void;
 }) {
   const tokens = totals.input + totals.output;
   const spark = (usage.byDay as Array<DayUsage | CodexDayUsage>)
@@ -1610,26 +1503,18 @@ function AgentUsageCard({
 
       <div
         style={{
-          flex: "0 0 160px",
+          flex: "0 0 156px",
           padding: "16px 18px",
           borderLeft: "1px solid var(--bd-soft)",
           display: "flex",
           flexDirection: "column",
-          gap: 8,
+          justifyContent: "center",
+          gap: 12,
         }}
       >
         <Button size="sm" style={{ width: "100%", justifyContent: "center" }} onClick={onNew}>
           New {AGENT_META[agent].name}
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          style={{ width: "100%", justifyContent: "center" }}
-          onClick={onExport}
-        >
-          Export CSV
-        </Button>
-        <span style={{ flex: 1 }} />
         <div
           className="mono"
           style={{ fontSize: 10, color: "var(--fg-3)", lineHeight: 1.5, textAlign: "center" }}
@@ -1693,10 +1578,14 @@ function ModelRowHead() {
         borderBottom: "1px solid var(--bd-soft)",
       }}
     >
-      <span className="lbl" style={{ flex: 1 }}>model</span>
+      <span className="lbl" style={{ flex: 1 }}>
+        model
+      </span>
       <NumCell head>turns</NumCell>
       <NumCell head>tokens</NumCell>
-      <NumCell head wide>est. cost</NumCell>
+      <NumCell head wide>
+        est. cost
+      </NumCell>
     </div>
   );
 }
@@ -1783,25 +1672,18 @@ function EmptyAgentCard({
   source,
   rateNote,
   onNew,
-  disabled,
 }: {
-  agent: "claude" | "codex" | "antigravity";
+  agent: "claude" | "codex";
   note: string;
   source: string;
   rateNote?: string;
   onNew?: () => void;
-  disabled?: boolean;
 }) {
   const accent = `var(--a-${agent})`;
   return (
     <div
       className="ch-card ch-card-interactive"
-      style={{
-        padding: 0,
-        display: "flex",
-        overflow: "hidden",
-        opacity: disabled ? 0.74 : 1,
-      }}
+      style={{ padding: 0, display: "flex", overflow: "hidden" }}
     >
       <div
         style={{
@@ -1823,7 +1705,7 @@ function EmptyAgentCard({
               waiting for recorded usage
             </div>
           </div>
-          {disabled ? <Tag>not installed</Tag> : <StatusBadge status="idle">Ready</StatusBadge>}
+          <StatusBadge status="idle">Ready</StatusBadge>
         </div>
 
         <div
@@ -1907,70 +1789,29 @@ function EmptyAgentCard({
 
       <div
         style={{
-          flex: "0 0 160px",
+          flex: "0 0 156px",
           padding: "16px 18px",
           borderLeft: "1px solid var(--bd-soft)",
           display: "flex",
           flexDirection: "column",
-          gap: 8,
+          justifyContent: "center",
+          gap: 12,
         }}
       >
         <Button
           size="sm"
           style={{ width: "100%", justifyContent: "center" }}
           onClick={onNew}
-          disabled={disabled || !onNew}
+          disabled={!onNew}
         >
           New {AGENT_META[agent].name}
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          style={{ width: "100%", justifyContent: "center" }}
-          disabled
-        >
-          Export CSV
-        </Button>
-        <span style={{ flex: 1 }} />
         <div
           className="mono"
           style={{ fontSize: 10, color: "var(--fg-3)", lineHeight: 1.5, textAlign: "center" }}
         >
           usage appears after a recorded turn
         </div>
-      </div>
-    </div>
-  );
-}
-
-function UsageSummaryCell({
-  label,
-  value,
-  subtle,
-  tone,
-}: {
-  label: string;
-  value: string;
-  subtle: string;
-  tone?: "warn" | "over";
-}) {
-  const valueColor =
-    tone === "warn" ? "var(--spend-warn)" : tone === "over" ? "var(--spend-over)" : "var(--fg-0)";
-  const subColor = tone === "warn" ? "var(--wait)" : tone === "over" ? "var(--err)" : "var(--fg-2)";
-  return (
-    <div
-      className="ch-card ch-card-interactive"
-      style={{ padding: 14, display: "flex", flexDirection: "column", gap: 4 }}
-    >
-      <div className="lbl">{label}</div>
-      <span
-        className="mono tnum"
-        style={{ fontSize: 28, color: valueColor, fontWeight: 500, letterSpacing: "-0.02em" }}
-      >
-        {value}
-      </span>
-      <div className="mono" style={{ fontSize: 10.5, color: subColor }}>
-        {subtle}
       </div>
     </div>
   );
@@ -2020,11 +1861,6 @@ function modelTokens(m: ClaudeUsage["byModel"][number] | CodexUsage["byModel"][n
 
 function hasAnyRate(r: CodexRateLimits): boolean {
   return r.primaryUsedPct !== null || r.secondaryUsedPct !== null;
-}
-
-function rateHeadline(r: CodexRateLimits | null): string {
-  if (!r || r.primaryUsedPct === null) return "—";
-  return `${r.primaryUsedPct.toFixed(r.primaryUsedPct < 10 ? 1 : 0)}%`;
 }
 
 function rateHeadlineSub(r: CodexRateLimits | null): string {

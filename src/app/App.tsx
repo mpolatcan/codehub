@@ -25,10 +25,8 @@ import { useGitStatusPoll } from "./hooks/useGitStatusPoll";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { listen } from "./lib/bridge";
 import { ipc } from "./lib/ipc";
-import { useLauncher } from "./lib/launcher";
 import { useOverlay } from "./lib/overlay";
 import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
-import { ContainerInspector } from "./screens/ContainerInspector";
 import { Dashboard } from "./screens/Dashboard";
 import { EmptyHero } from "./screens/EmptyState";
 import { NewWorkspace } from "./screens/NewWorkspace";
@@ -97,8 +95,6 @@ export function App() {
         <SessionDetail session={detailSession} />
       ) : view === "hub" ? (
         <HubView />
-      ) : view === "containers" ? (
-        <ContainerInspector />
       ) : view === "settings" ? (
         <Settings />
       ) : view === "dashboard" ? (
@@ -124,13 +120,14 @@ export function App() {
 // right as independent panels.
 function HubView() {
   const active = useStore(activeWorkspace);
-  const openLaunch = useLauncher((s) => s.open);
+  const newAgent = useStore((s) => s.newAgent);
   const hasSaved = useStore(
     (s) => (s.config?.savedWorkspaces?.length ?? 0) > 0 || (s.workspaceContainers?.length ?? 0) > 0,
   );
-  const initialLoadDone = useStore(
-    (s) => s.workspaceContainers !== null && s.dockerInfo !== null,
-  );
+  // Empty-state gate: blank ONLY while the first restore is still in flight.
+  // Keyed off `bootSettled` (which always flips) — never off container/daemon
+  // nullness, which can stick null on IPC error and trap the Hub blank.
+  const bootSettled = useStore((s) => s.bootSettled);
   const files = useOverlay((s) => s.files);
   const setFiles = useOverlay((s) => s.setFiles);
   const diff = useOverlay((s) => s.diff);
@@ -140,6 +137,11 @@ function HubView() {
   const shell = useOverlay((s) => s.shell);
   const resume = useOverlay((s) => s.resume);
   const resumeSide = useOverlay((s) => s.resumeSide);
+  // The launcher is a TAB, not a modal: it fills the content area below the tab
+  // bar (sidebar + tabs stay visible) so opening it feels like a browser new-tab
+  // page rather than a takeover. The launcher tab chip lives in HubTabs.
+  const launcher = useOverlay((s) => s.launcher);
+  const setLauncher = useOverlay((s) => s.setLauncher);
   useActivityPoll();
   useAgentEvents();
 
@@ -161,18 +163,24 @@ function HubView() {
       >
         <RuntimeBanner />
         <HubTabs />
-        {active ? (
+        {launcher ? (
+          // Launcher tab content: recent / resume / create, filling the area
+          // below the tab bar. `onClose` returns to the active workspace.
+          <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+            <Welcome onClose={() => setLauncher(false)} />
+          </div>
+        ) : active ? (
           <>
             <GroupsBar ws={active} />
             <div className="hub-grid" style={{ position: "relative" }}>
               <Grid ws={active} />
               <PromptToasts />
             </div>
-            {shell && <ShellPanel />}
+            <AnimatePresence>{shell && <ShellPanel key="shell" />}</AnimatePresence>
             <WorkspaceBar />
             <ActionBar />
           </>
-        ) : !initialLoadDone ? (
+        ) : !bootSettled ? (
           <div style={{ flex: 1 }} />
         ) : hasSaved ? (
           <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
@@ -180,24 +188,26 @@ function HubView() {
           </div>
         ) : (
           <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-            <EmptyHero
-              onNew={(cli) =>
-                openLaunch("newtab", cli ? { dir: "row", preferredCli: cli } : undefined)
-              }
-            />
+            <EmptyHero onNew={(cli) => newAgent(cli)} />
           </div>
         )}
-        {active && <HubStatusBar />}
+        {/* Bottom region: one element that animates its height between the
+            one-line status bar and the expanded graphs panel (⌘I / its chevron). */}
+        {active && !launcher && <HubStatusBar />}
       </main>
 
-      {active && (
+      {active && !launcher && (
         <>
           <AnimatePresence>
             {diff !== null && <DiffViewer key="diff" path={diff} onClose={() => setDiff(null)} />}
           </AnimatePresence>
           <AnimatePresence>
             {filePreview !== null && (
-              <FilePreview key="filepreview" path={filePreview} onClose={() => setFilePreview(null)} />
+              <FilePreview
+                key="filepreview"
+                path={filePreview}
+                onClose={() => setFilePreview(null)}
+              />
             )}
           </AnimatePresence>
           {resume && resumeSide === "right" && <ResumeDrawer />}

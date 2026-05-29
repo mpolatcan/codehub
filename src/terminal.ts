@@ -45,6 +45,16 @@ const TERM_THEME = {
   brightWhite: "#ecedf0",
 };
 
+// Geist Mono loads async from Google Fonts (display=swap). If xterm measures the
+// character cell at term.open() before the font is available, it sizes to the
+// FALLBACK metrics and never re-measures — every glyph then mis-aligns. Gate
+// pane creation on the mono font so the first measurement is correct. Resolves
+// once at module load, then awaits are instant.
+const MONO_READY: Promise<unknown> =
+  typeof document !== "undefined" && "fonts" in document
+    ? document.fonts.load('400 13px "Geist Mono"').catch(() => {})
+    : Promise.resolve();
+
 // The pane's xterm surface is created once, parked in `stash`, and then moved
 // between split-tree leaf bodies on every layout render. xterm keeps its
 // buffer across reparenting as long as the Terminal is not disposed.
@@ -57,6 +67,9 @@ export async function createPane(
   // flag off → the shared runtime). See lib.rs `docker_for`.
   workspace?: string,
 ): Promise<Pane> {
+  // Don't measure the cell until the mono font is loaded (see MONO_READY).
+  await MONO_READY;
+
   const el = document.createElement("div");
   el.className = "term-surface";
   stash.appendChild(el);
@@ -89,18 +102,29 @@ export async function createPane(
     ta.setAttribute("name", `term-${Math.random().toString(36).slice(2)}`);
   }
 
-  try {
-    const webgl = new WebglAddon();
-    // WKWebView (Tauri's WebKit) drops the WebGL context when the canvas is
-    // reparented between split-tree leaves — which <PaneMount> does on every
-    // split and tab switch — and the addon does not auto-recover, so the pane
-    // renders blank ("terminal disappears"). Dispose it on context loss so
-    // xterm falls back to the DOM renderer, which survives reparenting.
-    webgl.onContextLoss(() => webgl.dispose());
-    term.loadAddon(webgl);
-  } catch {
-    // WebGL unavailable — canvas renderer fallback is automatic.
-  }
+  // GPU-accelerated WebGL renderer. Crisper and cheaper than the DOM renderer
+  // (which flows glyphs inside <span>s, so sub-pixel advance/cell drift fragments
+  // TUI boxes). WKWebView CAN drop the GL context (GPU pressure, sleep/wake), so
+  // we RECOVER on loss: dispose the dead addon and load a fresh one next frame —
+  // the pane repaints instead of blanking. (We do NOT fall back to DOM, which is
+  // permanent and mis-aligns; and the old "crashes on pane close" was actually a
+  // Rules-of-Hooks bug in SessionRow, not the renderer — see CLAUDE.md.) If the
+  // surface is gone (pane closed → el detached) we don't reload.
+  const loadWebgl = () => {
+    try {
+      const addon = new WebglAddon();
+      addon.onContextLoss(() => {
+        addon.dispose();
+        requestAnimationFrame(() => {
+          if (el.isConnected) loadWebgl();
+        });
+      });
+      term.loadAddon(addon);
+    } catch {
+      // WebGL unavailable — xterm falls back to the DOM renderer automatically.
+    }
+  };
+  loadWebgl();
 
   requestAnimationFrame(() => fit.fit());
 

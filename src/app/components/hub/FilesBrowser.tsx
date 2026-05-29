@@ -1,267 +1,500 @@
-import { motion } from "motion/react";
-import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { FileGlyph, FolderGlyph } from "../../components/primitives/FileGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Ico } from "../../components/primitives/icons";
-import { slideLeft } from "../../hooks/useSlideIn";
+import { useResizableDock } from "../../hooks/useResizableDock";
+import { EASE } from "../../hooks/useSlideIn";
 import { fmtBytes, joinPath as join, orderEntries as order } from "../../lib/fs";
-import { type FileEntry, ipc } from "../../lib/ipc";
+import { type FileEntry, type GitStatus, type MountInfo, ipc } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
 import { activeWorkspace, useStore } from "../../lib/store";
 import { Input } from "../../ui/input";
+import { ResizeHandle } from "./ResizeHandle";
 
-// Browses the runtime container's /workspace, one directory at a time
-// (container_list_dir → `find -maxdepth 1`), with a read-only preview of a
-// selected file's first 256 KiB (container_read_file → `head -c`). Both reads
-// are confined to /workspace server-side. Nothing here is fabricated — an empty
-// directory, a down runtime, or a binary file each render an honest line.
+// IDE-style file tree over the runtime container's /workspace. Folders expand
+// inline (lazy — each dir is one `container_list_dir` call, cached + read only on
+// first expand, so big trees like node_modules cost nothing until opened). Files
+// open a read-only highlighted preview (setFilePreview → FilePreview panel).
+// Reads are confined to /workspace server-side; nothing is fabricated.
 //
-// Docked left panel (design/screens/hub-states.jsx FilesPanel), toggled from the
-// hub ActionBar (⌘E). The parent (HubView) mounts it only while open, so a fresh
-// mount starts at the workspace root. Unlike the design's fabricated multi-repo
-// tree, this is the ONE real /workspace mount — narrow enough for a dock, so the
-// listing and the file preview share the column (master ↔ detail) rather than
-// sitting side by side as the old modal did.
+// Docked left panel (⌘E), resizable (useResizableDock). Root /workspace is
+// pre-expanded; the tree resets when the active container changes.
 
 const ROOT = "/workspace";
-// 16rem — matches the design's FilesPanel width.
 const WIDTH = 256;
+const INDENT = 14;
+
+type DirState = FileEntry[] | "loading" | "error";
+
+// A single-letter source-control badge + tint for a changed file (VS Code style).
+type GitDecor = { letter: string; color: string };
+
+// Map a git porcelain XY status code to its badge. Conflicts (any U / AA / DD) →
+// "!"; untracked (`??`) → "U"; otherwise the dominant status char.
+function gitDecor(xy: string): GitDecor | null {
+  const code = xy.trim();
+  if (!code) return null;
+  if (code.includes("U") || code === "AA" || code === "DD")
+    return { letter: "!", color: "var(--err)" };
+  const c = code.replace(/[^A-Z?]/g, "")[0] ?? "";
+  switch (c) {
+    case "A":
+      return { letter: "A", color: "var(--live)" };
+    case "M":
+      return { letter: "M", color: "var(--wait)" };
+    case "D":
+      return { letter: "D", color: "var(--err)" };
+    case "R":
+      return { letter: "R", color: "var(--a-codex)" };
+    case "?":
+      return { letter: "U", color: "var(--live)" };
+    default:
+      return { letter: c, color: "var(--wait)" };
+  }
+}
+
+// Index the polled git status into per-file decorations + the set of ancestor
+// dirs that contain a change (so a folder can show a roll-up dot). Porcelain
+// paths are repo-relative, matching a tree node's path minus the /workspace root.
+function indexGit(g: GitStatus | null): { files: Map<string, GitDecor>; dirs: Set<string> } {
+  const files = new Map<string, GitDecor>();
+  const dirs = new Set<string>();
+  if (g?.isRepo) {
+    for (const f of g.files) {
+      const d = gitDecor(f.status);
+      if (!d) continue;
+      const rel = f.path.replace(/^\.?\//, "");
+      files.set(rel, d);
+      const parts = rel.split("/");
+      for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join("/"));
+    }
+  }
+  return { files, dirs };
+}
+
+interface Tree {
+  expanded: Set<string>;
+  children: Record<string, DirState>;
+  selected: string | null;
+  query: string;
+  // Container dest path (no trailing slash) → its real bind/volume mount.
+  mounts: Map<string, MountInfo>;
+  // Repo-relative path → its git badge; dirs that contain any change.
+  gitFiles: Map<string, GitDecor>;
+  changedDirs: Set<string>;
+  toggle: (path: string) => void;
+  open: (path: string) => void;
+}
 
 export function FilesBrowser({ onClose }: { onClose: () => void }) {
-  const [cwd, setCwd] = useState(ROOT);
-  const [entries, setEntries] = useState<FileEntry[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
   const setFilePreview = useOverlay((s) => s.setFilePreview);
+  const selected = useOverlay((s) => s.filePreview);
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
+  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.files.w", WIDTH, {
+    min: 200,
+    max: 520,
+    edge: "right",
+  });
 
-  // Load the listing whenever the directory (or active container) changes.
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([ROOT]));
+  const [children, setChildren] = useState<Record<string, DirState>>({});
+
+  // Git decorations come from the app-wide git-status poll (store); mounts are
+  // fetched once per container (docker inspect, rarely changes).
+  const gitStatus = useStore((s) => s.gitStatus);
+  const git = useMemo(() => indexGit(gitStatus), [gitStatus]);
+  const [mounts, setMounts] = useState<MountInfo[]>([]);
   useEffect(() => {
+    if (!containerKey) {
+      setMounts([]);
+      return;
+    }
     let alive = true;
-    setEntries(null);
-    setErr(null);
     ipc
-      .containerListDir(cwd, containerKey)
-      .then((e) => alive && setEntries(e))
-      .catch((e) => {
-        if (alive) {
-          setEntries([]);
-          setErr(String(e));
-        }
-      });
+      .containerMounts(containerKey)
+      .then((m) => alive && setMounts(m))
+      .catch(() => alive && setMounts([]));
     return () => {
       alive = false;
     };
-  }, [cwd, containerKey]);
+  }, [containerKey]);
+  const mountMap = useMemo(
+    () => new Map(mounts.map((m) => [m.destination.replace(/\/+$/, ""), m])),
+    [mounts],
+  );
 
-  const enter = (e: FileEntry) => {
-    if (e.kind === "dir") {
-      setQuery("");
-      setCwd(join(cwd, e.name));
-    } else if (e.kind === "file") {
-      setFilePreview(join(cwd, e.name));
-    }
+  const load = useCallback(
+    (path: string) => {
+      setChildren((c) => ({ ...c, [path]: "loading" }));
+      ipc
+        .containerListDir(path, containerKey)
+        .then((e) => setChildren((c) => ({ ...c, [path]: e })))
+        .catch(() => setChildren((c) => ({ ...c, [path]: "error" })));
+    },
+    [containerKey],
+  );
+
+  // (Re)load the root whenever the active container changes — and reset the tree
+  // so one container's listing never bleeds into another's.
+  useEffect(() => {
+    setChildren({});
+    setExpanded(new Set([ROOT]));
+    load(ROOT);
+  }, [load]);
+
+  const toggle = useCallback(
+    (path: string) => {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+          setChildren((c) => {
+            if (!c[path]) load(path);
+            return c;
+          });
+        }
+        return next;
+      });
+    },
+    [load],
+  );
+
+  const open = useCallback((path: string) => setFilePreview(path), [setFilePreview]);
+
+  const tree: Tree = {
+    expanded,
+    children,
+    selected,
+    query: query.trim().toLowerCase(),
+    mounts: mountMap,
+    gitFiles: git.files,
+    changedDirs: git.dirs,
+    toggle,
+    open,
   };
 
-  // Client-side name filter over the loaded listing (honest — narrows what the
-  // single directory read returned, never reaches beyond it).
-  const q = query.trim().toLowerCase();
-  const rows = entries ? order(entries).filter((e) => !q || e.name.toLowerCase().includes(q)) : [];
+  const root = children[ROOT];
+  const rootRows = Array.isArray(root) ? filterDir(root, tree.query) : [];
 
   return (
     <motion.aside
-      {...slideLeft}
-      style={{
-        width: WIDTH,
-        flexShrink: 0,
-        background: "var(--bg-1)",
-        borderRight: "1px solid var(--bd-soft)",
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-        color: "var(--fg-1)",
-      }}
+      ref={ref}
+      initial={{ width: 0 }}
+      animate={{ width: size }}
+      exit={{ width: 0 }}
+      transition={{ duration: dragging ? 0 : 0.28, ease: EASE }}
+      style={{ flexShrink: 0, overflow: "hidden", position: "relative" }}
     >
+      {/* fixed-width inner so content doesn't reflow while the outer width animates */}
       <div
         style={{
-          padding: "8px 10px",
-          borderBottom: "1px solid var(--bd-soft)",
+          width: size,
+          height: "100%",
+          background: "var(--bg-1)",
+          borderRight: "1px solid var(--bd-soft)",
           display: "flex",
-          alignItems: "center",
-          gap: 7,
+          flexDirection: "column",
+          minHeight: 0,
+          color: "var(--fg-1)",
         }}
       >
-        <span style={{ color: "var(--idle)", display: "inline-flex" }}>{Ico.files}</span>
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>Files</span>
-        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-          {entries === null ? "…" : `${rows.length}`}
-        </span>
-        <span style={{ flex: 1 }} />
-        <IconBtn title="Hide files panel (⌘E)" onClick={onClose}>
-          {Ico.close}
-        </IconBtn>
-      </div>
-
-      <div style={{ padding: "8px 10px 0" }}>
-        <Input
-          className="mono h-auto rounded-[5px] px-2 py-1 text-[11.5px]"
-          placeholder="filter by name…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-        />
-      </div>
-      <div style={{ padding: "8px 10px 6px" }}>
-        <Crumbs
-          cwd={cwd}
-          onNav={(p) => {
-            setQuery("");
-            setCwd(p);
+        <div
+          style={{
+            padding: "8px 10px",
+            borderBottom: "1px solid var(--bd-soft)",
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
           }}
-        />
-      </div>
-      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "0 8px 8px" }}>
-        {entries === null ? (
-          <Note>Reading {cwd}…</Note>
-        ) : err ? (
-          <Note>{err}</Note>
-        ) : rows.length === 0 ? (
-          <Note>{q ? "No files match the filter." : "Empty directory."}</Note>
-        ) : (
-          rows.map((e) => (
-            <EntryRow
-              key={e.name}
-              entry={e}
-              active={false}
-              onClick={() => enter(e)}
-            />
-          ))
-        )}
-      </div>
-      <div
-        style={{
-          padding: "7px 10px",
-          borderTop: "1px solid var(--bd-soft)",
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          fontFamily: "var(--mono)",
-          fontSize: 10,
-          color: "var(--fg-3)",
-          minHeight: 28,
-        }}
-      >
-        <span style={{ color: containerKey ? "var(--live)" : "var(--fg-3)" }}>
-          {containerKey ? "● live" : "no workspace"}
-        </span>
-        <span>{entries === null ? "reading" : `${rows.length} visible`}</span>
-        {entries !== null && q && <span style={{ color: "var(--wait)" }}>filtered</span>}
-        <span style={{ flex: 1 }} />
-        <span
-          title={cwd}
-          style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
         >
-          {cwd}
-        </span>
+          <span style={{ color: "var(--idle)", display: "inline-flex" }}>{Ico.files}</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>Files</span>
+          <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+            {Array.isArray(root) ? rootRows.length : "…"}
+          </span>
+          <span style={{ flex: 1 }} />
+          <IconBtn title="Hide files panel (⌘E)" onClick={onClose}>
+            {Ico.close}
+          </IconBtn>
+        </div>
+
+        <div style={{ padding: "8px 10px 6px" }}>
+          <Input
+            className="mono h-auto rounded-[5px] px-2 py-1 text-[11.5px]"
+            placeholder="filter by name…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+          />
+        </div>
+
+        <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "2px 6px 8px" }}>
+          {root === undefined || root === "loading" ? (
+            <Note>Reading /workspace…</Note>
+          ) : root === "error" ? (
+            <Note>Could not read /workspace.</Note>
+          ) : rootRows.length === 0 ? (
+            <Note>{tree.query ? "No files match the filter." : "Empty workspace."}</Note>
+          ) : (
+            rootRows.map((e) => (
+              <TreeNode key={e.name} entry={e} path={join(ROOT, e.name)} depth={0} tree={tree} />
+            ))
+          )}
+        </div>
+
+        <div
+          style={{
+            padding: "7px 10px",
+            borderTop: "1px solid var(--bd-soft)",
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            fontFamily: "var(--mono)",
+            fontSize: 10,
+            color: "var(--fg-3)",
+            minHeight: 28,
+          }}
+        >
+          {tree.query && <span style={{ color: "var(--wait)" }}>filtered</span>}
+          <span style={{ flex: 1 }} />
+          {/* Mounts — the link icon's tooltip lists every host↔container bind so
+              "all mounted folders" is visible even when (as usual) the only mount
+              is /workspace itself (a root, not a tree node) plus the out-of-tree
+              /config. Nested mounts under /workspace also get a badge in-tree. */}
+          <span
+            title={
+              mounts.length
+                ? mounts
+                    .map((m) => `${m.source} → ${m.destination}${m.rw ? "" : " (ro)"}`)
+                    .join("\n")
+                : ROOT
+            }
+            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            {mounts.length > 0 && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  color: "var(--a-codex)",
+                  opacity: 0.85,
+                  transform: "scale(0.78)",
+                }}
+              >
+                {Ico.link}
+              </span>
+            )}
+            {ROOT}
+          </span>
+        </div>
       </div>
+      <ResizeHandle edge="right" onMouseDown={beginResize} onDoubleClick={reset} />
     </motion.aside>
   );
 }
 
-// Clickable path segments. The leading "/workspace" is one crumb; deeper
-// segments each navigate to that ancestor. The last crumb is the current dir.
-function Crumbs({ cwd, onNav }: { cwd: string; onNav: (path: string) => void }) {
-  const segs = cwd.split("/").filter(Boolean); // ["workspace", "a", "b"]
+// Dirs first, alphabetical, then name-filtered (substring). Applied at each level.
+function filterDir(entries: FileEntry[], q: string): FileEntry[] {
+  const ordered = order(entries);
+  return q ? ordered.filter((e) => e.name.toLowerCase().includes(q)) : ordered;
+}
+
+function TreeNode({
+  entry,
+  path,
+  depth,
+  tree,
+}: {
+  entry: FileEntry;
+  path: string;
+  depth: number;
+  tree: Tree;
+}) {
+  const isDir = entry.kind === "dir";
+  const open = tree.expanded.has(path);
+  const active = tree.selected === path;
+  const kids = tree.children[path];
+
+  // Decorations keyed off the node's repo-relative path (container path minus
+  // the /workspace root): a per-file git badge, a folder roll-up dot, and a
+  // mount marker on folders that are real host bind-mounts.
+  const rel = path.slice(ROOT.length + 1);
+  const decor = isDir ? undefined : tree.gitFiles.get(rel);
+  const dirChanged = isDir && tree.changedDirs.has(rel);
+  const mount = isDir ? tree.mounts.get(path) : undefined;
+
   return (
-    <div
-      className="mono"
-      style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 2, fontSize: 11.5 }}
-    >
-      {segs.map((seg, i) => {
-        const path = `/${segs.slice(0, i + 1).join("/")}`;
-        const last = i === segs.length - 1;
-        return (
-          <span key={path} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-            <button
-              type="button"
-              disabled={last}
-              onClick={() => onNav(path)}
-              style={{
-                border: "none",
-                background: "transparent",
-                cursor: last ? "default" : "pointer",
-                color: last ? "var(--fg-1)" : "var(--fg-2)",
-                padding: "1px 3px",
-                borderRadius: 3,
-                fontFamily: "var(--mono)",
-                fontSize: 11.5,
-              }}
-              className={last ? undefined : "rail-file"}
-            >
-              {seg}
-            </button>
-            {!last && <span style={{ color: "var(--fg-3)" }}>/</span>}
+    <>
+      <button
+        type="button"
+        className="rail-file"
+        title={entry.name}
+        onClick={() => (isDir ? tree.toggle(path) : tree.open(path))}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          width: "100%",
+          padding: "3px 6px",
+          paddingLeft: depth * INDENT + 6,
+          borderRadius: 4,
+          border: "none",
+          background: active ? "var(--bg-2)" : "transparent",
+          cursor: "pointer",
+          textAlign: "left",
+          fontFamily: "var(--mono)",
+          fontSize: 11.5,
+        }}
+      >
+        {/* chevron gutter — only for dirs (files get an equal spacer to align) */}
+        <span
+          style={{
+            flexShrink: 0,
+            width: 12,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--fg-3)",
+            transform: isDir && open ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform .15s ease",
+          }}
+        >
+          {isDir ? Ico.chevR : null}
+        </span>
+        {isDir ? <FolderGlyph open={open} /> : <FileGlyph name={entry.name} />}
+        <span
+          style={{
+            color: decor
+              ? decor.color
+              : entry.kind === "link"
+                ? "var(--wait)"
+                : active
+                  ? "var(--fg-0)"
+                  : "var(--fg-1)",
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {entry.name}
+        </span>
+        {mount && (
+          <span
+            title={`mounted from ${mount.source}${mount.rw ? "" : " (read-only)"}`}
+            style={{
+              flexShrink: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              color: "var(--a-codex)",
+              opacity: 0.9,
+            }}
+          >
+            {Ico.link}
           </span>
-        );
-      })}
-    </div>
+        )}
+        {!isDir && entry.size > 0 && (
+          <span className="tnum" style={{ flexShrink: 0, fontSize: 10, color: "var(--fg-3)" }}>
+            {fmtBytes(entry.size)}
+          </span>
+        )}
+        {decor && (
+          <span
+            className="tnum"
+            title={`git: ${entry.name} (${decor.letter})`}
+            style={{
+              flexShrink: 0,
+              width: 12,
+              textAlign: "center",
+              fontSize: 10.5,
+              fontWeight: 600,
+              color: decor.color,
+            }}
+          >
+            {decor.letter}
+          </span>
+        )}
+        {dirChanged && (
+          <span
+            aria-hidden="true"
+            title="contains uncommitted changes"
+            style={{
+              flexShrink: 0,
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "var(--wait)",
+              opacity: 0.9,
+            }}
+          />
+        )}
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isDir && open && (
+          <motion.div
+            key="children"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: EASE }}
+            style={{ overflow: "hidden" }}
+          >
+            <TreeChildren path={path} depth={depth} tree={tree} kids={kids} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
-function EntryRow({
-  entry,
-  active,
-  onClick,
+function TreeChildren({
+  path,
+  depth,
+  tree,
+  kids,
 }: {
-  entry: FileEntry;
-  active: boolean;
-  onClick: () => void;
+  path: string;
+  depth: number;
+  tree: Tree;
+  kids: DirState | undefined;
 }) {
-  const isDir = entry.kind === "dir";
+  if (kids === undefined || kids === "loading") {
+    return <Leaf depth={depth + 1}>reading…</Leaf>;
+  }
+  if (kids === "error") {
+    return <Leaf depth={depth + 1}>unreadable</Leaf>;
+  }
+  const rows = filterDir(kids, tree.query);
+  if (rows.length === 0) {
+    return <Leaf depth={depth + 1}>{tree.query ? "no matches" : "empty"}</Leaf>;
+  }
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={entry.name}
-      className="rail-file"
+    <>
+      {rows.map((e) => (
+        <TreeNode key={e.name} entry={e} path={join(path, e.name)} depth={depth + 1} tree={tree} />
+      ))}
+    </>
+  );
+}
+
+// Indented inline status line for a dir's loading/empty/error state.
+function Leaf({ depth, children }: { depth: number; children: ReactNode }) {
+  return (
+    <div
+      className="mono"
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        width: "100%",
-        padding: "4px 6px",
-        borderRadius: 4,
-        border: "none",
-        background: active ? "var(--bg-2)" : "transparent",
-        cursor: "pointer",
-        textAlign: "left",
-        fontFamily: "var(--mono)",
-        fontSize: 11.5,
+        padding: `2px 6px 2px ${depth * INDENT + 24}px`,
+        fontSize: 10.5,
+        color: "var(--fg-3)",
       }}
     >
-      <span style={{ flexShrink: 0, color: isDir ? "var(--fg-1)" : "var(--fg-3)" }}>
-        {isDir ? Ico.files : Ico.diff}
-      </span>
-      <span
-        style={{
-          color: entry.kind === "link" ? "var(--wait)" : "var(--fg-1)",
-          flex: 1,
-          minWidth: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {entry.name}
-        {isDir && "/"}
-      </span>
-      {!isDir && (
-        <span className="tnum" style={{ flexShrink: 0, fontSize: 10.5, color: "var(--fg-3)" }}>
-          {fmtBytes(entry.size)}
-        </span>
-      )}
-      {isDir && <span style={{ flexShrink: 0, color: "var(--fg-3)" }}>{Ico.arrowR}</span>}
-    </button>
+      {children}
+    </div>
   );
 }
 

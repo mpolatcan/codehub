@@ -1130,6 +1130,8 @@ struct CreateBody {
     /// Per-workspace-container target (required) + first-create mount dir.
     workspace: String,
     workspace_dir: Option<String>,
+    /// In-container working directory (a path under /workspace) the agent starts in.
+    cwd: Option<String>,
     task_description: Option<String>,
 }
 
@@ -1174,6 +1176,7 @@ async fn create_session(
             account_var: account_var.as_deref(),
             session_env: &[],
             account_env: &[],
+            cwd: body.cwd.as_deref(),
         })
         .await
         .map_err(err)?;

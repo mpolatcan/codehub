@@ -654,6 +654,11 @@ pub struct TmuxSessionRequest<'a> {
     pub session_env: &'a [String],
     /// Secret `KEY=value` entries used only for this Docker exec.
     pub account_env: &'a [String],
+    /// In-container working directory the agent starts in (the tmux pane's
+    /// start-directory). A path under `/workspace` (e.g. a repo subdir) so a
+    /// multi-repo workspace can launch an agent scoped to one repo. `None` — or a
+    /// path outside `/workspace` — leaves the container default (`/workspace`).
+    pub cwd: Option<&'a str>,
 }
 
 #[derive(Clone)]
@@ -909,6 +914,7 @@ impl DockerClient {
             account_var,
             session_env,
             account_env,
+            cwd,
         } = request;
         // `-e IS_SANDBOX=1` marks the pane env as a recognized sandbox so Claude's
         // YOLO mode (--dangerously-skip-permissions) runs as root inside the
@@ -928,6 +934,14 @@ impl DockerClient {
         cmd.push(name.to_string());
         cmd.push("-n".into());
         cmd.push(window.to_string());
+        // `-c <dir>` sets the pane's start directory so the agent launches in the
+        // chosen repo/subdir. Confined to `/workspace` (a bad/escaping path is
+        // dropped → container default), so this can never cd the agent outside
+        // the mount.
+        if let Some(dir) = cwd.and_then(|c| workspace_path(c).ok()) {
+            cmd.push("-c".into());
+            cmd.push(dir);
+        }
         push_base_tmux_env(&mut cmd);
         // CODEHUB_SESSION is the session name (tmux key) exported per-pane so
         // the codehub-hook append script can route events to the right JSONL

@@ -9,16 +9,19 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "border border-[color-mix(in_oklab,var(--pri)_40%,var(--bd))] bg-primary text-primary-foreground hover:bg-primary/90",
+        default:
+          "border border-[color-mix(in_oklab,var(--pri)_40%,var(--bd))] bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
           "border border-[color-mix(in_oklab,var(--err)_40%,var(--bd))] bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
         outline:
           "border border-[var(--bd)] bg-transparent text-[var(--fg-1)] shadow-xs hover:bg-[var(--bg-hover)] hover:text-[var(--fg-0)]",
-        secondary: "border border-[var(--bd)] bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "border border-transparent text-[var(--fg-1)] hover:border-[var(--bd)] hover:bg-[var(--bg-hover)] hover:text-[var(--fg-0)]",
+        secondary:
+          "border border-[var(--bd)] bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost:
+          "border border-[var(--bd-soft)] text-[var(--fg-1)] hover:border-[var(--bd)] hover:bg-[var(--bg-hover)] hover:text-[var(--fg-0)]",
         link: "text-primary underline-offset-4 hover:underline",
         success:
-          "bg-[var(--live)] text-[var(--bg-0)] hover:bg-[oklch(0.85_0.17_145)] focus-visible:ring-[var(--live)]/30",
+          "border border-[color-mix(in_oklab,var(--live)_40%,var(--bd))] bg-[var(--live)] text-[var(--bg-0)] hover:bg-[oklch(0.85_0.17_145)] focus-visible:ring-[var(--live)]/30",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

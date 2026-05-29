@@ -900,6 +900,9 @@ export const ipc = {
     account?: string,
     workspace?: string,
     workspaceDir?: string,
+    // In-container working directory (a path under /workspace, e.g. a repo
+    // subdir) the agent's pane starts in. Absent → /workspace.
+    cwd?: string,
     taskDescription?: string,
   ) =>
     invoke<void>("create_session", {
@@ -912,6 +915,7 @@ export const ipc = {
       account,
       workspace,
       workspaceDir,
+      cwd,
       taskDescription,
     }),
   killSession: (name: string, workspace?: string) =>

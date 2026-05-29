@@ -1,7 +1,9 @@
 /**
- * SpawnDialog — "Add agent" modal. Three mandatory fields: Agent, Mode,
- * Account. Workspace-scoped concerns (repo binding, container, initial
- * prompt) live in the workspace wizard, not here.
+ * SpawnDialog — "Add agent" modal. Fields: Agent, Mode, Account, and (for an
+ * existing workspace with sub-repos) the Working directory the agent starts in
+ * — its cwd within /workspace, so a multi-repo workspace can scope an agent to
+ * one repo. Container is deliberately NOT a field: it's inherited from the
+ * workspace. Repo *mounting* + the initial prompt still belong to the wizard.
  */
 import { AGENT_META, AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { FormRow, MODEL_HINT } from "@/app/components/spawn-form";
@@ -12,17 +14,11 @@ import {
   agentAccountState,
 } from "@/app/lib/accounts";
 import { CLIS, MODE_BY_ID, modesFor } from "@/app/lib/catalog";
-import type { Cli, Mode } from "@/app/lib/ipc";
+import { type Cli, type Mode, type RepoInfo, ipc } from "@/app/lib/ipc";
 import { useStore } from "@/app/lib/store";
 import { MAX_GROUP_PANES } from "@/app/lib/tree";
 import { Button } from "@/app/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/app/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/ui/select";
 import { useEffect, useState } from "react";
 
 export interface GroupChoice {
@@ -42,6 +38,7 @@ export interface SpawnDialogProps {
     initialPrompt: string,
     account?: string,
     targetGroupId?: string,
+    cwd?: string,
   ) => void;
   onCancel?: () => void;
   defaultCli?: Cli;
@@ -49,6 +46,16 @@ export interface SpawnDialogProps {
   groups?: GroupChoice[];
   standalone?: boolean;
   workspaceName?: string;
+  // Per-workspace container key of the workspace this agent joins. When set, the
+  // dialog offers a "Working directory" picker (the repos under that workspace's
+  // /workspace mount). Absent for a brand-new workspace (no repos to scope to yet).
+  workspaceKey?: string;
+}
+
+const WORKSPACE_ROOT = "/workspace";
+
+function dirName(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? path;
 }
 
 export function SpawnDialog({
@@ -59,12 +66,33 @@ export function SpawnDialog({
   groups,
   standalone,
   workspaceName,
+  workspaceKey,
 }: SpawnDialogProps) {
   const [agent, setAgentRaw] = useState<Cli>(defaultCli);
   const [mode, setMode] = useState<Mode>("standard");
   const [accountChoice, setAccountChoice] = useState<string>(AUTO_ACCOUNT);
   const [target, setTarget] = useState<string>("");
+  const [cwd, setCwd] = useState<string>(WORKSPACE_ROOT);
+  const [repos, setRepos] = useState<RepoInfo[]>([]);
   const showGroups = !splitting && !!groups && groups.length > 0;
+
+  // Repos under this workspace's /workspace mount → the "Working directory"
+  // choices. Only fetched for an existing workspace (one with a container).
+  useEffect(() => {
+    if (!workspaceKey) return;
+    let alive = true;
+    ipc
+      .containerRepos(workspaceKey)
+      .then((r) => alive && setRepos(r))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [workspaceKey]);
+  // Repos UNDER /workspace (a single repo at the mount root IS /workspace, so it
+  // adds no choice). Only worth a picker when ≥1 sub-repo gives a real choice.
+  const subRepos = repos.filter((r) => r.path !== WORKSPACE_ROOT);
+  const showCwd = !!workspaceKey && subRepos.length > 0;
 
   const keyStatus = useStore((s) => s.keyStatus);
   const accountProfiles = useStore((s) => s.accountProfiles);
@@ -97,11 +125,7 @@ export function SpawnDialog({
     {
       value: HOST_ACCOUNT,
       label: "Default",
-      sub: defaultKey?.present
-        ? "credential active"
-        : defaultKey
-          ? "no credential"
-          : "auto-select",
+      sub: defaultKey?.present ? "credential active" : defaultKey ? "no credential" : "auto-select",
       present: defaultKey?.present ?? true,
     },
     ...agentAccounts.map((p) => ({
@@ -226,6 +250,48 @@ export function SpawnDialog({
             </div>
           </FormRow>
 
+          {showCwd && (
+            <FormRow label="Working directory">
+              <Select value={cwd} onValueChange={setCwd}>
+                <SelectTrigger className="w-full h-10 bg-[var(--bg-1)] border-[var(--bd)] text-[var(--fg-0)] hover:bg-[var(--bg-hover)]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[var(--bg-2)] border-[var(--bd-strong)]">
+                  <SelectItem
+                    value={WORKSPACE_ROOT}
+                    className="text-[var(--fg-1)] focus:bg-[var(--bg-hover)] focus:text-[var(--fg-0)]"
+                  >
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <span className="mono">/workspace</span>
+                      <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                        workspace root
+                      </span>
+                    </span>
+                  </SelectItem>
+                  {subRepos.map((r) => (
+                    <SelectItem
+                      key={r.path}
+                      value={r.path}
+                      className="text-[var(--fg-1)] focus:bg-[var(--bg-hover)] focus:text-[var(--fg-0)]"
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span>{dirName(r.path)}</span>
+                        {r.branch && (
+                          <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                            {r.branch}
+                          </span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 6 }}>
+                The agent starts here inside the workspace container.
+              </div>
+            </FormRow>
+          )}
+
           <FormRow label="Account">
             <Select value={effectiveAccountChoice} onValueChange={setAccountChoice}>
               <SelectTrigger className="w-full h-10 bg-[var(--bg-1)] border-[var(--bd)] text-[var(--fg-0)] hover:bg-[var(--bg-hover)]">
@@ -323,7 +389,16 @@ export function SpawnDialog({
           <Button
             size="sm"
             style={{ padding: "6px 14px" }}
-            onClick={() => onLaunch?.(agent, mode, "", selectedAccount, target || undefined)}
+            onClick={() =>
+              onLaunch?.(
+                agent,
+                mode,
+                "",
+                selectedAccount,
+                target || undefined,
+                showCwd ? cwd : undefined,
+              )
+            }
           >
             Add agent
             <span className="kbd" style={{ marginLeft: 6 }}>

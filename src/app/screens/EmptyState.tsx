@@ -61,17 +61,14 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
     setView("settings");
   };
 
-  const handleStartRuntime = useCallback(
-    async (runtime: string) => {
-      setStarting(runtime);
-      try {
-        await ipc.startDockerApp(runtime);
-      } catch (e) {
-        console.warn("start_docker_app failed", e);
-      }
-    },
-    [],
-  );
+  const handleStartRuntime = useCallback(async (runtime: string) => {
+    setStarting(runtime);
+    try {
+      await ipc.startDockerApp(runtime);
+    } catch (e) {
+      console.warn("start_docker_app failed", e);
+    }
+  }, []);
 
   return (
     <main
@@ -166,12 +163,7 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
               and credentials are stored securely in your OS keychain.
             </p>
             <div style={{ marginTop: 16 }}>
-              <Button onClick={() => openWizard(true)}>
-                {Ico.plus}New workspace
-                <span className="kbd" style={{ marginLeft: 6 }}>
-                  ⌘⇧N
-                </span>
-              </Button>
+              <Button onClick={() => openWizard(true)}>{Ico.plus}New workspace</Button>
             </div>
           </div>
 
