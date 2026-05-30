@@ -13,7 +13,6 @@ import { GroupsBar } from "./components/hub/GroupsBar";
 import { HubSidebar } from "./components/hub/HubSidebar";
 import { HubStatusBar } from "./components/hub/HubStatusBar";
 import { HubTabs } from "./components/hub/HubTabs";
-import { PromptToasts } from "./components/hub/PromptToasts";
 import { RuntimeBanner } from "./components/hub/RuntimeBanner";
 import { ShellPanel } from "./components/hub/ShellPanel";
 import { Shortcuts } from "./components/hub/Shortcuts";
@@ -55,12 +54,12 @@ export function App() {
 
   // The always-on-top companion (its own window / the macOS native island)
   // reaches the app through two backend events:
-  //   - codehub://focus-session  → raise this window + focus that session
-  //   - codehub://island-approve → answer an awaiting permission prompt (the
-  //     native island can't call the respond_prompt command directly from an
-  //     AppKit click, so it relays the tmux session name here). Payload is the
-  //     session name for both. Actions/ipc are read at event time, so this
-  //     subscribes exactly once.
+  //   - codehub://focus-session → raise this window + focus that session
+  //   - codehub://island-approve / codehub://island-deny → the native island's
+  //     inline ✓/✕ on an awaiting row relays the tmux session name here; we call
+  //     respond_prompt (the island can't invoke a Tauri command from an AppKit
+  //     click). The in-app toasts stay notify-only — this affordance is the
+  //     island's alone. Subscribes exactly once.
   useEffect(() => {
     const uns: Array<() => void> = [];
     void listen<string>("codehub://focus-session", (e) => {
@@ -68,13 +67,15 @@ export function App() {
       s.focusSession(e.payload);
       s.setView("hub");
     }).then((u) => uns.push(u));
-    void listen<string>("codehub://island-approve", (e) => {
-      // Fire-and-forget: a stale/expired prompt makes this a no-op, so log
-      // rather than swallow silently if the relay arrives after it resolved.
-      ipc.respondPrompt(e.payload, true).catch((err) => {
-        console.warn("island-approve: respond_prompt failed", err);
+    const respondFromIsland = (allow: boolean) => (e: { payload: string }) => {
+      ipc.respondPrompt(e.payload, allow).catch((err) => {
+        console.warn(`island-${allow ? "approve" : "deny"}: respond_prompt failed`, err);
       });
-    }).then((u) => uns.push(u));
+    };
+    void listen<string>("codehub://island-approve", respondFromIsland(true)).then((u) =>
+      uns.push(u),
+    );
+    void listen<string>("codehub://island-deny", respondFromIsland(false)).then((u) => uns.push(u));
     return () => {
       for (const un of uns) un();
     };
@@ -174,7 +175,6 @@ function HubView() {
             <GroupsBar ws={active} />
             <div className="hub-grid" style={{ position: "relative" }}>
               <Grid ws={active} />
-              <PromptToasts />
             </div>
             <AnimatePresence>{shell && <ShellPanel key="shell" />}</AnimatePresence>
             <WorkspaceBar />

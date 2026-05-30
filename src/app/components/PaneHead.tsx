@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { ColorDot } from "../components/primitives/ColorDot";
 import { IconBtn } from "../components/primitives/IconBtn";
-import { MetricStat } from "../components/primitives/MetricStat";
 import { StatusBadge } from "../components/primitives/StatusBadge";
 import { Tip } from "../components/primitives/Tip";
 import { Ico } from "../components/primitives/icons";
-import { fmtTokens, useSessionUsage } from "../hooks/useSessionUsage";
+import { deriveLiveStatus } from "../lib/activity";
 import { MODE_BY_ID } from "../lib/catalog";
 import { useOverlay } from "../lib/overlay";
 import { confirmCloseRunningSession, useStore } from "../lib/store";
@@ -13,11 +12,10 @@ import { leavesList, paneInk } from "../lib/tree";
 
 // Pane header, visually aligned with design/screens/main-hub-a.jsx: index + a
 // status dot that doubles as the color picker (ColorDot) + colored pane title +
-// badges, then expand/more/close, with the metric strip below. When the user
-// picks a color the WHOLE bar takes that fill and every control flips to the
-// paired contrast ink (PANE_COLORS), so the title and buttons stay legible in
-// all three themes. Telemetry values stay real; unknown telemetry renders as an
-// em-dash rather than copying the mock's sample numbers.
+// badges, then expand/more/close. When the user picks a color the WHOLE bar takes
+// that fill and every control flips to the paired contrast ink (PANE_COLORS), so
+// the title and buttons stay legible in all three themes. The telemetry strip
+// lives at the pane FOOTER now (PaneFoot), not here.
 export function PaneHead({
   session,
   draggable,
@@ -55,15 +53,25 @@ export function PaneHead({
   const setFocusMode = useOverlay((s) => s.setFocusMode);
   const [editing, setEditing] = useState(false);
 
-  const claudeId = activity?.claudeId ?? (meta?.cli === "claude" ? meta.claudeId : undefined);
-  const usage = useSessionUsage(claudeId);
-
   if (!meta) return null;
 
   const accent = `var(--a-${meta.cli})`;
   const badge = MODE_BY_ID[meta.mode].badge;
-  const working = activity?.state === "working";
-  const statusText = awaiting ? "Awaiting input" : working ? "Working" : "Idle";
+  // Shared, hook-truth status (thinking / running <tool> / finished / failed /
+  // idle) — not the raw byte-flow signal, so a spinner redraw no longer reads as
+  // "working" and a thinking agent no longer reads as "idle".
+  const view = activity ? deriveLiveStatus(activity, awaiting) : null;
+  const working = view?.status === "live";
+  // Live state shown beside the title (omit while idle / awaiting — awaiting has
+  // its own badge).
+  const liveLabel = !awaiting && view && view.status !== "idle" ? view.label : null;
+  const liveColor =
+    view?.status === "done" ? "var(--done)" : view?.status === "err" ? "var(--err)" : "var(--live)";
+  const statusText = awaiting
+    ? "Awaiting input"
+    : view
+      ? view.label.charAt(0).toUpperCase() + view.label.slice(1)
+      : "Idle";
   const canMax = siblings > 1;
   const isMax = focusMode && focused && canMax;
 
@@ -183,6 +191,11 @@ export function PaneHead({
 
         {badge && <span className={`mode-badge badge-${meta.mode}`}>{badge}</span>}
         {awaiting && <StatusBadge status="wait">Awaiting</StatusBadge>}
+        {liveLabel && (
+          <span className="mono" style={{ fontSize: 10.5, color: liveColor }}>
+            {liveLabel}
+          </span>
+        )}
 
         <span style={{ flex: 1 }} />
 
@@ -229,33 +242,6 @@ export function PaneHead({
           {Ico.close}
         </IconBtn>
       </div>
-
-      {/* Telemetry strip — only when the session has a real transcript tally
-          (Claude w/ usage). Idle / non-Claude / pre-transcript panes drop it
-          entirely rather than show a row of em-dashes. Context is shown as a raw
-          token count (the transcript records no window max — no fake ratio). A
-          tinted head grounds the strip on a dark mix so the default metric text
-          stays legible (rather than fighting the vivid fill). */}
-      {usage && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            padding: "4px 12px",
-            background: tint ? `color-mix(in oklab, ${tint} 26%, var(--bg-1))` : "var(--bg-1)",
-            borderTop: tint
-              ? `1px solid color-mix(in oklab, ${tint} 40%, var(--bd-soft))`
-              : "1px solid var(--bd-soft)",
-            fontSize: 10,
-          }}
-        >
-          <MetricStat label="ctx" value={fmtTokens(usage.contextUsed)} />
-          <MetricStat label="turn" value={String(usage.turns)} />
-          <MetricStat label="tok" value={fmtTokens(usage.tokensIn + usage.tokensOut)} />
-          <MetricStat label="edits" value={String(usage.edits)} />
-        </div>
-      )}
     </div>
   );
 }

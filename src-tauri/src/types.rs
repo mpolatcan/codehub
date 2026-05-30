@@ -120,6 +120,9 @@ pub struct CodexSessionUsage {
     pub tokens_out: u64,
     pub edits: u64,
     pub context_used: u64,
+    /// The model's context-window size (Codex records this in `task_started` as
+    /// `model_context_window`), for the UI gauge. 0 when not yet seen → em-dash.
+    pub context_window: u64,
 }
 
 /// Codex rate-limit / plan meters (the on-disk quota source). Every field

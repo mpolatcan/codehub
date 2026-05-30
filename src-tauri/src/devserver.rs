@@ -42,6 +42,37 @@ struct AppState {
     events: Arc<EventsTracker>,
     stats_history: Arc<crate::stats_history::StatsHistory>,
     tx: broadcast::Sender<String>,
+    /// Dev-only stand-in for the OS keychain: which provider ids have a token
+    /// "stored". The browser bridge has no vault, so this lets the Settings UI
+    /// reflect token presence during visual verification.
+    provider_tokens: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+}
+
+/// Dev-bridge mirror of [`crate::config::provider_statuses`]: token presence comes
+/// from the in-memory dev set rather than the vault.
+fn dev_provider_statuses(
+    providers: Vec<crate::config::ModelProvider>,
+    tokens: &std::sync::Mutex<std::collections::HashSet<String>>,
+) -> Vec<crate::config::ModelProviderStatus> {
+    let set = tokens.lock().expect("provider_tokens mutex");
+    providers
+        .into_iter()
+        .map(|p| {
+            let has_token = set.contains(&p.id);
+            crate::config::ModelProviderStatus {
+                has_token,
+                id: p.id,
+                name: p.name,
+                kind: p.kind,
+                endpoint: p.endpoint,
+                api_key_var: p.api_key_var,
+                models: p.models,
+                model: p.model,
+                small_fast_model: p.small_fast_model,
+                enabled: p.enabled,
+            }
+        })
+        .collect()
 }
 
 fn docker_for(st: &AppState, workspace: &str) -> Arc<DockerClient> {
@@ -149,7 +180,11 @@ pub async fn serve() {
         .expect("docker daemon unreachable — is Docker running?"),
     );
     let registry = Arc::new(PtyRegistry::new());
-    let events = Arc::new(EventsTracker::new());
+    // Mirror lib.rs: link the events tracker to the activity tracker so hook
+    // events drive the live turn/tool/status signal in browser mode too (without
+    // this the bridge ingests events but never folds them into session_activity,
+    // so the hook-driven states never appear in `make dev-web`).
+    let events = Arc::new(EventsTracker::with_activity(registry.activity()));
     let (tx, _) = broadcast::channel::<String>(1024);
 
     // Verify the Docker daemon is reachable (mirrors lib.rs setup). No shared
@@ -195,6 +230,7 @@ pub async fn serve() {
         events,
         stats_history: stats_hist,
         tx: tx.clone(),
+        provider_tokens: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
     };
 
     let app = Router::new()
@@ -228,6 +264,10 @@ pub async fn serve() {
         .route(
             "/account-profiles/:id",
             delete(remove_account_profile).patch(rename_account_profile),
+        )
+        .route(
+            "/account-profiles/:id/enabled",
+            post(set_account_profile_enabled),
         )
         .route("/agent-key-status", get(agent_key_status))
         .route("/agent-versions", get(agent_versions))
@@ -292,6 +332,7 @@ pub async fn serve() {
                 .delete(remove_provider),
         )
         .route("/providers/update", post(update_provider))
+        .route("/providers/token", post(set_provider_token))
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/:name", delete(kill_session))
         .route("/sessions/:name/rename", post(rename_session))
@@ -582,6 +623,23 @@ async fn rename_account_profile(
     let next = st
         .config
         .rename_account_profile(&id, &body.label)
+        .map_err(err)?;
+    Ok(Json(crate::profile_statuses(next.account_profiles, None)))
+}
+
+#[derive(Deserialize)]
+struct EnabledBody {
+    enabled: bool,
+}
+
+async fn set_account_profile_enabled(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<EnabledBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    let next = st
+        .config
+        .set_account_profile_enabled(&id, body.enabled)
         .map_err(err)?;
     Ok(Json(crate::profile_statuses(next.account_profiles, None)))
 }
@@ -1439,7 +1497,10 @@ async fn search_transcripts(
 }
 
 async fn list_providers(State(st): State<AppState>) -> impl IntoResponse {
-    Json(st.config.get().providers)
+    Json(dev_provider_statuses(
+        st.config.get().providers,
+        &st.provider_tokens,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -1449,6 +1510,8 @@ struct AddProviderBody {
     endpoint: Option<String>,
     api_key_var: Option<String>,
     models: Option<Vec<String>>,
+    model: Option<String>,
+    small_fast_model: Option<String>,
 }
 
 async fn add_provider(
@@ -1463,10 +1526,15 @@ async fn add_provider(
         endpoint: body.endpoint,
         api_key_var: body.api_key_var,
         models: body.models.unwrap_or_default(),
+        model: body.model,
+        small_fast_model: body.small_fast_model,
         enabled: true,
     });
     let saved = st.config.set(settings).map_err(err)?;
-    Ok(Json(saved.providers))
+    Ok(Json(dev_provider_statuses(
+        saved.providers,
+        &st.provider_tokens,
+    )))
 }
 
 #[derive(Deserialize)]
@@ -1481,7 +1549,14 @@ async fn remove_provider(
     let mut settings = st.config.get();
     settings.providers.retain(|p| p.id != q.id);
     let saved = st.config.set(settings).map_err(err)?;
-    Ok(Json(saved.providers))
+    st.provider_tokens
+        .lock()
+        .expect("provider_tokens mutex")
+        .remove(&q.id);
+    Ok(Json(dev_provider_statuses(
+        saved.providers,
+        &st.provider_tokens,
+    )))
 }
 
 #[derive(Deserialize)]
@@ -1491,6 +1566,8 @@ struct UpdateProviderBody {
     endpoint: Option<String>,
     enabled: Option<bool>,
     models: Option<Vec<String>>,
+    model: Option<String>,
+    small_fast_model: Option<String>,
 }
 
 async fn update_provider(
@@ -1511,9 +1588,42 @@ async fn update_provider(
         if let Some(m) = body.models {
             p.models = m;
         }
+        if let Some(m) = body.model {
+            p.model = Some(m);
+        }
+        if let Some(m) = body.small_fast_model {
+            p.small_fast_model = Some(m);
+        }
     }
     let saved = st.config.set(settings).map_err(err)?;
-    Ok(Json(saved.providers))
+    Ok(Json(dev_provider_statuses(
+        saved.providers,
+        &st.provider_tokens,
+    )))
+}
+
+#[derive(Deserialize)]
+struct SetProviderTokenBody {
+    id: String,
+    token: String,
+}
+
+async fn set_provider_token(
+    State(st): State<AppState>,
+    Json(body): Json<SetProviderTokenBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    {
+        let mut set = st.provider_tokens.lock().expect("provider_tokens mutex");
+        if body.token.trim().is_empty() {
+            set.remove(&body.id);
+        } else {
+            set.insert(body.id.clone());
+        }
+    }
+    Ok(Json(dev_provider_statuses(
+        st.config.get().providers,
+        &st.provider_tokens,
+    )))
 }
 
 async fn vault_not_supported() -> StatusCode {

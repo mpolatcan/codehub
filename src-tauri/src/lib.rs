@@ -290,13 +290,19 @@ fn set_config(config: Settings, state: tauri::State<'_, AppState>) -> Result<Set
         .set(preserve_backend_owned_settings(config, &current))
 }
 
-/// List model providers.
+/// List model providers with live token presence (no secret exposed).
 #[tauri::command]
-fn list_providers(state: tauri::State<'_, AppState>) -> Result<Vec<config::ModelProvider>, String> {
-    Ok(state.config.get().providers)
+fn list_providers(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<config::ModelProviderStatus>, String> {
+    Ok(config::provider_statuses(
+        state.config.get().providers,
+        Some(&state.vault),
+    ))
 }
 
 /// Add a model provider.
+#[expect(clippy::too_many_arguments, reason = "Tauri IPC passes args by name")]
 #[tauri::command]
 fn add_provider(
     name: String,
@@ -304,8 +310,10 @@ fn add_provider(
     endpoint: Option<String>,
     api_key_var: Option<String>,
     models: Vec<String>,
+    model: Option<String>,
+    small_fast_model: Option<String>,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<config::ModelProvider>, String> {
+) -> Result<Vec<config::ModelProviderStatus>, String> {
     let mut settings = state.config.get();
     settings.providers.push(config::ModelProvider {
         id: uuid::Uuid::new_v4().to_string(),
@@ -314,25 +322,35 @@ fn add_provider(
         endpoint,
         api_key_var,
         models,
+        model,
+        small_fast_model,
         enabled: true,
     });
     let saved = state.config.set(settings)?;
-    Ok(saved.providers)
+    Ok(config::provider_statuses(
+        saved.providers,
+        Some(&state.vault),
+    ))
 }
 
-/// Remove a model provider by id.
+/// Remove a model provider by id (also drops its vault token, if any).
 #[tauri::command]
 fn remove_provider(
     id: String,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<config::ModelProvider>, String> {
+) -> Result<Vec<config::ModelProviderStatus>, String> {
     let mut settings = state.config.get();
     settings.providers.retain(|p| p.id != id);
     let saved = state.config.set(settings)?;
-    Ok(saved.providers)
+    let _ = state.vault.delete(&id);
+    Ok(config::provider_statuses(
+        saved.providers,
+        Some(&state.vault),
+    ))
 }
 
 /// Update a model provider (partial update by id).
+#[expect(clippy::too_many_arguments, reason = "Tauri IPC passes args by name")]
 #[tauri::command]
 fn update_provider(
     id: String,
@@ -340,8 +358,10 @@ fn update_provider(
     endpoint: Option<String>,
     enabled: Option<bool>,
     models: Option<Vec<String>>,
+    model: Option<String>,
+    small_fast_model: Option<String>,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<config::ModelProvider>, String> {
+) -> Result<Vec<config::ModelProviderStatus>, String> {
     let mut settings = state.config.get();
     if let Some(p) = settings.providers.iter_mut().find(|p| p.id == id) {
         if let Some(n) = name {
@@ -356,9 +376,40 @@ fn update_provider(
         if let Some(m) = models {
             p.models = m;
         }
+        if let Some(m) = model {
+            p.model = Some(m);
+        }
+        if let Some(m) = small_fast_model {
+            p.small_fast_model = Some(m);
+        }
     }
     let saved = state.config.set(settings)?;
-    Ok(saved.providers)
+    Ok(config::provider_statuses(
+        saved.providers,
+        Some(&state.vault),
+    ))
+}
+
+/// Store (or clear) a model provider's secret token in the OS keychain vault,
+/// keyed by the provider id — the same vault namespace as account profiles. An
+/// empty token deletes the entry. The secret is never returned or persisted to
+/// settings.json; only its presence is reported (via `list_providers`).
+#[tauri::command]
+fn set_provider_token(
+    id: String,
+    token: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<config::ModelProviderStatus>, String> {
+    let token = token.trim();
+    if token.is_empty() {
+        state.vault.delete(&id).map_err(|e| e.to_string())?;
+    } else {
+        state.vault.store(&id, token).map_err(|e| e.to_string())?;
+    }
+    Ok(config::provider_statuses(
+        state.config.get().providers,
+        Some(&state.vault),
+    ))
 }
 
 /// Search transcripts across sessions (Command Palette).
@@ -527,6 +578,7 @@ pub fn build_account_profile(
         id: uuid::Uuid::new_v4().to_string(),
         agent: cli.binary().to_string(),
         label,
+        enabled: true,
         credential: config::CredentialSource::Env { var_name },
     })
 }
@@ -543,6 +595,7 @@ pub fn build_vault_profile(agent: &str, label: &str) -> Result<AccountProfile, S
             id: uuid::Uuid::new_v4().to_string(),
             agent: "github".to_string(),
             label,
+            enabled: true,
             credential: config::CredentialSource::Vault,
         });
     }
@@ -555,6 +608,7 @@ pub fn build_vault_profile(agent: &str, label: &str) -> Result<AccountProfile, S
         id: uuid::Uuid::new_v4().to_string(),
         agent: cli.binary().to_string(),
         label,
+        enabled: true,
         credential: config::CredentialSource::Vault,
     })
 }
@@ -644,6 +698,18 @@ fn rename_account_profile(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<AccountProfileStatus>, String> {
     let next = state.config.rename_account_profile(&id, &label)?;
+    Ok(profile_statuses(next.account_profiles, Some(&state.vault)))
+}
+
+/// Enable or disable an account profile (kept, but offered/hidden at spawn).
+/// Returns the full updated list + presence.
+#[tauri::command]
+fn set_account_profile_enabled(
+    id: String,
+    enabled: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AccountProfileStatus>, String> {
+    let next = state.config.set_account_profile_enabled(&id, enabled)?;
     Ok(profile_statuses(next.account_profiles, Some(&state.vault)))
 }
 
@@ -1189,22 +1255,54 @@ async fn create_session(
     // containers can use accounts created after the container started.
     let mut account_var: Option<String> = None;
     let mut account_env: Vec<String> = Vec::new();
+    // Harness env injected when launching under a third-party model provider
+    // (MiniMax, z.ai, …): base URL + model + the vault-stored token, set as pane
+    // env so the CLI reads it like an exported var. Mutually exclusive with the
+    // account-remap path below.
+    let mut provider_env: Vec<String> = Vec::new();
     let mut restore_claude_bundle_env: Option<String> = None;
+    let mut restore_codex_auth_env: Option<String> = None;
     if let Some(id) = account {
-        let profile = state
+        // A provider id resolves to a configured endpoint, not an account profile.
+        if let Some(provider) = state
             .config
             .get()
-            .account_profiles
+            .providers
             .into_iter()
-            .find(|p| p.id == id);
-        match profile {
-            Some(profile) => match profile.credential {
-                config::CredentialSource::Env { var_name } => {
-                    account_var = Some(var_name);
-                },
-                config::CredentialSource::Vault => {
-                    let env_name = config::vault_env_name(&profile.id);
-                    let secret = state
+            .find(|p| p.id == id)
+        {
+            let token = state
+                .vault
+                .read(&provider.id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "provider '{}' has no token stored; add it in Settings → Coding Agents.",
+                        provider.name
+                    )
+                })?;
+            provider_env = config::provider_session_env(&provider, &token);
+        } else {
+            let profile = state
+                .config
+                .get()
+                .account_profiles
+                .into_iter()
+                .find(|p| p.id == id);
+            match profile {
+                Some(profile) => match profile.credential {
+                    config::CredentialSource::Env { var_name } => {
+                        // tmux only imports a var given `VAR=VALUE`, so forward the
+                        // host value into this exec's env for the launch wrapper to
+                        // read (create_tmux_session pushes the assignment).
+                        if let Ok(val) = std::env::var(&var_name) {
+                            account_env.push(format!("{var_name}={val}"));
+                        }
+                        account_var = Some(var_name);
+                    },
+                    config::CredentialSource::Vault => {
+                        let env_name = config::vault_env_name(&profile.id);
+                        let secret = state
                         .vault
                         .read(&profile.id)
                         .map_err(|e| e.to_string())?
@@ -1215,43 +1313,52 @@ async fn create_session(
                                 profile.label
                             )
                         })?;
+                        account_env.push(format!("{env_name}={secret}"));
+                        if matches!(cli, Cli::Claude)
+                            && secret.starts_with(auth::CLAUDE_AUTH_BUNDLE_PREFIX)
+                        {
+                            restore_claude_bundle_env = Some(env_name);
+                        } else if matches!(cli, Cli::Codex) {
+                            // Codex reads $CODEX_HOME/auth.json — materialize it via a
+                            // pre-exec (not the broken tmux `-e` import); launch plainly.
+                            restore_codex_auth_env = Some(env_name);
+                        } else {
+                            account_var = Some(env_name);
+                        }
+                    },
+                },
+                None => {
+                    let secret = state
+                        .vault
+                        .read(&id)
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| "selected account profile not found".to_string())?;
+                    let label = match cli {
+                        Cli::Claude => "Claude",
+                        Cli::Codex => "Codex",
+                        Cli::Antigravity => "Antigravity",
+                        Cli::Shell => "Shell",
+                    };
+                    let _ = state.config.add_account_profile(AccountProfile {
+                        id: id.clone(),
+                        agent: cli.binary().to_string(),
+                        label: label.to_string(),
+                        enabled: true,
+                        credential: config::CredentialSource::Vault,
+                    });
+                    let env_name = config::vault_env_name(&id);
                     account_env.push(format!("{env_name}={secret}"));
                     if matches!(cli, Cli::Claude)
                         && secret.starts_with(auth::CLAUDE_AUTH_BUNDLE_PREFIX)
                     {
                         restore_claude_bundle_env = Some(env_name);
+                    } else if matches!(cli, Cli::Codex) {
+                        restore_codex_auth_env = Some(env_name);
                     } else {
                         account_var = Some(env_name);
                     }
                 },
-            },
-            None => {
-                let secret = state
-                    .vault
-                    .read(&id)
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "selected account profile not found".to_string())?;
-                let label = match cli {
-                    Cli::Claude => "Claude",
-                    Cli::Codex => "Codex",
-                    Cli::Antigravity => "Antigravity",
-                    Cli::Shell => "Shell",
-                };
-                let _ = state.config.add_account_profile(AccountProfile {
-                    id: id.clone(),
-                    agent: cli.binary().to_string(),
-                    label: label.to_string(),
-                    credential: config::CredentialSource::Vault,
-                });
-                let env_name = config::vault_env_name(&id);
-                account_env.push(format!("{env_name}={secret}"));
-                if matches!(cli, Cli::Claude) && secret.starts_with(auth::CLAUDE_AUTH_BUNDLE_PREFIX)
-                {
-                    restore_claude_bundle_env = Some(env_name);
-                } else {
-                    account_var = Some(env_name);
-                }
-            },
+            }
         }
     }
     let lifecycle = state
@@ -1262,7 +1369,7 @@ async fn create_session(
         .await
         .map_err(|e| e.to_string())?;
     let docker = lifecycle.docker_client();
-    let mut session_env: Vec<String> = Vec::new();
+    let mut session_env: Vec<String> = provider_env;
     let mut launch_account_env = account_env;
     if let Some(env_name) = restore_claude_bundle_env {
         let dir = docker
@@ -1270,6 +1377,16 @@ async fn create_session(
             .await
             .map_err(|e| e.to_string())?;
         session_env.push(format!("CLAUDE_CONFIG_DIR={dir}"));
+        launch_account_env.clear();
+    }
+    if let Some(env_name) = restore_codex_auth_env {
+        // Write $CODEX_HOME/auth.json from the vault secret before launch, then run
+        // Codex plainly (account_var stays None). CODEX_HOME is pinned by the base
+        // pane env, so the bare `codex` finds the credential we just materialized.
+        docker
+            .restore_codex_auth_from_env(&env_name, &launch_account_env)
+            .await
+            .map_err(|e| e.to_string())?;
         launch_account_env.clear();
     }
     docker
@@ -2060,6 +2177,10 @@ pub fn run() {
             let island_events = events.clone();
             #[cfg(target_os = "macos")]
             let island_manager = manager.clone();
+            #[cfg(target_os = "macos")]
+            let island_config = config.clone();
+            #[cfg(not(target_os = "macos"))]
+            let companion_launch_config = config.clone();
 
             let stats_hist = Arc::new(stats_history::StatsHistory::new());
 
@@ -2086,6 +2207,22 @@ pub fn run() {
                 });
             }
 
+            // Credential-sync loop: persist the OAuth token Claude refreshes in
+            // place back to the vault so a profile doesn't drift into 401 once its
+            // login-time access token expires. Tauri-only (the vault is the OS
+            // keychain; the dev bridge has none). Spawned on Tauri's runtime — a
+            // bare tokio::spawn in `setup` would abort (CLAUDE.md spawner gotcha).
+            {
+                let cred_manager = manager.clone();
+                let cred_config = config.clone();
+                let cred_vault = app_vault.clone();
+                tauri::async_runtime::spawn(auth::credential_sync_loop(
+                    cred_manager,
+                    cred_config,
+                    cred_vault,
+                ));
+            }
+
             app.manage(AppState {
                 manager: manager.clone(),
                 registry,
@@ -2095,38 +2232,66 @@ pub fn run() {
                 vault: app_vault,
             });
 
-            // macOS: feed the native Dynamic Island a RICH snapshot while it is on
-            // screen. Every signal is honest:
-            //   - Wait    ← `events.pending_prompts()` (a real permission prompt)
-            //   - Live    ← activity state Working (output within the grace window)
-            //   - Idle    ← otherwise
-            //   - agent   ← the registered cli id (dot identity)
-            //   - metric  ← `claude_session_usage` for Claude sessions only, where a
-            //               transcript with real usage exists; never fabricated.
-            // Done/Err are intentionally NOT emitted: the hook taxonomy folds
-            // `StopFailure` into `stop`, and a finished turn is indistinguishable
-            // from idle without inventing a recency heuristic — so we stay silent
-            // rather than fake them.
+            // macOS: drive the native Dynamic Island from the live activity feed.
+            // Every signal is honest (mirrors the frontend `deriveLiveStatus`):
+            //   - Wait  ← `pending_prompts()` / hook `Awaiting` (a real prompt)
+            //   - Err   ← a turn that just failed (transient ~6s linger)
+            //   - Done  ← a turn that just finished (transient ~6s linger)
+            //   - Live  ← a turn in flight; sub-line shows the current tool /
+            //             "thinking" + tool count + the live turn clock
+            //   - Idle  ← otherwise (sub-line shows the Claude edits·tok metric)
+            //   - agent ← the registered cli id (dot identity)
+            // Now that the hooks distinguish turn-finish (`Stop` → transient Done)
+            // from failure (`StopFailure` → transient Err) and from idle, these are
+            // emitted from REAL events — no recency heuristic, nothing fabricated.
             //
-            // Status refreshes every 1s (responsive awaiting/working). The Claude
-            // metric is heavier (a `cat` of the transcript per session), so it is
-            // re-read on a slower cadence and cached between reads — the island
-            // shows the last real reading, not a stale-frozen or fabricated one.
+            // The island AUTO-POPS (and expands) when a row newly enters awaiting or
+            // a turn just finished/failed — the "needs you / done" announcement —
+            // then collapses back to the pill after a short window (awaiting holds
+            // it open until answered). The loop therefore runs every tick even while
+            // hidden, to detect those transitions; only the heavier Claude metric
+            // read is gated on the island being visible.
             #[cfg(target_os = "macos")]
             {
                 use std::collections::{HashMap, HashSet};
+                use std::time::{Duration, Instant};
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    // ~1s status cadence; refresh Claude metrics every 5th tick.
+                    // A finished/failed turn lingers as a transient badge this long
+                    // (matches the frontend OUTCOME_LINGER_MS).
+                    const OUTCOME_LINGER_MS: u64 = 6000;
+                    // How long the panel auto-expands to announce a fresh event
+                    // before it's allowed to collapse back to the pill.
+                    const ANNOUNCE: Duration = Duration::from_millis(5000);
+                    // Refresh the (heavier) Claude transcript metric every 5th tick.
                     const METRIC_EVERY: u64 = 5;
-                    let mut tick = tokio::time::interval(std::time::Duration::from_millis(1000));
+
+                    let mut tick = tokio::time::interval(Duration::from_millis(1000));
                     let mut metric_cache: HashMap<String, String> = HashMap::new();
+                    let mut prev_awaiting: HashSet<String> = HashSet::new();
+                    let mut last_outcome_ms: HashMap<String, u64> = HashMap::new();
+                    let mut announce_until: Option<Instant> = None;
                     let mut ticks: u64 = 0;
+                    // Tracks the show_companion setting edge so we auto-show on
+                    // launch (first tick, enabled) and on a later re-enable.
+                    let mut prev_enabled = false;
+
                     loop {
                         tick.tick().await;
-                        if !island::is_visible() {
+                        // Master enable (Settings → "Dynamic Island"). Default on:
+                        // shows on launch; turning it off hides + parks the feed.
+                        let enabled = island_config.get().show_companion;
+                        if enabled && !prev_enabled {
+                            island::show(&handle);
+                        }
+                        prev_enabled = enabled;
+                        if !enabled {
+                            if island::is_visible() {
+                                island::hide(&handle);
+                            }
                             continue;
                         }
+                        let visible = island::is_visible();
                         let activity = island_registry.activity().snapshot();
                         let waiting: HashSet<String> = island_events
                             .pending_prompts()
@@ -2134,9 +2299,10 @@ pub fn run() {
                             .map(|p| p.session)
                             .collect();
 
-                        if ticks % METRIC_EVERY == 0 {
-                            let island_docker = island_manager.any_running_docker().await;
-                            if let Some(docker) = island_docker {
+                        // The Claude metric (idle rows) needs a heavy transcript
+                        // read — only do it while the island is actually on screen.
+                        if visible && ticks % METRIC_EVERY == 0 {
+                            if let Some(docker) = island_manager.any_running_docker().await {
                                 for a in &activity {
                                     let Some(id) = a.claude_id.as_deref() else {
                                         continue;
@@ -2155,40 +2321,119 @@ pub fn run() {
                                     }
                                 }
                             }
-                            let live: HashSet<&str> =
-                                activity.iter().map(|a| a.session.as_str()).collect();
-                            metric_cache.retain(|s, _| live.contains(s.as_str()));
                         }
+                        let live_sessions: HashSet<&str> =
+                            activity.iter().map(|a| a.session.as_str()).collect();
+                        metric_cache.retain(|s, _| live_sessions.contains(s.as_str()));
                         ticks = ticks.wrapping_add(1);
 
-                        let rows = activity
-                            .into_iter()
+                        // Build rows + detect the events that auto-pop the island: a
+                        // NEW awaiting prompt, or a freshly finished/failed turn.
+                        // Status precedence mirrors the frontend deriveLiveStatus:
+                        // wait > err > done > live > idle.
+                        let now = Instant::now();
+                        let mut any_awaiting = false;
+                        let mut new_awaiting = false;
+                        let mut fresh_outcome = false;
+                        let mut cur_awaiting: HashSet<String> = HashSet::new();
+                        let mut cur_outcome_ms: HashMap<String, u64> = HashMap::new();
+
+                        let rows: Vec<island::IslandRow> = activity
+                            .iter()
                             .map(|a| {
-                                let status = match a.session_status {
-                                    activity::SessionStatus::Done => island::IslandStatus::Done,
-                                    activity::SessionStatus::Failed => island::IslandStatus::Err,
-                                    activity::SessionStatus::Awaiting => island::IslandStatus::Wait,
-                                    _ if waiting.contains(&a.session) => island::IslandStatus::Wait,
-                                    _ if matches!(a.state, activity::ActivityState::Working) => {
-                                        island::IslandStatus::Live
-                                    },
-                                    _ => island::IslandStatus::Idle,
+                                let waiting_now = waiting.contains(&a.session)
+                                    || a.session_status == activity::SessionStatus::Awaiting;
+                                let outcome_fresh = a
+                                    .outcome_ms_ago
+                                    .map(|ms| ms < OUTCOME_LINGER_MS)
+                                    .unwrap_or(false);
+                                let status = if waiting_now {
+                                    island::IslandStatus::Wait
+                                } else if outcome_fresh
+                                    && a.last_outcome == Some(activity::TurnOutcome::Failed)
+                                {
+                                    island::IslandStatus::Err
+                                } else if outcome_fresh
+                                    && a.last_outcome == Some(activity::TurnOutcome::Completed)
+                                {
+                                    island::IslandStatus::Done
+                                } else if (a.seen_hooks
+                                    && a.session_status == activity::SessionStatus::Running)
+                                    || (!a.seen_hooks
+                                        && matches!(a.state, activity::ActivityState::Working))
+                                {
+                                    island::IslandStatus::Live
+                                } else {
+                                    island::IslandStatus::Idle
                                 };
-                                let metric = metric_cache.get(&a.session).cloned();
+
+                                if waiting_now {
+                                    any_awaiting = true;
+                                    cur_awaiting.insert(a.session.clone());
+                                    if !prev_awaiting.contains(&a.session) {
+                                        new_awaiting = true;
+                                    }
+                                }
+                                // Fresh outcome = the outcome clock reset since the
+                                // last tick (a new Stop drops ms_ago back near 0) and
+                                // is recent — so each finished/failed turn announces
+                                // exactly once, not every tick of its linger.
+                                if let Some(ms) = a.outcome_ms_ago {
+                                    cur_outcome_ms.insert(a.session.clone(), ms);
+                                    let prev = last_outcome_ms.get(&a.session).copied();
+                                    if ms < OUTCOME_LINGER_MS
+                                        && prev.map(|p| ms < p).unwrap_or(true)
+                                    {
+                                        fresh_outcome = true;
+                                    }
+                                }
+
                                 island::IslandRow {
-                                    label: a.alias.unwrap_or_else(|| a.session.clone()),
+                                    label: a.alias.clone().unwrap_or_else(|| a.session.clone()),
                                     session: a.session.clone(),
-                                    agent: a.cli,
+                                    agent: a.cli.clone(),
                                     status,
-                                    metric,
+                                    metric: metric_cache.get(&a.session).cloned(),
                                     model: None,
-                                    branch: a.git_branch,
+                                    branch: a.git_branch.clone(),
+                                    current_tool: a.current_tool.clone(),
+                                    turns: a.turns,
+                                    tool_calls: a.tool_calls,
+                                    turn_ms: a.turn_elapsed_ms,
                                 }
                             })
                             .collect();
-                        island::update_rich(&handle, island::IslandSnapshot { rows });
+
+                        prev_awaiting = cur_awaiting;
+                        last_outcome_ms = cur_outcome_ms;
+
+                        if new_awaiting || fresh_outcome {
+                            announce_until = Some(now + ANNOUNCE);
+                        }
+                        let announcing = announce_until.map(|t| now < t).unwrap_or(false);
+                        // Awaiting holds the panel open until answered; a finish/fail
+                        // expands for the announce window then collapses to the pill.
+                        let want_expanded = any_awaiting || announcing;
+                        // Pop when expanding; stay present once shown.
+                        let want_present = want_expanded || visible;
+
+                        if want_present {
+                            island::drive(
+                                &handle,
+                                island::IslandSnapshot { rows },
+                                want_present,
+                                want_expanded,
+                            );
+                        }
                     }
                 });
+            }
+
+            // Non-macOS: open the companion window on launch when enabled (the
+            // macOS island handles its own launch-show via the feed's enable edge).
+            #[cfg(not(target_os = "macos"))]
+            if companion_launch_config.get().show_companion {
+                let _ = show_companion_window(&app.handle());
             }
 
             // Daemon reachability check — containers are created on demand by
@@ -2250,6 +2495,7 @@ pub fn run() {
             add_account_profile,
             remove_account_profile,
             rename_account_profile,
+            set_account_profile_enabled,
             agent_key_status,
             agent_versions,
             container_stats,
@@ -2315,6 +2561,7 @@ pub fn run() {
             add_provider,
             remove_provider,
             update_provider,
+            set_provider_token,
             // Vault: OS-keychain credential management for built-in agents + GitHub.
             vault_store_key,
             vault_delete_key,

@@ -23,6 +23,7 @@
  * Credentials are stored in the OS keychain (API keys + OAuth tokens).
  */
 import { AGENT_META, AgentGlyph } from "@/app/components/primitives/AgentGlyph";
+import { IconBtn } from "@/app/components/primitives/IconBtn";
 import { Logo } from "@/app/components/primitives/Logo";
 import { Segmented } from "@/app/components/primitives/Segmented";
 import { StatusDot } from "@/app/components/primitives/StatusDot";
@@ -35,6 +36,7 @@ import {
   type AppInfo,
   type AppSettings,
   type AuthProgress,
+  type ModelProvider,
   ipc,
   onAuthProgress,
 } from "@/app/lib/ipc";
@@ -51,7 +53,6 @@ import {
 } from "@/app/ui/dialog";
 import { Input } from "@/app/ui/input";
 import { Label } from "@/app/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/ui/select";
 import { Switch } from "@/app/ui/switch";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { ApiKeyDialog } from "../components/ApiKeyDialog";
@@ -250,50 +251,149 @@ const COMPATIBLE_PROVIDERS: Record<AgentCli, string[]> = {
   antigravity: [],
 };
 
-const PROVIDER_PRESETS: {
+// Which agent a provider kind routes to (mirrors accounts.ts providerTargetAgent
+// + the backend's provider_session_env). Used to show a provider under the right
+// agent tab and to filter the spawn-dialog picker.
+const PROVIDER_TARGET_AGENT: Record<string, AgentCli> = {
+  anthropic: "claude",
+  "anthropic-compatible": "claude",
+  openai: "codex",
+  "openai-compatible": "codex",
+  // OpenRouter is shown under Claude but is NOT launch-wired (see accounts.ts
+  // providerTargetAgent, which returns null for it). It needs a router proxy.
+  openrouter: "claude",
+};
+
+// Kinds that can actually be wired into the harness from a stored token — used to
+// gate the "connected"/launchable affordances (openrouter/bedrock/vertex can't).
+const LAUNCHABLE_KINDS = new Set([
+  "anthropic",
+  "anthropic-compatible",
+  "openai",
+  "openai-compatible",
+]);
+
+// A catalog entry that seeds a new provider's config form. The curated ones
+// (MiniMax, z.ai) prefill the exact Anthropic-compatible base URL + model ids so
+// connecting a token plan is one paste. OpenRouter is shown but `gated` — it has
+// no native Anthropic endpoint, so it can't be launch-wired from a bare token.
+interface ProviderPreset {
+  id: string;
   name: string;
   kind: string;
   baseUrl: string;
   models: string[];
+  model?: string;
+  smallFastModel?: string;
+  /** One-liner shown on the catalog card. */
+  blurb: string;
+  /** Longer explanation shown in the config sub-view. */
   note?: string;
-}[] = [
+  /** What the token field is labelled (e.g. "MiniMax API key"). */
+  tokenLabel?: string;
+  docsUrl?: string;
+  /** Not launch-wired (needs a router proxy / cloud creds). */
+  gated?: boolean;
+  gatedReason?: string;
+  /** Blank custom endpoint — the user fills everything in. */
+  custom?: boolean;
+}
+
+const CLAUDE_CATALOG: ProviderPreset[] = [
   {
-    name: "AWS Bedrock",
-    kind: "bedrock",
-    baseUrl: "",
-    models: ["claude-sonnet-4-20250514", "claude-haiku-4-20250414"],
-    note: "Uses AWS credentials, no base URL needed",
-  },
-  {
-    name: "Vertex AI",
-    kind: "vertex",
-    baseUrl: "",
-    models: ["claude-sonnet-4@20250514", "claude-haiku-4@20250414"],
-    note: "Uses GCP credentials, no base URL needed",
-  },
-  {
+    id: "minimax",
     name: "MiniMax",
     kind: "anthropic-compatible",
     baseUrl: "https://api.minimax.io/anthropic",
-    models: ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.7-highspeed"],
-    note: "Anthropic-compatible endpoint. Set ANTHROPIC_AUTH_TOKEN to your MiniMax API key.",
+    models: ["MiniMax-M2"],
+    model: "MiniMax-M2",
+    blurb: "M2 · token plan",
+    tokenLabel: "MiniMax API key",
+    note: "MiniMax exposes an Anthropic-compatible endpoint, so Claude Code talks to it directly. Your key is stored in the OS keychain and injected as ANTHROPIC_AUTH_TOKEN at launch.",
+    docsUrl: "https://www.minimax.io",
   },
   {
-    name: "GLM / Zhipu",
-    kind: "openai-compatible",
-    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    models: ["glm-4-plus", "glm-4-flash", "glm-4-long"],
-    note: "OpenAI-compatible. Set OPENAI_API_KEY to your Zhipu API key.",
+    id: "zai",
+    name: "z.ai · GLM",
+    kind: "anthropic-compatible",
+    baseUrl: "https://api.z.ai/api/anthropic",
+    models: ["glm-4.6", "glm-4.5-air"],
+    model: "glm-4.6",
+    smallFastModel: "glm-4.5-air",
+    blurb: "GLM · coding plan",
+    tokenLabel: "z.ai API key",
+    note: "z.ai's GLM Coding Plan speaks the Anthropic protocol. glm-4.6 drives the main model; glm-4.5-air is the fast/background model (ANTHROPIC_SMALL_FAST_MODEL).",
+    docsUrl: "https://z.ai",
   },
   {
-    name: "Azure OpenAI",
-    kind: "azure",
+    id: "openrouter",
+    name: "OpenRouter",
+    kind: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    models: [],
+    blurb: "router · needs proxy",
+    gated: true,
+    gatedReason:
+      "OpenRouter is OpenAI-compatible and has no native Anthropic endpoint, so Claude Code can't point straight at it. It needs an Anthropic-compatible router proxy (e.g. claude-code-router) in front — so it isn't one-click launch-wired here yet.",
+    docsUrl: "https://openrouter.ai",
+  },
+  {
+    id: "custom-anthropic",
+    name: "Custom endpoint",
+    kind: "anthropic-compatible",
     baseUrl: "",
-    models: ["gpt-4o", "gpt-4o-mini"],
-    note: "Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY",
+    models: [],
+    blurb: "any Anthropic API",
+    custom: true,
+    tokenLabel: "API token",
+    note: "Any endpoint that speaks the Anthropic protocol. Set the base URL, token, and model id.",
   },
-  { name: "Custom endpoint", kind: "anthropic-compatible", baseUrl: "", models: [] },
 ];
+
+const CODEX_CATALOG: ProviderPreset[] = [
+  {
+    id: "custom-openai",
+    name: "Custom endpoint",
+    kind: "openai-compatible",
+    baseUrl: "",
+    models: [],
+    blurb: "any OpenAI API",
+    custom: true,
+    tokenLabel: "API key",
+    note: "Any OpenAI-compatible endpoint. Injected as OPENAI_BASE_URL / OPENAI_API_KEY.",
+  },
+];
+
+function catalogFor(agent: AgentCli): ProviderPreset[] {
+  if (agent === "claude") return CLAUDE_CATALOG;
+  if (agent === "codex") return CODEX_CATALOG;
+  return [];
+}
+
+// Frontend mirror of the backend `provider_session_env`: the exact harness env
+// vars a launch injects. The token is always masked — the real value never
+// leaves the keychain. Returned as [key, value, isSecret] tuples.
+function harnessEnvPreview(
+  kind: string,
+  endpoint: string,
+  model: string,
+  smallFastModel: string,
+  hasToken: boolean,
+): [string, string, boolean][] {
+  const tok = hasToken ? "••••••••••••••••" : "‹your token›";
+  const out: [string, string, boolean][] = [];
+  if (kind === "anthropic" || kind === "anthropic-compatible") {
+    if (endpoint.trim()) out.push(["ANTHROPIC_BASE_URL", endpoint.trim(), false]);
+    out.push(["ANTHROPIC_AUTH_TOKEN", tok, true]);
+    if (model.trim()) out.push(["ANTHROPIC_MODEL", model.trim(), false]);
+    if (smallFastModel.trim())
+      out.push(["ANTHROPIC_SMALL_FAST_MODEL", smallFastModel.trim(), false]);
+  } else if (kind === "openai" || kind === "openai-compatible") {
+    if (endpoint.trim()) out.push(["OPENAI_BASE_URL", endpoint.trim(), false]);
+    out.push(["OPENAI_API_KEY", tok, true]);
+  }
+  return out;
+}
 
 function avatarHue(str: string): number {
   let h = 0;
@@ -316,11 +416,14 @@ function AgentsPane({
 }) {
   const keyStatus = useStore((s) => s.keyStatus);
   const agentVersions = useStore((s) => s.agentVersions);
-  const config = useStore((s) => s.config);
   const profiles = useStore((s) => s.accountProfiles);
+  const providers = useStore((s) => s.providers);
+  const loadProviders = useStore((s) => s.loadProviders);
+  const setProviders = useStore((s) => s.setProviders);
   const loadAccountProfiles = useStore((s) => s.loadAccountProfiles);
   const removeAccountProfile = useStore((s) => s.removeAccountProfile);
   const renameAccountProfile = useStore((s) => s.renameAccountProfile);
+  const setAccountProfileEnabled = useStore((s) => s.setAccountProfileEnabled);
   const [detail, setDetail] = useState<AgentCli | null>(initialDetail ?? null);
   const [selectedAgent, setSelectedAgent] = useState<AgentCli>("claude");
   const [keyDialog, setKeyDialog] = useState<string | null>(null);
@@ -336,10 +439,9 @@ function AgentsPane({
   const pendingProfileId = useRef<string | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [providerDialog, setProviderDialog] = useState<{
-    editing?: (typeof providers)[number];
-  } | null>(null);
-  const [managingProviderId, setManagingProviderId] = useState<string | null>(null);
+  // The provider configuration modal. `editing` opens an existing provider; a bare
+  // `{}` opens the add flow (the dialog seeds itself from the agent's catalog).
+  const [providerDialog, setProviderDialog] = useState<{ editing?: ModelProvider } | null>(null);
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
@@ -362,7 +464,8 @@ function AgentsPane({
 
   useEffect(() => {
     void loadAccountProfiles();
-  }, [loadAccountProfiles]);
+    void loadProviders();
+  }, [loadAccountProfiles, loadProviders]);
 
   const defaultLoginLabel = (provider: string) =>
     provider === "github"
@@ -456,14 +559,19 @@ function AgentsPane({
   const agentProfiles = profiles.filter((p) => p.agent === selectedAgent);
   const apiKeyProfiles = agentProfiles.filter((p) => p.source === "env");
   const oauthProfiles = agentProfiles.filter((p) => p.source === "vault");
-  const providers = config?.providers ?? [];
+  // Providers shown under this agent's tab: the ones whose harness env targets it.
+  const agentProviders = providers.filter((p) => PROVIDER_TARGET_AGENT[p.kind] === selectedAgent);
 
   // Connection is satisfied by ANY credential, not just an API key — an OAuth
   // sign-in or an enabled custom provider counts too. The old badge keyed only
   // off the host env-var key, so it nagged "Key needed" even with OAuth active.
   const hasKey = Boolean(key?.present);
   const hasOauth = oauthProfiles.some((p) => p.present);
-  const hasEnabledProvider = providers.some((p) => p.enabled);
+  // A provider only counts as a live connection once it's enabled, has a token,
+  // and is a launch-wired kind (a gated OpenRouter row never counts).
+  const hasEnabledProvider = agentProviders.some(
+    (p) => p.enabled && p.hasToken && LAUNCHABLE_KINDS.has(p.kind),
+  );
   // The native provider (Anthropic/OpenAI/Google) is reachable via either a host
   // API key or an OAuth sign-in — both are "native" credentials.
   const nativeConnected = hasKey || hasOauth;
@@ -480,8 +588,16 @@ function AgentsPane({
     const hue = avatarHue(p.id);
     const color = `oklch(0.55 0.12 ${hue})`;
     const isManaging = managingId === p.id;
+    const off = !p.enabled;
     const restBg =
       i % 2 === 1 ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))" : "transparent";
+    // Status: a disabled profile reads "Disabled" regardless of presence; an
+    // enabled one shows whether its credential is actually available.
+    const st = off
+      ? { c: "var(--idle)", t: "Disabled", dot: "idle" as const }
+      : p.present
+        ? { c: "var(--live)", t: "Active", dot: "live" as const }
+        : { c: "var(--err)", t: "Missing", dot: "err" as const };
     return (
       <div key={p.id}>
         <div
@@ -489,10 +605,10 @@ function AgentsPane({
             display: "flex",
             alignItems: "center",
             gap: 14,
-            padding: "12px 16px",
+            padding: "11px 14px 11px 16px",
             borderBottom:
               i === list.length - 1 && !isManaging ? "none" : "1px solid var(--bd-soft)",
-            borderLeft: `3px solid color-mix(in oklab, ${color} 50%, var(--bd))`,
+            borderLeft: `3px solid color-mix(in oklab, ${color} ${off ? 22 : 50}%, var(--bd))`,
             background: restBg,
             transition: "background 0.12s ease",
           }}
@@ -516,24 +632,29 @@ function AgentsPane({
               fontWeight: 600,
               color,
               flexShrink: 0,
+              opacity: off ? 0.5 : 1,
             }}
           >
             {avatarInitials(p.label)}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{p.label}</span>
-              {p.source === "vault" && (
-                <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                  keychain
-                </span>
-              )}
+          <div style={{ flex: 1, minWidth: 0, opacity: off ? 0.6 : 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)", marginBottom: 2 }}>
+              {p.label}
             </div>
-            <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+            <div
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: "var(--fg-2)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {p.source === "vault"
                 ? p.present
-                  ? "stored in keychain"
-                  : "missing from keychain"
+                  ? `Signed in with ${cliSpec.alias}`
+                  : "Sign-in expired — reconnect"
                 : (p.varName ?? "API key")}
             </div>
           </div>
@@ -543,20 +664,21 @@ function AgentsPane({
               alignItems: "center",
               gap: 5,
               fontSize: 11.5,
-              color: p.present ? "var(--live)" : "var(--err)",
+              color: st.c,
               whiteSpace: "nowrap",
             }}
           >
-            <StatusDot status={p.present ? "live" : "err"} />
-            {p.present ? "Active" : "Missing"}
+            <StatusDot status={st.dot} />
+            {st.t}
           </span>
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => (isManaging ? setManagingId(null) : startManage(p.id, p.label))}
-          >
-            {isManaging ? "Done" : "Manage"}
-          </Button>
+          <RowActions
+            enabled={p.enabled}
+            onToggle={(v) => void setAccountProfileEnabled(p.id, v)}
+            toggleTitle={p.enabled ? "Disable — hide from spawn picker" : "Enable"}
+            onEdit={() => (isManaging ? setManagingId(null) : startManage(p.id, p.label))}
+            editActive={isManaging}
+            onDelete={() => void confirmRemove(p.id, p.label)}
+          />
         </div>
         {isManaging && (
           <div
@@ -569,12 +691,24 @@ function AgentsPane({
               gap: 10,
             }}
           >
-            <label style={{ fontSize: 12, color: "var(--fg-2)", flexShrink: 0 }}>Name</label>
+            <label
+              htmlFor={`rename-${p.id}`}
+              className="lbl"
+              style={{ flexShrink: 0, fontSize: 10.5 }}
+            >
+              Name
+            </label>
             <input
+              id={`rename-${p.id}`}
               type="text"
+              // biome-ignore lint/a11y/noAutofocus: focus the field the edit button just opened
+              autoFocus
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void saveRename(p.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveRename(p.id);
+                if (e.key === "Escape") setManagingId(null);
+              }}
               style={{
                 flex: 1,
                 padding: "5px 10px",
@@ -587,20 +721,15 @@ function AgentsPane({
                 outline: "none",
               }}
             />
+            <Button variant="ghost" size="xs" onClick={() => setManagingId(null)}>
+              Cancel
+            </Button>
             <Button
-              variant="outline"
               size="xs"
               onClick={() => void saveRename(p.id)}
               disabled={!renameValue.trim() || renameValue.trim() === p.label}
             >
               Save
-            </Button>
-            <Button
-              variant="destructive"
-              size="xs"
-              onClick={() => void confirmRemove(p.id, p.label)}
-            >
-              Remove
             </Button>
           </div>
         )}
@@ -708,414 +837,234 @@ function AgentsPane({
         <RefreshVersionsButton />
       </div>
 
-      {/* ── Sections ─────────────────────────────────────────────── */}
+      {/* ── Three sections ───────────────────────────────────────────
+          One card per credential method — Subscription Sign In, API Keys,
+          Custom Model Providers — equally sized (flex 1 1 0), each with its own
+          scrollable body. Empty sections render a centered empty state with a
+          CTA; populated ones list rows + an "add another" row. */}
       <div
-        className="scroll"
         style={{
           flex: 1,
           minHeight: 0,
-          overflow: "auto",
+          overflow: "hidden",
           display: "flex",
           flexDirection: "column",
-          // No flex-gap: each SectionHead already carries its own 24/12 margins,
-          // so a gap here would double the spacing and push content past the fold.
+          gap: 14,
           paddingBottom: 24,
         }}
       >
-        {/* ── Credentials ─────────────────────────────────────────── */}
-        <SectionHead label="Credentials" />
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-          {/* ── API Keys ───────────────────────────────────────────── */}
-          <section
-            className="ch-card"
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              padding: 0,
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 14px",
-                borderBottom: "1px solid var(--bd-soft)",
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ fontSize: 12, fontWeight: 500, color: "var(--fg-0)" }}>API Keys</span>
-              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                {apiKeyProfiles.length}
-              </span>
-              <span style={{ flex: 1 }} />
-              {apiKeyProfiles.length > 0 && (
-                <Button variant="ghost" size="xs" onClick={() => setKeyDialog(selectedAgent)}>
-                  {Ico.plus} Add key
-                </Button>
-              )}
-            </div>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-              {apiKeyProfiles.length > 0 ? (
-                <div>{apiKeyProfiles.map((p, i) => renderProfileRow(p, i, apiKeyProfiles))}</div>
-              ) : (
-                <AddRow
-                  label="Add an API key — connect without signing in"
-                  onClick={() => setKeyDialog(selectedAgent)}
-                />
-              )}
-            </div>
-          </section>
-
-          {/* ── OAuth Accounts ───────────────────────────────────────── */}
-          <section
-            className="ch-card"
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              padding: 0,
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 14px",
-                borderBottom: "1px solid var(--bd-soft)",
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ fontSize: 12, fontWeight: 500, color: "var(--fg-0)" }}>
-                OAuth Accounts
-              </span>
-              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                {oauthProfiles.length}
-              </span>
-              <span style={{ flex: 1 }} />
-              {oauthProfiles.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  disabled={loginBusy != null}
-                  onClick={() => startLogin(selectedAgent, selectedAgent)}
-                >
-                  {Ico.plus}
-                  {loginBusy === selectedAgent ? "Signing in…" : "Sign in"}
-                </Button>
-              )}
-            </div>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-              {oauthProfiles.length > 0 ? (
-                <div>{oauthProfiles.map((p, i) => renderProfileRow(p, i, oauthProfiles))}</div>
-              ) : (
-                <AddRow
-                  label={`Sign in with ${cliSpec.alias} — use your subscription, no API key`}
-                  onClick={() => startLogin(selectedAgent, selectedAgent)}
-                  disabled={loginBusy != null}
-                  busy={loginBusy === selectedAgent}
-                />
-              )}
-
-              {loginProgress && loginProgress.stage !== "success" && (
-                <div
-                  className="mono"
-                  style={{
-                    padding: "10px 14px",
-                    margin: "0 14px 10px",
-                    fontSize: 11.5,
-                    color: loginProgress.stage === "error" ? "var(--err)" : "var(--fg-1)",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                    background: "var(--bg-2)",
-                    border: "1px solid var(--bd-soft)",
-                    borderRadius: 8,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    {loginProgress.stage === "starting" && (
-                      <span style={{ color: "var(--fg-2)" }}>Starting...</span>
-                    )}
-                    {loginProgress.stage === "url" && (
-                      <span>Browser opened — authenticate to continue</span>
-                    )}
-                    {loginProgress.stage === "device_code" && (
-                      <span>Enter code in your browser:</span>
-                    )}
-                    {loginProgress.stage === "waiting" && (
-                      <span style={{ color: "var(--fg-2)" }}>Waiting for authentication...</span>
-                    )}
-                    {loginProgress.stage === "error" && <span>{loginProgress.message}</span>}
-                  </div>
-                  {loginProgress.userCode && (
-                    <div
-                      style={{
-                        padding: "6px 12px",
-                        background: "var(--bg-0)",
-                        border: "1px solid var(--bd)",
-                        borderRadius: 6,
-                        fontSize: 18,
-                        fontWeight: 700,
-                        letterSpacing: "0.15em",
-                        color: "var(--fg-0)",
-                        textAlign: "center",
-                      }}
-                    >
-                      {loginProgress.userCode}
-                    </div>
-                  )}
-                  {loginProgress.url && loginProgress.stage !== "error" && (
-                    <div style={{ fontSize: 10.5, color: "var(--fg-3)" }}>{loginProgress.url}</div>
-                  )}
-                  {loginProgress.message && loginProgress.stage !== "error" && (
-                    <div style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
-                      {loginProgress.message}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {loginProgress?.stage === "success" && (
-                <div
-                  className="mono"
-                  style={{
-                    margin: "0 14px 10px",
-                    padding: "8px 12px",
-                    borderRadius: 6,
-                    background: "color-mix(in oklab, var(--live) 8%, var(--bg-2))",
-                    border: "1px solid color-mix(in oklab, var(--live) 30%, var(--bd))",
-                    fontSize: 11.5,
-                    color: "var(--live)",
-                  }}
-                >
-                  {loginProgress.message ?? "Signed in successfully"}
-                </div>
-              )}
-
-              {loginError && !loginProgress && (
-                <div
-                  className="mono"
-                  style={{
-                    margin: "0 14px 10px",
-                    padding: "8px 12px",
-                    borderRadius: 6,
-                    background: "color-mix(in oklab, var(--err) 8%, var(--bg-2))",
-                    border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
-                    fontSize: 11.5,
-                    color: "var(--err)",
-                  }}
-                >
-                  {loginError}
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-
-        {/* ── Model Providers ────────────────────────────────────────── */}
-        <SectionHead label="Model Providers" />
-        <section
-          className="ch-card"
-          style={{
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            padding: 0,
-            overflow: "hidden",
-          }}
+        {/* 1 · Subscription Sign In (OAuth) */}
+        <SectionCard
+          title="Subscription Sign In"
+          hint={`Use your ${cliSpec.alias} plan — no API key`}
+          count={oauthProfiles.length}
+          connected={hasOauth}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "8px 14px",
-              borderBottom: "1px solid var(--bd-soft)",
-              flexShrink: 0,
-            }}
-          >
-            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-              {providers.length} added
-            </span>
-            <span style={{ flex: 1 }} />
-            {compatiblePresets.length > 0 && (
-              <Button variant="ghost" size="xs" onClick={() => setProviderDialog({})}>
-                {Ico.plus} Add provider
-              </Button>
-            )}
-          </div>
-          <div>
-            {/* custom provider rows — the built-in/default provider and its auth
-                live in the Credentials sections above, not here */}
-            {providers.map((p, i) => {
-              const hue = avatarHue(p.name);
-              const color = `oklch(0.55 0.12 ${hue})`;
-              const isManagingProvider = managingProviderId === p.id;
-              return (
-                <div key={p.id}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "10px 14px",
-                      borderBottom:
-                        i === providers.length - 1 && !isManagingProvider
-                          ? "none"
-                          : "1px solid var(--bd-soft)",
-                      borderLeft: `3px solid color-mix(in oklab, ${color} 50%, var(--bd))`,
-                      background:
-                        i % 2 === 0
-                          ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))"
-                          : "transparent",
-                      transition: "background 0.12s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "var(--bg-hover)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background =
-                        i % 2 === 0
-                          ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))"
-                          : "transparent";
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 8,
-                        background: `color-mix(in oklab, ${color} 25%, var(--bg-3))`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {p.name[0]}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>
-                        {p.name}
-                      </span>
-                      <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
-                        {p.kind}
-                        {p.endpoint ? ` · ${p.endpoint}` : ""}
-                      </div>
-                    </div>
-                    {p.models.length > 0 && (
-                      <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                        {p.models.slice(0, 3).map((m) => (
-                          <span
-                            key={m}
-                            className="mono"
-                            style={{
-                              padding: "1px 6px",
-                              borderRadius: 3,
-                              border: "1px solid var(--bd)",
-                              background: "var(--bg-1)",
-                              fontSize: 10,
-                              color: "var(--fg-1)",
-                            }}
-                          >
-                            {m}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <Switch
-                      checked={p.enabled}
-                      onCheckedChange={async (checked) => {
-                        const list = await ipc.updateProvider(p.id, undefined, undefined, checked);
-                        useStore.setState((s) => ({
-                          config: s.config ? { ...s.config, providers: list } : s.config,
-                        }));
-                      }}
-                    />
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      onClick={() =>
-                        isManagingProvider
-                          ? setManagingProviderId(null)
-                          : setManagingProviderId(p.id)
-                      }
-                    >
-                      {isManagingProvider ? "Done" : "Manage"}
-                    </Button>
-                  </div>
-                  {isManagingProvider && (
-                    <div
-                      style={{
-                        padding: "10px 16px 12px",
-                        background: "var(--bg-1)",
-                        borderBottom:
-                          i === providers.length - 1 ? "none" : "1px solid var(--bd-soft)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                      }}
-                    >
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={() => {
-                          setProviderDialog({ editing: p });
-                          setManagingProviderId(null);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <span style={{ flex: 1 }} />
-                      <Button
-                        variant="destructive"
-                        size="xs"
-                        onClick={async () => {
-                          if (!window.confirm(`Remove provider "${p.name}"?`)) return;
-                          const list = await ipc.removeProvider(p.id);
-                          useStore.setState((s) => ({
-                            config: s.config ? { ...s.config, providers: list } : s.config,
-                          }));
-                          setManagingProviderId(null);
-                        }}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {compatiblePresets.length === 0 && (
-              <div
-                className="mono"
-                style={{
-                  fontSize: 10.5,
-                  color: "var(--fg-3)",
-                  padding: "10px 14px",
-                }}
-              >
-                Custom providers not yet supported for {cliSpec.label}.
-              </div>
-            )}
-            {compatiblePresets.length > 0 && providers.length === 0 && (
+          {oauthProfiles.length === 0 && !loginProgress && !loginError ? (
+            <EmptyState
+              accent={meta.accent}
+              icon={<AgentGlyph agent={selectedAgent} size={18} color={meta.accent} />}
+              title={`Use your ${cliSpec.alias} subscription`}
+              hint={`Run on your existing ${cliSpec.alias} plan — no API key needed.`}
+              cta={`Sign in with ${cliSpec.alias}`}
+              onCta={() => startLogin(selectedAgent, selectedAgent)}
+              busy={loginBusy === selectedAgent}
+            />
+          ) : (
+            <>
+              {oauthProfiles.map((p, i) => renderProfileRow(p, i, oauthProfiles))}
               <AddRow
-                label="Add a provider — Bedrock, Vertex AI, MiniMax, or any OpenAI-compatible endpoint"
+                accent={meta.accent}
+                label={
+                  oauthProfiles.length
+                    ? `Sign in with another ${cliSpec.alias} account`
+                    : `Sign in with ${cliSpec.alias} — use your subscription`
+                }
+                onClick={() => startLogin(selectedAgent, selectedAgent)}
+                disabled={loginBusy != null}
+                busy={loginBusy === selectedAgent}
+              />
+            </>
+          )}
+
+          {loginProgress && loginProgress.stage !== "success" && (
+            <div
+              className="mono"
+              style={{
+                padding: "10px 14px",
+                margin: "0 14px 10px",
+                fontSize: 11.5,
+                color: loginProgress.stage === "error" ? "var(--err)" : "var(--fg-1)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                background: "var(--bg-2)",
+                border: "1px solid var(--bd-soft)",
+                borderRadius: 8,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {loginProgress.stage === "starting" && (
+                  <span style={{ color: "var(--fg-2)" }}>Starting...</span>
+                )}
+                {loginProgress.stage === "url" && (
+                  <span>Browser opened — authenticate to continue</span>
+                )}
+                {loginProgress.stage === "device_code" && <span>Enter code in your browser:</span>}
+                {loginProgress.stage === "waiting" && (
+                  <span style={{ color: "var(--fg-2)" }}>Waiting for authentication...</span>
+                )}
+                {loginProgress.stage === "error" && <span>{loginProgress.message}</span>}
+              </div>
+              {loginProgress.userCode && (
+                <div
+                  style={{
+                    padding: "6px 12px",
+                    background: "var(--bg-0)",
+                    border: "1px solid var(--bd)",
+                    borderRadius: 6,
+                    fontSize: 18,
+                    fontWeight: 700,
+                    letterSpacing: "0.15em",
+                    color: "var(--fg-0)",
+                    textAlign: "center",
+                  }}
+                >
+                  {loginProgress.userCode}
+                </div>
+              )}
+              {loginProgress.url && loginProgress.stage !== "error" && (
+                <div style={{ fontSize: 10.5, color: "var(--fg-3)" }}>{loginProgress.url}</div>
+              )}
+              {loginProgress.message && loginProgress.stage !== "error" && (
+                <div style={{ fontSize: 10.5, color: "var(--fg-2)" }}>{loginProgress.message}</div>
+              )}
+            </div>
+          )}
+
+          {loginProgress?.stage === "success" && (
+            <div
+              className="mono"
+              style={{
+                margin: "0 14px 10px",
+                padding: "8px 12px",
+                borderRadius: 6,
+                background: "color-mix(in oklab, var(--live) 8%, var(--bg-2))",
+                border: "1px solid color-mix(in oklab, var(--live) 30%, var(--bd))",
+                fontSize: 11.5,
+                color: "var(--live)",
+              }}
+            >
+              {loginProgress.message ?? "Signed in successfully"}
+            </div>
+          )}
+
+          {loginError && !loginProgress && (
+            <div
+              className="mono"
+              style={{
+                margin: "0 14px 10px",
+                padding: "8px 12px",
+                borderRadius: 6,
+                background: "color-mix(in oklab, var(--err) 8%, var(--bg-2))",
+                border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
+                fontSize: 11.5,
+                color: "var(--err)",
+              }}
+            >
+              {loginError}
+            </div>
+          )}
+        </SectionCard>
+
+        {/* 2 · API Keys */}
+        <SectionCard
+          title="API Keys"
+          hint="Connect with a provider API key — no sign-in"
+          count={apiKeyProfiles.length}
+          connected={hasKey}
+        >
+          {apiKeyProfiles.length === 0 ? (
+            <EmptyState
+              icon={Ico.link}
+              title="No API keys yet"
+              hint="Paste a provider key to connect without signing in — stored in your OS keychain."
+              cta="Add API key"
+              ctaIcon={Ico.plus}
+              onCta={() => setKeyDialog(selectedAgent)}
+            />
+          ) : (
+            <>
+              {apiKeyProfiles.map((p, i) => renderProfileRow(p, i, apiKeyProfiles))}
+              <AddRow
+                accent={meta.accent}
+                label="Add another API key"
+                onClick={() => setKeyDialog(selectedAgent)}
+              />
+            </>
+          )}
+        </SectionCard>
+
+        {/* 3 · Custom Model Providers — configured rows + add-row open the config
+            dialog; enabled + tokened providers become spawn-dialog credentials. */}
+        <SectionCard
+          title="Custom Model Providers"
+          hint={`Route ${cliSpec.label} to a token-plan endpoint`}
+          count={agentProviders.length}
+          connected={hasEnabledProvider}
+        >
+          {compatiblePresets.length === 0 ? (
+            <EmptyState
+              icon={Ico.hub}
+              title="Not available here"
+              hint={`${cliSpec.label} doesn't support custom model endpoints — only its native provider.`}
+            />
+          ) : agentProviders.length === 0 ? (
+            <EmptyState
+              icon={Ico.hub}
+              title="No custom providers"
+              hint={`Route ${cliSpec.label} to a token-plan endpoint — MiniMax, z.ai, or a custom API.`}
+              cta="Add provider"
+              ctaIcon={Ico.plus}
+              onCta={() => setProviderDialog({})}
+            />
+          ) : (
+            <>
+              {agentProviders.map((p, i) => (
+                <ProviderRow
+                  key={p.id}
+                  provider={p}
+                  zebra={i % 2 === 1}
+                  last={false}
+                  onOpen={() => setProviderDialog({ editing: p })}
+                  onToggle={async (enabled) => {
+                    const list = await ipc.updateProvider(p.id, undefined, undefined, enabled);
+                    setProviders(list);
+                  }}
+                  onDelete={async () => {
+                    if (!window.confirm(`Remove provider "${p.name}"? This cannot be undone.`))
+                      return;
+                    setProviders(await ipc.removeProvider(p.id));
+                  }}
+                />
+              ))}
+              <AddRow
+                accent={meta.accent}
+                label="Add another model provider"
                 onClick={() => setProviderDialog({})}
               />
-            )}
-          </div>
-        </section>
+            </>
+          )}
+        </SectionCard>
       </div>
 
+      {providerDialog && (
+        <ProviderConfigDialog
+          agent={selectedAgent}
+          editing={providerDialog.editing}
+          onClose={() => setProviderDialog(null)}
+        />
+      )}
       {keyDialog && (
         <ApiKeyDialog
           agent={keyDialog}
@@ -1132,54 +1081,49 @@ function AgentsPane({
           onDone={handleDialogDone}
         />
       )}
-      {providerDialog && (
-        <ProviderDialog
-          editing={providerDialog.editing}
-          agent={selectedAgent}
-          onClose={() => setProviderDialog(null)}
-        />
-      )}
     </div>
   );
 }
 
 // Shared full-width "add" row — the single add affordance used by every
 // Coding-Agents section (API Keys, OAuth, Model Providers) so they read alike:
-// a dashed plus-tile + a descriptive label, row-hover highlight.
+// a dashed plus-tile + a descriptive label. On hover the row highlights and the
+// tile takes the agent accent (border + tint + glyph) so the affordance lights up.
 function AddRow({
   label,
   onClick,
   disabled,
   busy,
+  accent = "var(--pri)",
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
   busy?: boolean;
+  accent?: string;
 }) {
+  const [hov, setHov] = useState(false);
+  const live = !disabled && !busy;
+  const lit = hov && live;
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled || busy}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
       style={{
         width: "100%",
-        padding: "13px 14px",
+        padding: "12px 14px",
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: 11,
         border: "none",
-        background: "transparent",
-        cursor: disabled || busy ? "default" : "pointer",
+        background: lit ? "var(--bg-hover)" : "transparent",
+        cursor: live ? "pointer" : "default",
         fontFamily: "var(--sans)",
         transition: "background 0.12s ease",
         opacity: disabled ? 0.55 : 1,
-      }}
-      onMouseEnter={(e) => {
-        if (!disabled && !busy) e.currentTarget.style.background = "var(--bg-hover)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = "transparent";
       }}
     >
       <span
@@ -1187,91 +1131,560 @@ function AddRow({
           width: 30,
           height: 30,
           borderRadius: 8,
-          border: "1px dashed var(--bd)",
+          border: `1px dashed ${lit ? accent : "var(--bd)"}`,
+          background: lit ? `color-mix(in oklab, ${accent} 12%, transparent)` : "transparent",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           fontSize: 14,
-          color: "var(--fg-3)",
+          color: lit ? accent : "var(--fg-3)",
           flexShrink: 0,
+          transition: "color 0.14s ease, border-color 0.14s ease, background 0.14s ease",
         }}
       >
         {Ico.plus}
       </span>
-      <span style={{ fontSize: 12, color: "var(--fg-2)", textAlign: "left" }}>
+      <span
+        style={{
+          fontSize: 12.5,
+          color: lit ? "var(--fg-0)" : "var(--fg-1)",
+          textAlign: "left",
+          transition: "color 0.12s ease",
+        }}
+      >
         {busy ? "Working…" : label}
       </span>
     </button>
   );
 }
 
-function ProviderDialog({
+// Trailing action cluster shared by every credential row (accounts + providers):
+// an optional enable/disable Switch, an edit (rename/configure) button, and a
+// delete button. All three stop propagation so they don't trigger a clickable
+// parent row, and the delete tints red on hover.
+function RowActions({
+  enabled,
+  showToggle = true,
+  toggleDisabled,
+  toggleTitle,
+  onToggle,
+  onEdit,
+  editActive,
+  editTitle = "Edit",
+  onDelete,
+  deleteTitle = "Delete",
+}: {
+  enabled: boolean;
+  showToggle?: boolean;
+  toggleDisabled?: boolean;
+  toggleTitle?: string;
+  onToggle: (v: boolean) => void;
+  onEdit: () => void;
+  editActive?: boolean;
+  editTitle?: string;
+  onDelete: () => void;
+  deleteTitle?: string;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+      {showToggle && (
+        <span
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          role="presentation"
+          title={toggleTitle}
+          style={{ display: "inline-flex", marginRight: 5 }}
+        >
+          <Switch checked={enabled} disabled={toggleDisabled} onCheckedChange={onToggle} />
+        </span>
+      )}
+      <IconBtn
+        title={editTitle}
+        active={editActive}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit();
+        }}
+      >
+        {Ico.edit}
+      </IconBtn>
+      <IconBtn
+        title={deleteTitle}
+        danger
+        hoverColor="var(--err)"
+        hoverBg="color-mix(in oklab, var(--err) 14%, transparent)"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+      >
+        {Ico.trash}
+      </IconBtn>
+    </div>
+  );
+}
+
+// One Coding-Agents credential section: a self-contained card with a sticky
+// header (status dot + title + count chip + hint) and an independently
+// scrollable body. All three sections are equally sized (flex 1 1 0) so the
+// pane reads as a clean, even three-up stack.
+function SectionCard({
+  title,
+  hint,
+  count,
+  connected,
+  children,
+}: {
+  title: string;
+  hint: string;
+  count: number;
+  connected: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className="ch-card"
+      style={{
+        flex: "1 1 0",
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+        padding: 0,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 9,
+          padding: "11px 16px",
+          borderBottom: "1px solid var(--bd-soft)",
+          flexShrink: 0,
+        }}
+      >
+        <StatusDot status={connected ? "live" : "idle"} />
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--fg-0)" }}>{title}</span>
+        <span
+          className="mono tnum"
+          style={{
+            fontSize: 10,
+            color: count ? "var(--fg-1)" : "var(--fg-3)",
+            background: "var(--bg-3)",
+            border: "1px solid var(--bd-soft)",
+            borderRadius: 999,
+            padding: "1px 7px",
+            minWidth: 20,
+            textAlign: "center",
+          }}
+        >
+          {count}
+        </span>
+        <span style={{ flex: 1 }} />
+        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+          {hint}
+        </span>
+      </div>
+      <div className="scroll" style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+// Centered empty state for a section with no items — an accent-tinted icon tile,
+// a short headline, a one-line hint, and (optionally) a primary CTA. Fills the
+// card body via minHeight:100% so the equal-sized cards never look hollow.
+function EmptyState({
+  icon,
+  accent = "var(--fg-2)",
+  title,
+  hint,
+  cta,
+  ctaIcon,
+  onCta,
+  busy,
+}: {
+  icon: ReactNode;
+  accent?: string;
+  title: string;
+  hint: string;
+  cta?: string;
+  ctaIcon?: ReactNode;
+  onCta?: () => void;
+  busy?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        minHeight: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 7,
+        padding: "14px 20px",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 11,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: `color-mix(in oklab, ${accent} 13%, var(--bg-1))`,
+          border: `1px solid color-mix(in oklab, ${accent} 26%, var(--bd))`,
+          color: accent,
+        }}
+      >
+        <span style={{ display: "inline-flex", transform: "scale(1.1)" }}>{icon}</span>
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-0)" }}>{title}</div>
+      <div style={{ fontSize: 11, color: "var(--fg-2)", maxWidth: 280, lineHeight: 1.45 }}>
+        {hint}
+      </div>
+      {cta && onCta && (
+        // Filled (primary) so the section's main action reads as clearly
+        // actionable — an outline button on this dark surface looked disabled.
+        <Button size="sm" onClick={onCta} disabled={busy} style={{ marginTop: 3 }}>
+          {ctaIcon}
+          {busy ? "Working…" : cta}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// One configured-provider row. Clicking the row (or its edit button) opens the
+// config dialog; the trailing cluster has a quick enable/disable toggle (only
+// when launch-wired + tokened), plus explicit edit + delete buttons.
+function ProviderRow({
+  provider,
+  zebra,
+  last,
+  onOpen,
+  onToggle,
+  onDelete,
+}: {
+  provider: ModelProvider;
+  zebra: boolean;
+  last: boolean;
+  onOpen: () => void;
+  onToggle: (enabled: boolean) => void;
+  onDelete: () => void;
+}) {
+  const p = provider;
+  const hue = avatarHue(p.name);
+  const color = `oklch(0.55 0.12 ${hue})`;
+  const launchable = LAUNCHABLE_KINDS.has(p.kind);
+  const status = !launchable
+    ? { c: "var(--wait)", t: "Needs proxy" }
+    : !p.hasToken
+      ? { c: "var(--wait)", t: "Token needed" }
+      : !p.enabled
+        ? { c: "var(--idle)", t: "Disabled" }
+        : { c: "var(--live)", t: "Active" };
+  const rest = zebra ? "color-mix(in oklab, var(--bg-1) 40%, var(--bg-2))" : "transparent";
+  const [hov, setHov] = useState(false);
+  return (
+    // A div, not a button: the row holds a nested Switch (itself a button), so a
+    // <button> wrapper would be invalid DOM. role/tabIndex keep it keyboard-open.
+    // biome-ignore lint/a11y/useSemanticElements: a <button> can't wrap the nested Switch button
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        width: "100%",
+        textAlign: "left",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "11px 14px",
+        borderBottom: last ? "none" : "1px solid var(--bd-soft)",
+        borderLeft: `3px solid color-mix(in oklab, ${color} ${hov ? 90 : 50}%, var(--bd))`,
+        background: hov ? "var(--bg-hover)" : rest,
+        cursor: "pointer",
+        transition: "background 0.12s ease, border-color 0.14s ease",
+        fontFamily: "var(--sans)",
+      }}
+    >
+      <div
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          background: `color-mix(in oklab, ${color} 25%, var(--bg-3))`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 12,
+          fontWeight: 600,
+          color,
+          flexShrink: 0,
+        }}
+      >
+        {p.name[0]}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>{p.name}</div>
+        <div
+          className="mono"
+          style={{
+            fontSize: 10.5,
+            color: "var(--fg-2)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {p.model ?? p.models[0] ?? p.kind}
+          {p.endpoint ? ` · ${p.endpoint.replace(/^https?:\/\//, "")}` : ""}
+        </div>
+      </div>
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          fontSize: 11,
+          color: status.c,
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: status.c }} />
+        {status.t}
+      </span>
+      {/* Toggle only when the provider can actually launch (a disabled switch
+          reads as broken); edit + delete are always available. */}
+      <RowActions
+        enabled={p.enabled}
+        showToggle={launchable && p.hasToken}
+        toggleTitle={p.enabled ? "Disable — hide from spawn picker" : "Enable"}
+        onToggle={onToggle}
+        onEdit={onOpen}
+        editTitle="Configure"
+        onDelete={onDelete}
+      />
+    </div>
+  );
+}
+
+// A catalog card in the "connect a provider" gallery. Clicking opens the config
+// sub-view seeded from this preset.
+function ProviderCatalogCard({
+  preset,
+  onClick,
+  selected,
+}: {
+  preset: ProviderPreset;
+  onClick: () => void;
+  selected?: boolean;
+}) {
+  const hue = avatarHue(preset.name);
+  const color = `oklch(0.55 0.12 ${hue})`;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="ch-card-interactive"
+      style={{
+        textAlign: "left",
+        padding: "10px 12px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 7,
+        cursor: "pointer",
+        boxShadow: selected ? "inset 0 0 0 1.5px var(--pri)" : undefined,
+        background: selected ? "var(--pri-dim)" : undefined,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 6,
+            background: preset.custom
+              ? "transparent"
+              : `color-mix(in oklab, ${color} 25%, var(--bg-3))`,
+            border: preset.custom ? "1px dashed var(--bd)" : "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 11,
+            fontWeight: 600,
+            color: preset.custom ? "var(--fg-3)" : color,
+            flexShrink: 0,
+          }}
+        >
+          {preset.custom ? Ico.plus : preset.name[0]}
+        </div>
+        <span
+          style={{
+            fontSize: 12.5,
+            fontWeight: 500,
+            color: "var(--fg-0)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {preset.name}
+        </span>
+        <span style={{ flex: 1 }} />
+        {preset.gated ? (
+          <span
+            className="mono"
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "var(--wait)",
+              background: "color-mix(in oklab, var(--wait) 14%, transparent)",
+              padding: "1px 6px",
+              borderRadius: 4,
+              flexShrink: 0,
+            }}
+          >
+            gated
+          </span>
+        ) : selected ? (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 16,
+              height: 16,
+              borderRadius: "50%",
+              background: "var(--pri)",
+              color: "var(--bg-0)",
+              flexShrink: 0,
+            }}
+          >
+            {Ico.check}
+          </span>
+        ) : null}
+      </div>
+      <span
+        className="mono"
+        style={{
+          fontSize: 10,
+          color: "var(--fg-2)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {preset.blurb}
+      </span>
+    </button>
+  );
+}
+
+// Modal provider configuration: pick a preset (MiniMax, z.ai, or a custom
+// endpoint), set the base URL + keychain token + models, and preview the exact
+// harness env vars a launch injects. Edits an existing provider, or adds a new
+// one seeded from the chosen catalog preset.
+function ProviderConfigDialog({
+  agent,
   editing,
   onClose,
 }: {
-  editing?: {
-    id: string;
-    name: string;
-    kind: string;
-    endpoint: string | null;
-    models: string[];
-    enabled: boolean;
-  };
-  agent?: AgentCli;
+  agent: AgentCli;
+  editing?: ModelProvider;
   onClose: () => void;
 }) {
+  const setProviders = useStore((s) => s.setProviders);
+  const catalog = catalogFor(agent);
+  // Preset selection drives the add flow; editing skips it (the kind is fixed).
+  const [presetId, setPresetId] = useState<string | null>(
+    editing ? null : (catalog[0]?.id ?? null),
+  );
+  const preset = editing ? undefined : catalog.find((p) => p.id === presetId);
+  const kind = editing?.kind ?? preset?.kind ?? "anthropic-compatible";
+
   const [name, setName] = useState(editing?.name ?? "");
-  const [kind, setKind] = useState(editing?.kind ?? "openai-compatible");
   const [endpoint, setEndpoint] = useState(editing?.endpoint ?? "");
-  const [modelsStr, setModelsStr] = useState(editing?.models.join(", ") ?? "");
+  const [model, setModel] = useState(editing?.model ?? "");
+  const [smallFast, setSmallFast] = useState(editing?.smallFastModel ?? "");
+  const [token, setToken] = useState("");
+  const [hasToken, setHasToken] = useState(editing?.hasToken ?? false);
+  const [enabled, setEnabled] = useState(editing?.enabled ?? true);
   const [saving, setSaving] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
 
-  const applyPreset = (idx: number) => {
-    const p = PROVIDER_PRESETS[idx];
-    setSelectedPreset(idx);
-    setName(p.name);
-    setKind(p.kind);
-    setEndpoint(p.baseUrl);
-    setModelsStr(p.models.join(", "));
-  };
+  // Seed the form from the chosen preset (add flow only). Re-runs when the user
+  // switches preset — a new template, so name/endpoint/models reset. The typed
+  // token is independent of the template, so it's left alone.
+  useEffect(() => {
+    if (editing) return;
+    const p = catalog.find((x) => x.id === presetId);
+    setName(p?.custom ? "" : (p?.name ?? ""));
+    setEndpoint(p?.baseUrl ?? "");
+    setModel(p?.model ?? "");
+    setSmallFast(p?.smallFastModel ?? "");
+  }, [presetId, editing, catalog]);
 
-  // Managed cloud services (Bedrock / Vertex) authenticate via the host's cloud
-  // credentials, so they carry no endpoint; every other kind needs an explicit
-  // base URL — enforce that rather than silently saving a dead provider.
-  const managed = kind === "bedrock" || kind === "vertex";
-  const endpointMissing = !managed && !endpoint.trim();
-  const canSave = Boolean(name.trim()) && !endpointMissing && !saving;
+  const presetModels = preset?.models.length ? preset.models : (editing?.models ?? []);
+  const isAnthropic = kind === "anthropic" || kind === "anthropic-compatible";
+  const gated = (preset?.gated ?? false) || !LAUNCHABLE_KINDS.has(kind);
+  const note = preset?.note;
+  const gatedReason = preset?.gatedReason;
+  const docsUrl = preset?.docsUrl;
+  const tokenLabel = preset?.tokenLabel ?? "API token";
 
-  const handleSave = async () => {
+  const endpointMissing = !endpoint.trim();
+  const canSave = Boolean(name.trim()) && !endpointMissing && !saving && !gated;
+  const tokenReady = hasToken || token.trim().length > 0;
+  const env = harnessEnvPreview(kind, endpoint, model, smallFast, tokenReady);
+
+  const save = async () => {
     if (!canSave) return;
     setSaving(true);
     try {
-      const models = modelsStr
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      let list;
+      const models = presetModels.length ? presetModels : model.trim() ? [model.trim()] : [];
+      let list: ModelProvider[];
+      let id = editing?.id;
       if (editing) {
         list = await ipc.updateProvider(
           editing.id,
           name.trim(),
           endpoint.trim() || undefined,
-          undefined,
+          enabled,
           models,
+          model.trim() || undefined,
+          smallFast.trim() || undefined,
         );
       } else {
+        const before = new Set(useStore.getState().providers.map((p) => p.id));
         list = await ipc.addProvider(
           name.trim(),
           kind,
           endpoint.trim() || undefined,
           undefined,
           models,
+          model.trim() || undefined,
+          smallFast.trim() || undefined,
         );
+        id = list.find((p) => !before.has(p.id))?.id ?? id;
       }
-      useStore.setState((s) => ({
-        config: s.config ? { ...s.config, providers: list } : s.config,
-      }));
+      if (id && token.trim()) {
+        list = await ipc.setProviderToken(id, token.trim());
+      }
+      setProviders(list);
       onClose();
     } catch (e) {
       console.error("provider save failed", e);
@@ -1280,150 +1693,364 @@ function ProviderDialog({
     }
   };
 
-  const onEnter = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && canSave) void handleSave();
+  const removeIt = async () => {
+    if (!editing) return;
+    if (!window.confirm(`Remove provider "${editing.name}"? This cannot be undone.`)) return;
+    const list = await ipc.removeProvider(editing.id);
+    setProviders(list);
+    onClose();
   };
 
+  const clearToken = async () => {
+    if (!editing) return;
+    const list = await ipc.setProviderToken(editing.id, "");
+    setProviders(list);
+    setHasToken(false);
+  };
+
+  const FieldLabel = ({ children }: { children: ReactNode }) => (
+    <Label className="lbl" style={{ marginBottom: 6, display: "block" }}>
+      {children}
+    </Label>
+  );
+
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[480px]">
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
-          <DialogTitle>{editing ? "Edit provider" : "Add model provider"}</DialogTitle>
-          <DialogDescription>
-            {editing
-              ? "Update this provider's endpoint and available models."
-              : "Connect an OpenAI- or Anthropic-compatible endpoint, or a managed cloud model service."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-3.5">
-          {!editing && (
-            <div className="flex flex-col gap-2">
-              <Label className="lbl">Quick start</Label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {PROVIDER_PRESETS.map((p, i) => (
-                  <button
-                    key={p.name}
-                    type="button"
-                    onClick={() => applyPreset(i)}
-                    style={{
-                      padding: "6px 12px",
-                      borderRadius: 6,
-                      border: selectedPreset === i ? "1px solid var(--pri)" : "1px solid var(--bd)",
-                      background: selectedPreset === i ? "var(--pri-dim)" : "var(--bg-3)",
-                      color: selectedPreset === i ? "var(--fg-0)" : "var(--fg-1)",
-                      fontSize: 12,
-                      fontFamily: "var(--sans)",
-                      cursor: "pointer",
-                      transition: "border-color 0.12s ease, background 0.12s ease",
-                    }}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1.5">
-            <Label className="lbl">Name</Label>
-            {/* biome-ignore lint/a11y/noAutofocus: modal opens explicitly on user action */}
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. MiniMax Production"
-              onKeyDown={onEnter}
-              autoFocus
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label className="lbl">Type</Label>
-            <Select value={kind} onValueChange={setKind} disabled={Boolean(editing)}>
-              <SelectTrigger className="w-full font-mono bg-[var(--bg-0)] border-[var(--bd)] text-[var(--fg-0)]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[var(--bg-2)] border-[var(--bd-strong)] font-mono">
-                {[
-                  ["anthropic-compatible", "Anthropic-compatible"],
-                  ["openai-compatible", "OpenAI-compatible"],
-                  ["bedrock", "AWS Bedrock"],
-                  ["vertex", "Vertex AI"],
-                  ["azure", "Azure OpenAI"],
-                ].map(([value, label]) => (
-                  <SelectItem
-                    key={value}
-                    value={value}
-                    className="text-[var(--fg-1)] focus:bg-[var(--bg-hover)] focus:text-[var(--fg-0)]"
-                  >
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label className="lbl">Endpoint URL</Label>
-            <Input
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              placeholder="https://api.example.com/v1"
-              onKeyDown={onEnter}
-              spellCheck={false}
-              disabled={managed}
-              aria-invalid={endpointMissing}
-            />
-            <span
-              className="mono"
-              style={{ fontSize: 10.5, color: endpointMissing ? "var(--err)" : "var(--fg-3)" }}
-            >
-              {managed
-                ? "Managed service — authenticates via host cloud credentials, no endpoint needed."
-                : endpointMissing
-                  ? "Endpoint URL is required for this provider type."
-                  : "Base URL for the provider's API."}
-            </span>
-          </div>
-
-          {selectedPreset != null && PROVIDER_PRESETS[selectedPreset]?.note && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div
               style={{
-                padding: "8px 12px",
-                borderRadius: 6,
-                background: "color-mix(in oklab, var(--pri) 6%, var(--bg-0))",
-                border: "1px solid color-mix(in oklab, var(--pri) 20%, var(--bd))",
-                fontSize: 11.5,
-                color: "var(--fg-1)",
-                lineHeight: 1.45,
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: `color-mix(in oklab, ${AGENT_META[agent].accent} 14%, var(--bg-1))`,
+                border: `1px solid color-mix(in oklab, ${AGENT_META[agent].accent} 28%, var(--bd))`,
+                color: AGENT_META[agent].accent,
               }}
             >
-              {PROVIDER_PRESETS[selectedPreset].note}
+              <span style={{ display: "inline-flex", transform: "scale(1.1)" }}>
+                <AgentGlyph agent={agent} size={16} color={AGENT_META[agent].accent} />
+              </span>
             </div>
-          )}
+            <div style={{ minWidth: 0 }}>
+              <DialogTitle>
+                {editing ? `Configure ${editing.name}` : "Add model provider"}
+              </DialogTitle>
+              <DialogDescription style={{ marginTop: 2 }}>
+                Route {AGENT_META[agent].name} to a token-plan endpoint — the token stays in your OS
+                keychain.
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
 
-          <div className="flex flex-col gap-1.5">
-            <Label className="lbl">Models</Label>
-            <Input
-              className="font-mono"
-              value={modelsStr}
-              onChange={(e) => setModelsStr(e.target.value)}
-              placeholder="model-1, model-2"
-              onKeyDown={onEnter}
-              spellCheck={false}
-            />
-            <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-              Comma-separated model IDs available from this provider.
-            </span>
+        {/* Outer = scroller (block); inner flex column sizes to content so the
+            fields + harness card keep their natural height instead of shrinking. */}
+        <div
+          className="scroll"
+          style={{
+            maxHeight: "min(58vh, 540px)",
+            overflowY: "auto",
+            margin: "0 -2px",
+            padding: "2px 2px",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* preset picker — add flow only (editing has a fixed kind) */}
+            {!editing && catalog.length > 0 && (
+              <div>
+                <FieldLabel>Provider</FieldLabel>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 8,
+                  }}
+                >
+                  {catalog.map((p) => (
+                    <ProviderCatalogCard
+                      key={p.id}
+                      preset={p}
+                      selected={presetId === p.id}
+                      onClick={() => setPresetId(p.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {gated && gatedReason && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  padding: "12px 14px",
+                  borderRadius: 8,
+                  background: "color-mix(in oklab, var(--wait) 9%, var(--bg-1))",
+                  border: "1px solid color-mix(in oklab, var(--wait) 35%, var(--bd))",
+                }}
+              >
+                <span style={{ color: "var(--wait)", flexShrink: 0, marginTop: 1 }}>
+                  {Ico.bell}
+                </span>
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: "var(--fg-0)",
+                      marginBottom: 3,
+                    }}
+                  >
+                    Not one-click yet
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--fg-1)", lineHeight: 1.5 }}>
+                    {gatedReason}
+                  </div>
+                  {docsUrl && (
+                    <div
+                      className="mono"
+                      style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 6 }}
+                    >
+                      {docsUrl}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* form — dimmed + inert when the selected kind can't be launch-wired */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+                opacity: gated ? 0.55 : 1,
+                pointerEvents: gated ? "none" : "auto",
+              }}
+            >
+              {note && (
+                <p style={{ margin: 0, fontSize: 12, color: "var(--fg-2)", lineHeight: 1.5 }}>
+                  {note}
+                </p>
+              )}
+
+              <div>
+                <FieldLabel>Display name</FieldLabel>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. z.ai Coding Plan"
+                  spellCheck={false}
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Base URL</FieldLabel>
+                <Input
+                  className="font-mono"
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                  placeholder="https://api.example.com/anthropic"
+                  spellCheck={false}
+                  aria-invalid={endpointMissing}
+                />
+                <span
+                  className="mono"
+                  style={{ fontSize: 10.5, color: endpointMissing ? "var(--err)" : "var(--fg-3)" }}
+                >
+                  {endpointMissing
+                    ? "Base URL is required."
+                    : isAnthropic
+                      ? "Injected as ANTHROPIC_BASE_URL."
+                      : "Injected as OPENAI_BASE_URL."}
+                </span>
+              </div>
+
+              <div>
+                <FieldLabel>{tokenLabel}</FieldLabel>
+                <Input
+                  type="password"
+                  className="font-mono"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder={hasToken ? "•••••••••••• (stored)" : `Paste your ${tokenLabel}`}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <span
+                    className="mono"
+                    style={{ fontSize: 10.5, color: hasToken ? "var(--live)" : "var(--fg-3)" }}
+                  >
+                    {hasToken
+                      ? "Stored in the OS keychain — type to replace."
+                      : "Stored in the OS keychain, never written to disk."}
+                  </span>
+                  {hasToken && editing && (
+                    <button
+                      type="button"
+                      onClick={() => void clearToken()}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        fontSize: 10.5,
+                        color: "var(--err)",
+                      }}
+                    >
+                      Remove token
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <FieldLabel>{isAnthropic ? "Primary model" : "Model"}</FieldLabel>
+                <Input
+                  className="font-mono"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="model-id"
+                  spellCheck={false}
+                />
+                {presetModels.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+                    {presetModels.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setModel(m)}
+                        style={{
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          border: model === m ? "1px solid var(--pri)" : "1px solid var(--bd)",
+                          background: model === m ? "var(--pri-dim)" : "var(--bg-1)",
+                          color: "var(--fg-1)",
+                          fontFamily: "var(--mono)",
+                          fontSize: 10.5,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {isAnthropic && (
+                <div>
+                  <FieldLabel>Background model · optional</FieldLabel>
+                  <Input
+                    className="font-mono"
+                    value={smallFast}
+                    onChange={(e) => setSmallFast(e.target.value)}
+                    placeholder="fast model id"
+                    spellCheck={false}
+                  />
+                  <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                    ANTHROPIC_SMALL_FAST_MODEL — used for quick background tasks.
+                  </span>
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  paddingTop: 14,
+                  borderTop: "1px solid var(--bd-soft)",
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12.5, color: "var(--fg-0)" }}>Enabled</div>
+                  <div style={{ fontSize: 11, color: "var(--fg-2)" }}>
+                    Offer this provider as a credential in the spawn dialog.
+                  </div>
+                </div>
+                <Switch checked={enabled} disabled={!tokenReady} onCheckedChange={setEnabled} />
+              </div>
+            </div>
+
+            {/* harness env preview — the exact vars a launch injects */}
+            <div className="ch-card" style={{ padding: 0, overflow: "hidden" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 14px",
+                  borderBottom: "1px solid var(--bd-soft)",
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg-0)" }}>
+                  Harness injection
+                </span>
+                <span style={{ flex: 1 }} />
+                <StatusDot status={tokenReady && !gated ? "live" : "idle"} />
+                <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                  {gated ? "not wired" : tokenReady ? "ready" : "needs token"}
+                </span>
+              </div>
+              <div style={{ padding: "12px 14px" }}>
+                {env.length === 0 ? (
+                  <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                    Nothing — this kind isn't launch-wired.
+                  </div>
+                ) : (
+                  <div
+                    className="mono"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                      background: "var(--bg-0)",
+                      border: "1px solid var(--bd-soft)",
+                      borderRadius: 6,
+                      padding: "10px 12px",
+                      overflowX: "auto",
+                    }}
+                  >
+                    {env.map(([k, v, secret]) => (
+                      <div key={k} style={{ whiteSpace: "nowrap" }}>
+                        <span style={{ color: "var(--pri)" }}>{k}</span>
+                        <span style={{ color: "var(--fg-3)" }}>=</span>
+                        <span style={{ color: secret ? "var(--wait)" : "var(--fg-1)" }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
         <DialogFooter>
+          {editing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void removeIt()}
+              style={{ marginRight: "auto", color: "var(--err)" }}
+            >
+              Remove provider
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" disabled={!canSave} onClick={() => void handleSave()}>
-            {saving ? "Saving…" : editing ? "Save changes" : "Add provider"}
+          <Button size="sm" disabled={!canSave} onClick={() => void save()}>
+            {saving ? "Saving…" : editing ? "Save" : "Connect"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1861,6 +2488,15 @@ function NotificationsPane() {
       <PaneHead title="Notifications">
         How CodeHub should alert you when an agent needs attention while its window isn't focused.
       </PaneHead>
+
+      <SectionHead label="Ambient surface" />
+      <SettingRow
+        label="Dynamic Island · live activity"
+        desc="macOS: a notch widget that auto-pops when an agent awaits input, finishes, or fails. Other platforms: a floating companion window. On by default; ⌘⇧J toggles it anytime."
+        control={<CompanionToggle />}
+        live
+        last
+      />
 
       <SectionHead label="Desktop notifications" />
       <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
@@ -2925,6 +3561,24 @@ function LiveToggle({ field, disabled }: { field: BoolSettingKey; disabled?: boo
       checked={on}
       onCheckedChange={(checked) => void updateConfig({ [field]: checked } as Partial<AppSettings>)}
       disabled={disabled}
+    />
+  );
+}
+
+// Master enable for the ambient surface (macOS Dynamic Island / companion
+// window). Persists `showCompanion` AND shows/hides immediately — the macOS
+// island feed also reacts to the setting within ~1s, but the explicit open/close
+// makes the toggle feel instant on every platform.
+function CompanionToggle() {
+  const on = useStore((s) => Boolean(s.config?.showCompanion));
+  const updateConfig = useStore((s) => s.updateConfig);
+  return (
+    <Switch
+      checked={on}
+      onCheckedChange={(checked) => {
+        void updateConfig({ showCompanion: checked } as Partial<AppSettings>);
+        void (checked ? ipc.openCompanion() : ipc.closeCompanion()).catch(() => {});
+      }}
     />
   );
 }

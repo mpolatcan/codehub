@@ -41,6 +41,7 @@ import { Spark } from "@/app/components/primitives/Spark";
 import { StatusBadge } from "@/app/components/primitives/StatusBadge";
 import type { StatusKey } from "@/app/components/primitives/StatusDot";
 import { Ico } from "@/app/components/primitives/icons";
+import { deriveLiveStatus } from "@/app/lib/activity";
 import { MODE_BY_ID } from "@/app/lib/catalog";
 import {
   type ActivityEvent,
@@ -213,9 +214,13 @@ export function Dashboard() {
     };
   }, [running, claudeIdKey]);
 
-  // session name → live working/idle state; sessions awaiting input right now.
-  const stateBy = new Map(activity.map((a) => [a.session, a.state]));
+  // session name → hook-aware live status (NOT raw byte-flow `state`) so an idle
+  // agent's TUI redraws — a scroll, or the SIGWINCH from opening a panel — don't
+  // read as "working". Same shared derivation the hub pane/sidebar use.
   const awaitingSet = new Set(prompts.map((p) => p.session));
+  const liveBy = new Map(
+    activity.map((a) => [a.session, deriveLiveStatus(a, awaitingSet.has(a.session)).status]),
+  );
   // session name → most recent activity message (the closest-real "Task"),
   // newest-wins by iterating the history sorted by `at` descending.
   const taskBy = new Map<string, string>();
@@ -258,10 +263,10 @@ export function Dashboard() {
   const ctxAvg =
     ctxVals.length > 0 ? Math.round(ctxVals.reduce((a, b) => a + b, 0) / ctxVals.length) : null;
 
-  // Count working among CURRENT sessions (via stateBy, the same per-session
+  // Count actively-running among CURRENT sessions (via liveBy, the same per-session
   // source the table uses) — not raw activity rows, which can include stale
   // entries and overcount past the session total ("3 of 2").
-  const working = sessions.filter(([s]) => stateBy.get(s) === "working").length;
+  const working = sessions.filter(([s]) => liveBy.get(s) === "live").length;
 
   // ── Usage analytics computed values ────────────────────────────────────────
   const claudeHas = claude !== null && claude.turns > 0;
@@ -294,9 +299,11 @@ export function Dashboard() {
     : `runtime ${state}`;
 
   // Apply the table filter.
-  const visibleSessions = sessions.filter(([session]) =>
-    filter === "all" ? true : stateBy.get(session) === "working" || awaitingSet.has(session),
-  );
+  const visibleSessions = sessions.filter(([session]) => {
+    if (filter === "all") return true;
+    const live = liveBy.get(session);
+    return live === "live" || live === "wait";
+  });
 
   return (
     <main
@@ -310,12 +317,12 @@ export function Dashboard() {
       }}
     >
       {/* header */}
-      <div style={{ padding: "20px 28px 14px", borderBottom: "1px solid var(--bd-soft)" }}>
+      <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--bd-soft)" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: "-0.01em" }}>
+          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-0.01em" }}>
             Dashboard
           </h1>
-          <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+          <span className="mono" style={{ fontSize: 12.5, color: "var(--fg-2)" }}>
             {headerSub}
           </span>
           <span style={{ flex: 1 }} />
@@ -342,9 +349,9 @@ export function Dashboard() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(184px, 1fr))",
             gap: 12,
-            marginBottom: 22,
+            marginBottom: 16,
           }}
         >
           <Metric
@@ -401,7 +408,6 @@ export function Dashboard() {
             style={{
               padding: 0,
               minWidth: 0,
-              minHeight: 264,
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
@@ -416,7 +422,9 @@ export function Dashboard() {
                 gap: 12,
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>Sessions</span>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg-0)" }}>
+                Sessions
+              </span>
               <div style={{ display: "flex", gap: 4 }}>
                 <FilterBtn label="All" active={filter === "all"} onClick={() => setFilter("all")} />
                 <FilterBtn
@@ -426,7 +434,7 @@ export function Dashboard() {
                 />
               </div>
               <span style={{ flex: 1 }} />
-              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
+              <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
                 {running ? `updated ${fmtSince(updatedAt)}` : "runtime offline"}
               </span>
             </div>
@@ -436,11 +444,14 @@ export function Dashboard() {
                 className="mono"
                 style={{
                   flex: 1,
+                  minHeight: 150,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  padding: "28px 16px",
-                  fontSize: 11.5,
+                  padding: "28px 24px",
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  textAlign: "center",
                   color: "var(--fg-3)",
                 }}
               >
@@ -449,7 +460,7 @@ export function Dashboard() {
                   : "No sessions match this filter."}
               </div>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, flex: 1 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead>
                   <tr>
                     <Th>Session</Th>
@@ -465,8 +476,7 @@ export function Dashboard() {
                   {visibleSessions.map(([session, meta]) => {
                     const badge = MODE_BY_ID[meta.mode].badge;
                     const awaiting = awaitingSet.has(session);
-                    const isWorking = stateBy.get(session) === "working";
-                    const st: StatusKey = awaiting ? "wait" : isWorking ? "live" : "idle";
+                    const st: StatusKey = liveBy.get(session) ?? "idle";
                     const su = meta.claudeId ? claudeBySession[meta.claudeId] : undefined;
                     const rowTokens =
                       meta.cli === "claude" && su ? su.tokensIn + su.tokensOut : null;
@@ -523,7 +533,7 @@ export function Dashboard() {
                           </span>
                         </Td>
                         <Td>
-                          <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
+                          <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
                             {git?.isRepo ? (git.branch ?? "(detached)") : "—"}
                           </span>
                         </Td>
@@ -559,7 +569,7 @@ export function Dashboard() {
           {/* attention queue + workspace resource bar (one card, design layout) */}
           <div
             className="ch-card"
-            style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 264 }}
+            style={{ display: "flex", flexDirection: "column", minWidth: 0 }}
           >
             <div
               style={{
@@ -574,11 +584,11 @@ export function Dashboard() {
                 className={prompts.length > 0 ? "dot wait" : "dot off"}
                 style={{ width: 6, height: 6 }}
               />
-              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg-0)" }}>
                 Needs attention
               </span>
               <span style={{ flex: 1 }} />
-              <span className="mono tnum" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+              <span className="mono tnum" style={{ fontSize: 11, color: "var(--fg-3)" }}>
                 {prompts.length}
               </span>
             </div>
@@ -588,11 +598,12 @@ export function Dashboard() {
                 className="mono"
                 style={{
                   flex: 1,
-                  padding: "24px 14px",
+                  minHeight: 78,
+                  padding: "20px 14px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 11,
+                  fontSize: 12,
                   color: "var(--fg-3)",
                 }}
               >
@@ -615,21 +626,21 @@ export function Dashboard() {
                       <div
                         style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}
                       >
-                        {m && <AgentGlyph agent={m.cli} size={12} color={`var(--a-${m.cli})`} />}
-                        <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-0)" }}>
+                        {m && <AgentGlyph agent={m.cli} size={13} color={`var(--a-${m.cli})`} />}
+                        <span className="mono" style={{ fontSize: 12, color: "var(--fg-0)" }}>
                           {m ? m.alias : p.session}
                         </span>
                         <span style={{ flex: 1 }} />
-                        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                        <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
                           {fmtSince(p.since)}
                         </span>
                       </div>
                       <div
                         style={{
-                          fontSize: 12,
+                          fontSize: 12.5,
                           color: "var(--fg-1)",
                           marginBottom: 9,
-                          lineHeight: 1.4,
+                          lineHeight: 1.45,
                           wordBreak: "break-word",
                         }}
                       >
@@ -680,7 +691,7 @@ export function Dashboard() {
                   mem={stats.memLimit > 0 ? (stats.memUsed / stats.memLimit) * 100 : 0}
                 />
               ) : (
-                <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-3)" }}>
                   {running ? "Reading workspace stats…" : "Runtime not running."}
                 </div>
               )}
@@ -690,17 +701,17 @@ export function Dashboard() {
 
         {/* BOTTOM: full-width activity chart (per-agent token usage now lives only
             in the Usage analytics section below — no duplicate mini-card here). */}
-        <div className="ch-card" style={{ padding: 16, minWidth: 0, marginTop: 12 }}>
+        <div className="ch-card" style={{ padding: 16, minWidth: 0, marginTop: 16 }}>
           <div
             style={{
               display: "flex",
               alignItems: "baseline",
               gap: 14,
-              marginBottom: 12,
+              marginBottom: 14,
               flexWrap: "wrap",
             }}
           >
-            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg-0)" }}>
               Activity · last 24h
             </span>
             <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
@@ -714,9 +725,9 @@ export function Dashboard() {
         </div>
 
         {/* ── USAGE ANALYTICS (formerly the standalone Usage screen) ────────── */}
-        <div style={{ marginTop: 22, borderTop: "1px solid var(--bd-soft)", paddingTop: 18 }}>
+        <div style={{ marginTop: 24, borderTop: "1px solid var(--bd-soft)", paddingTop: 20 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 16 }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg-0)" }}>
+            <span style={{ fontSize: 16, fontWeight: 600, color: "var(--fg-0)" }}>
               Usage analytics
             </span>
             <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
@@ -879,8 +890,8 @@ function FilterBtn({
       onClick={onClick}
       className="mono"
       style={{
-        fontSize: 10.5,
-        padding: "2px 8px",
+        fontSize: 11,
+        padding: "3px 9px",
         borderRadius: 5,
         border: "1px solid transparent",
         background: active ? "var(--bg-3)" : "transparent",
@@ -902,10 +913,10 @@ function ResourceBar({ name, cpu, mem }: { name: string; cpu: number; mem: numbe
         style={{
           display: "flex",
           justifyContent: "space-between",
-          fontSize: 10.5,
+          fontSize: 11,
           fontFamily: "var(--mono)",
           color: "var(--fg-1)",
-          marginBottom: 4,
+          marginBottom: 5,
         }}
       >
         <span
@@ -922,7 +933,7 @@ function ResourceBar({ name, cpu, mem }: { name: string; cpu: number; mem: numbe
           cpu {cpu.toFixed(0)}% · mem {mem.toFixed(0)}%
         </span>
       </div>
-      <div style={{ display: "flex", gap: 3, height: 4 }}>
+      <div style={{ display: "flex", gap: 3, height: 5 }}>
         <div style={{ flex: 1, background: "var(--bg-3)", borderRadius: 999, overflow: "hidden" }}>
           <div
             style={{
@@ -973,8 +984,10 @@ function ActivityChart({
   }
 
   const max = any ? Math.max(1, ...claude.map((c, i) => c + codex[i])) : 1;
-  const PLOT = 200;
-  const GUTTER = 30;
+  // Full plot when there's data to read; a compact band when empty so an idle
+  // window doesn't reserve a tall blank rectangle (the dashboard's worst dead-space).
+  const PLOT = any ? 190 : 116;
+  const GUTTER = 32;
   // 5 evenly-spaced rules; the bottom one (0) is the solid baseline/x-axis.
   const rules = [0, 0.25, 0.5, 0.75, 1];
 
@@ -989,7 +1002,7 @@ function ActivityChart({
             width: GUTTER,
             height: PLOT,
             flexShrink: 0,
-            fontSize: 9.5,
+            fontSize: 10.5,
             color: "var(--fg-3)",
           }}
         >
@@ -1075,7 +1088,7 @@ function ActivityChart({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 11,
+                fontSize: 12,
                 color: "var(--fg-3)",
                 textAlign: "center",
               }}
@@ -1093,10 +1106,10 @@ function ActivityChart({
         style={{
           display: "flex",
           gap: 3,
-          marginTop: 7,
+          marginTop: 8,
           paddingLeft: GUTTER + 8,
           fontFamily: "var(--mono)",
-          fontSize: 9.5,
+          fontSize: 10.5,
           color: "var(--fg-3)",
         }}
       >
@@ -1122,11 +1135,11 @@ function Th({ children, align }: { children?: React.ReactNode; align?: "left" | 
     <th
       style={{
         textAlign: align || "left",
-        padding: "8px 14px",
+        padding: "9px 14px",
         fontWeight: 500,
         color: "var(--fg-2)",
-        fontSize: 10.5,
-        letterSpacing: "0.08em",
+        fontSize: 11,
+        letterSpacing: "0.07em",
         textTransform: "uppercase",
         borderBottom: "1px solid var(--bd-soft)",
       }}
@@ -1138,7 +1151,7 @@ function Th({ children, align }: { children?: React.ReactNode; align?: "left" | 
 
 function Td({ children, align }: { children?: React.ReactNode; align?: "left" | "right" }) {
   return (
-    <td style={{ padding: "9px 14px", textAlign: align || "left", verticalAlign: "middle" }}>
+    <td style={{ padding: "11px 14px", textAlign: align || "left", verticalAlign: "middle" }}>
       {children}
     </td>
   );
@@ -1150,12 +1163,12 @@ function Legend({ color, label }: { color: string; label: string }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 5,
-        fontSize: 11,
+        gap: 6,
+        fontSize: 11.5,
         color: "var(--fg-1)",
       }}
     >
-      <span style={{ width: 9, height: 2, background: color, borderRadius: 2 }} />
+      <span style={{ width: 10, height: 2, background: color, borderRadius: 2 }} />
       {label}
     </span>
   );
@@ -1188,9 +1201,11 @@ function Metric({
   return (
     <div
       className="ch-card ch-card-interactive"
-      style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6 }}
+      style={{ padding: 15, display: "flex", flexDirection: "column", gap: 7 }}
     >
-      <div className="lbl">{label}</div>
+      <div className="lbl" style={{ fontSize: 11 }}>
+        {label}
+      </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span
           className="mono tnum"
@@ -1208,7 +1223,7 @@ function Metric({
         )}
       </div>
       {value && sub ? (
-        <div className="mono" style={{ fontSize: 10.5, color: subColor }}>
+        <div className="mono" style={{ fontSize: 11.5, color: subColor }}>
           {sub}
         </div>
       ) : (
@@ -1331,9 +1346,10 @@ function AgentUsageCard({
   onNew: () => void;
 }) {
   const tokens = totals.input + totals.output;
-  const spark = (usage.byDay as Array<DayUsage | CodexDayUsage>)
-    .slice(-13)
-    .map((d) => d.totals.input + d.totals.output + cacheTokens(d.totals));
+  const days = (usage.byDay as Array<DayUsage | CodexDayUsage>).slice(-14).map((d) => ({
+    date: d.date,
+    tokens: d.totals.input + d.totals.output + cacheTokens(d.totals),
+  }));
 
   const hasRate = rateMeters !== null && hasAnyRate(rateMeters);
   const tone = rateTone(rateMeters);
@@ -1351,8 +1367,8 @@ function AgentUsageCard({
     >
       <div
         style={{
-          flex: "0 0 260px",
-          padding: "16px 18px",
+          flex: "0 0 244px",
+          padding: "14px 16px",
           borderRight: "1px solid var(--bd-soft)",
           display: "flex",
           flexDirection: "column",
@@ -1372,18 +1388,32 @@ function AgentUsageCard({
           <StatusBadge status="live">Active</StatusBadge>
         </div>
 
-        {spark.length > 1 && (
-          <div style={{ marginTop: 4 }}>
-            <div className="lbl-soft" style={{ marginBottom: 4 }}>
-              last {spark.length} days · tokens
+        {days.length >= 1 && (
+          <div
+            style={{
+              flex: 1,
+              minHeight: 64,
+              display: "flex",
+              flexDirection: "column",
+              gap: 7,
+            }}
+          >
+            <div
+              className="lbl-soft"
+              style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}
+            >
+              <span>tokens / day</span>
+              <span style={{ color: "var(--fg-2)" }}>
+                last {days.length} day{days.length === 1 ? "" : "s"}
+              </span>
             </div>
-            <Spark data={spark} w={224} h={28} color={`var(--a-${agent})`} fill />
+            <DayBars days={days} color={`var(--a-${agent})`} />
           </div>
         )}
 
         <div
           style={{
-            marginTop: "auto",
+            marginTop: days.length >= 1 ? 0 : "auto",
             display: "flex",
             flexDirection: "column",
             gap: 4,
@@ -1408,11 +1438,11 @@ function AgentUsageCard({
       <div
         style={{
           flex: 1,
-          padding: "16px 22px",
+          padding: "14px 20px",
           minWidth: 0,
           display: "flex",
           flexDirection: "column",
-          gap: 14,
+          gap: 12,
         }}
       >
         {agent === "codex" && hasRate && rateMeters && (
@@ -1446,10 +1476,10 @@ function AgentUsageCard({
         </div>
 
         <div>
-          <div className="lbl" style={{ marginBottom: 8 }}>
+          <div className="lbl" style={{ marginBottom: 6 }}>
             By model
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <ModelRowHead />
             {usage.byModel.map((m) => (
               <ModelRow
@@ -1467,7 +1497,7 @@ function AgentUsageCard({
         <div
           style={{
             marginTop: "auto",
-            padding: "10px 0 0",
+            padding: "8px 0 0",
             borderTop: "1px dashed var(--bd-soft)",
             display: "flex",
             alignItems: "center",
@@ -1503,8 +1533,8 @@ function AgentUsageCard({
 
       <div
         style={{
-          flex: "0 0 156px",
-          padding: "16px 18px",
+          flex: "0 0 152px",
+          padding: "14px 16px",
           borderLeft: "1px solid var(--bd-soft)",
           display: "flex",
           flexDirection: "column",
@@ -1517,11 +1547,51 @@ function AgentUsageCard({
         </Button>
         <div
           className="mono"
-          style={{ fontSize: 10, color: "var(--fg-3)", lineHeight: 1.5, textAlign: "center" }}
+          style={{ fontSize: 10.5, color: "var(--fg-3)", lineHeight: 1.5, textAlign: "center" }}
         >
           plan &amp; billing managed by the provider
         </div>
       </div>
+    </div>
+  );
+}
+
+// Per-day token bars for an agent usage card. Reads better than a 2-point
+// sparkline (which collapses into a solid fill block): each day is one bar,
+// height ∝ tokens, opacity ramped so busier days read louder. Fills its flex
+// parent so the graph occupies the card's left column instead of floating.
+function DayBars({ days, color }: { days: { date: string; tokens: number }[]; color: string }) {
+  const max = Math.max(...days.map((d) => d.tokens), 1);
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        gap: 4,
+        minHeight: 36,
+      }}
+    >
+      {days.map((d) => {
+        const r = d.tokens / max;
+        return (
+          <div
+            key={d.date}
+            title={`${d.date} · ${fmtNum(d.tokens)} tokens`}
+            className="bar-col"
+            style={{
+              flex: 1,
+              maxWidth: 40,
+              height: `${Math.max(4, r * 100)}%`,
+              minHeight: 3,
+              background: color,
+              opacity: 0.34 + 0.66 * r,
+              borderRadius: "2px 2px 0 0",
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -1604,7 +1674,7 @@ function ModelRow({
   cost: number;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px" }}>
       <span
         className="mono"
         style={{
@@ -1658,8 +1728,10 @@ function NumCell({
 function UsageStat({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span className="lbl-soft">{label}</span>
-      <span className="mono tnum" style={{ fontSize: 16, color: "var(--fg-0)", fontWeight: 500 }}>
+      <span className="lbl-soft" style={{ fontSize: 11 }}>
+        {label}
+      </span>
+      <span className="mono tnum" style={{ fontSize: 17, color: "var(--fg-0)", fontWeight: 500 }}>
         {value}
       </span>
     </div>
@@ -1687,8 +1759,8 @@ function EmptyAgentCard({
     >
       <div
         style={{
-          flex: "0 0 260px",
-          padding: "16px 18px",
+          flex: "0 0 244px",
+          padding: "14px 16px",
           borderRight: "1px solid var(--bd-soft)",
           display: "flex",
           flexDirection: "column",
@@ -1733,11 +1805,11 @@ function EmptyAgentCard({
       <div
         style={{
           flex: 1,
-          padding: "16px 22px",
+          padding: "14px 20px",
           minWidth: 0,
           display: "flex",
           flexDirection: "column",
-          gap: 14,
+          gap: 12,
         }}
       >
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
@@ -1789,8 +1861,8 @@ function EmptyAgentCard({
 
       <div
         style={{
-          flex: "0 0 156px",
-          padding: "16px 18px",
+          flex: "0 0 152px",
+          padding: "14px 16px",
           borderLeft: "1px solid var(--bd-soft)",
           display: "flex",
           flexDirection: "column",
@@ -1808,7 +1880,7 @@ function EmptyAgentCard({
         </Button>
         <div
           className="mono"
-          style={{ fontSize: 10, color: "var(--fg-3)", lineHeight: 1.5, textAlign: "center" }}
+          style={{ fontSize: 10.5, color: "var(--fg-3)", lineHeight: 1.5, textAlign: "center" }}
         >
           usage appears after a recorded turn
         </div>
@@ -1879,7 +1951,7 @@ function rateTone(r: CodexRateLimits | null): "warn" | "over" | undefined {
 
 function forecastText(agent: "claude" | "codex", r: CodexRateLimits | null): string {
   if (agent === "claude") {
-    return "No on-disk quota windows for Claude — token usage here is unmetered.";
+    return "No on-disk quota windows — token usage is unmetered.";
   }
   if (!r || r.primaryUsedPct === null) {
     return "No rate-limit data on disk yet — usage appears after the next turn.";

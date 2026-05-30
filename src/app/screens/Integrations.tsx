@@ -92,8 +92,8 @@ export function IntegrationsPane() {
       </h1>
       <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: 13 }}>
         Connect external services so agents can read context and act on your behalf. Connections are
-        surfaced presence-only — no credential value is read or stored. GitHub uses a keychain-backed
-        token; the Claude account + MCP config is read from the runtime container.
+        surfaced presence-only — no credential value is read or stored. GitHub uses a
+        keychain-backed token; the Claude account + MCP config is read from the runtime container.
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -101,7 +101,14 @@ export function IntegrationsPane() {
         <section>
           <SectionHead label="Source control" />
           <GitHubCard status={githubStatus} repos={githubRepos} />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8, marginTop: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: 8,
+              marginTop: 8,
+            }}
+          >
             <SoonRow name="GitLab" desc="Self-hosted or saas.gitlab.com" />
             <SoonRow name="Bitbucket" desc="Cloud + Data Center" />
             <SoonRow name="Gitea" desc="Self-hosted" />
@@ -112,7 +119,13 @@ export function IntegrationsPane() {
         {/* Other categories — no data source yet, honestly "Coming soon" */}
         <section>
           <SectionHead label="Project trackers" />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: 8,
+            }}
+          >
             <SoonRow name="Linear" desc="Read issues, comment, transition status" />
             <SoonRow name="Jira" desc="Atlassian cloud + server" />
             <SoonRow name="Notion" desc="Read docs, append to pages" />
@@ -122,7 +135,13 @@ export function IntegrationsPane() {
 
         <section>
           <SectionHead label="Observability" />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: 8,
+            }}
+          >
             <SoonRow name="Sentry" desc="Pipe runtime errors back to the agent for triage" />
             <SoonRow name="Datadog" desc="Logs, traces, metrics" />
             <SoonRow name="Honeycomb" desc="Distributed traces" />

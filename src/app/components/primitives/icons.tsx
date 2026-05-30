@@ -403,6 +403,38 @@ export const Ico = {
       <path d="M5 7l2 1.5L5 10M9 10.5h2.5" />
     </svg>
   ),
+  // Pencil — edit/rename affordance.
+  edit: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M11 2.5l2.5 2.5M3 13l.6-2.6 7-7 2.5 2.5-7 7L3 13z" />
+    </svg>
+  ),
+  // Trash — delete/remove affordance.
+  trash: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 4.5h10M6 4.5V3h4v1.5M4.5 4.5l.5 8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8M6.5 7v4M9.5 7v4" />
+    </svg>
+  ),
   // Clock glyph — the ActionBar's Resume affordance.
   clock: (
     <svg

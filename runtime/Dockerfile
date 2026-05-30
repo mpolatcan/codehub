@@ -37,6 +37,10 @@ ENV IS_SANDBOX=1
 
 # CodeHub writes config + workspace via volume mounts
 ENV CLAUDE_CONFIG_DIR=/config/claude
+# CODEX_HOME is the real Codex var (auth.json + config.toml live under it). Pin it
+# to the persistent /config mount so OAuth login + config survive container
+# recreate. CODEX_CONFIG_DIR is a no-op for Codex (kept for back-compat).
+ENV CODEX_HOME=/config/codex
 ENV CODEX_CONFIG_DIR=/config/codex
 ENV ANTIGRAVITY_CONFIG_DIR=/config/antigravity
 
@@ -78,6 +82,26 @@ set -euo pipefail
 EVENT_KIND="${1:-unknown}"
 SESSION="${CODEHUB_SESSION:-}"
 
+# $2 carries the Notification SUBTYPE for Claude (permission_prompt / idle_prompt),
+# routed by the settings matcher — Claude's Notification stdin does NOT reliably
+# carry a `notification_type` field, so the matcher passes it explicitly here.
+# Only honored for Notification (Codex's legacy `notify` appends its own JSON as a
+# trailing arg, which must not be mistaken for a subtype).
+NOTIF_TYPE=""
+if [ "$EVENT_KIND" = "Notification" ]; then
+  NOTIF_TYPE="${2:-}"
+fi
+
+# Codex's `notify` passes its event JSON as a trailing argv arg ($2). Pull the
+# thread-id (= the rollout/conversation uuid) so CodeHub can locate THIS session's
+# rollout file for per-pane token/turn telemetry. Guarded to argv that parses as a
+# JSON OBJECT carrying the field, so Claude's Notification subtype string (also $2,
+# a bareword like "idle_prompt") is never misread.
+CODEX_THREAD=""
+if [ -n "${2:-}" ] && printf '%s' "${2:-}" | jq -e 'objects | has("thread-id")' >/dev/null 2>&1; then
+  CODEX_THREAD="$(printf '%s' "$2" | jq -r '."thread-id" // empty' 2>/dev/null || true)"
+fi
+
 # If CodeHub didn't set the session, skip gracefully (non-CodeHub run).
 if [ -z "$SESSION" ]; then
   exit 0
@@ -87,9 +111,14 @@ EVENTS_DIR="/tmp/codehub/events"
 mkdir -p "$EVENTS_DIR"
 EVENTS_FILE="$EVENTS_DIR/$SESSION.jsonl"
 
-# Read agent-provided JSON from stdin (may be empty for hook types that
-# don't provide stdin — fall back to an empty object).
-PAYLOAD_JSON="$(cat 2>/dev/null || echo '{}')"
+# Read agent-provided JSON from stdin. Empty (e.g. Codex's legacy `notify` nulls
+# stdin and passes its payload as a trailing argv arg) or non-JSON stdin must not
+# break the envelope build — fall back to an empty object. `jq -e .` exits 0 on
+# EMPTY input, so the `-z` guard is required in addition to the validity check.
+PAYLOAD_JSON="$(cat 2>/dev/null)"
+if [ -z "$PAYLOAD_JSON" ] || ! printf '%s' "$PAYLOAD_JSON" | jq -e . >/dev/null 2>&1; then
+  PAYLOAD_JSON='{}'
+fi
 
 # Build the envelope. `jq -c` writes compact JSON; --arg/-n guarantees
 # correct escaping regardless of what's in the payload.
@@ -99,6 +128,8 @@ printf '%s\n' "$(
   jq -cn \
     --arg session "$SESSION" \
     --arg kind "$EVENT_KIND" \
+    --arg nt "$NOTIF_TYPE" \
+    --arg thread "$CODEX_THREAD" \
     --argjson at "$NOW_MS" \
     --argjson payload "$PAYLOAD_JSON" \
     '{
@@ -106,124 +137,115 @@ printf '%s\n' "$(
       kind: $kind,
       at: $at,
       message: ($payload.message // null),
-      notification_type: ($payload.notification_type // null),
-      tool_name: ($payload.tool_name // $payload.tool_use.name // null)
+      notification_type: (if $nt != "" then $nt else ($payload.notification_type // null) end),
+      tool_name: ($payload.tool_name // $payload.tool_use.name // null),
+      codex_thread_id: (if $thread != "" then $thread else null end)
     }'
 )" >> "$EVENTS_FILE"
 HOOK_EOF
 RUN chmod +x /usr/local/bin/codehub-hook
 
-# ── Claude Code hook configuration ──────────────────────────────────────────
-# Written to $CLAUDE_CONFIG_DIR/settings.json (merged at startup by Claude Code).
-# The hook config keys are verified against Claude Code 2.1.150 (§7.6 spike):
-#   hooks.<EventName>[].hooks[].{type:"command", command:"..."}
+# ── Claude Code hook configuration (MANAGED settings) ───────────────────────
+# CRITICAL: hooks must live in MANAGED settings, NOT $CLAUDE_CONFIG_DIR/settings.json.
+# CLAUDE_CONFIG_DIR=/config/claude is bind-mounted from the host (lifecycle.rs),
+# so anything written to the image's /config/claude is SHADOWED by the host mount
+# (which Claude itself overwrites with its own prefs, e.g. {"theme":"dark"}) — the
+# image-default hooks there NEVER reach the agent. That was the long-standing bug:
+# no hook ever fired, so awaiting-input / turn / tool state was always empty.
 #
-# Note: CLAUDE_CONFIG_DIR=/config/claude is volume-mounted from the host at
-# runtime (lifecycle.rs bind-mounts the app-data config dir). The settings.json
-# written here is the IMAGE DEFAULT; the host mount overrides it. We write to
-# the image path so a fresh mount gets a sane default; CodeHub preserves any
-# existing host-side settings.json rather than clobbering it.
+# Managed settings live at a fixed system path OUTSIDE the /config mount, are
+# highest-precedence, and MERGE with the user's settings — so these hooks are
+# always active regardless of the mounted config dir or per-account profile.
+#   Linux path: /etc/claude-code/managed-settings.json   (verified: code.claude.com/docs/en/settings)
+#   Structure:  hooks.<EventName>[].{matcher?, hooks:[{type:"command", command}]}
 #
-# The hook commands are single-quoted shell commands referencing
-# /usr/local/bin/codehub-hook with the event kind as the first argument.
-
-RUN mkdir -p /config/claude && cat > /config/claude/settings.json <<'SETTINGS_EOF'
+# Notification is matcher-routed: Claude's Notification stdin does not reliably
+# carry the notification type, but the MATCHER does filter on it — so we route
+# each subtype to codehub-hook with the subtype as $2 (see the hook script).
+RUN mkdir -p /etc/claude-code && cat > /etc/claude-code/managed-settings.json <<'MANAGED_EOF'
 {
   "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/codehub-hook Stop"
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/codehub-hook StopFailure"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/codehub-hook Notification"
-          }
-        ]
-      }
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "/usr/local/bin/codehub-hook UserPromptSubmit" }] }
     ],
     "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/codehub-hook PreToolUse"
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "/usr/local/bin/codehub-hook PreToolUse" }] }
     ],
     "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/codehub-hook PostToolUse"
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "/usr/local/bin/codehub-hook PostToolUse" }] }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/codehub-hook UserPromptSubmit"
-          }
-        ]
-      }
+    "Notification": [
+      { "matcher": "permission_prompt", "hooks": [{ "type": "command", "command": "/usr/local/bin/codehub-hook Notification permission_prompt" }] },
+      { "matcher": "idle_prompt", "hooks": [{ "type": "command", "command": "/usr/local/bin/codehub-hook Notification idle_prompt" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "/usr/local/bin/codehub-hook Stop" }] }
+    ],
+    "StopFailure": [
+      { "hooks": [{ "type": "command", "command": "/usr/local/bin/codehub-hook StopFailure" }] }
     ],
     "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/codehub-hook SessionStart"
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "/usr/local/bin/codehub-hook SessionStart" }] }
     ],
     "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/local/bin/codehub-hook SessionEnd"
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "/usr/local/bin/codehub-hook SessionEnd" }] }
     ]
   }
 }
+MANAGED_EOF
+
+# A minimal image-default user settings.json so a fresh /config mount is sane.
+# Intentionally carries NO hooks — those are owned by managed-settings above (a
+# copy here would be shadowed by the host mount anyway).
+RUN mkdir -p /config/claude && cat > /config/claude/settings.json <<'SETTINGS_EOF'
+{}
 SETTINGS_EOF
 
 # ── Codex notify configuration ───────────────────────────────────────────────
-# Codex reads notify config from $CODEX_CONFIG_DIR/config.toml (TOML format).
-# The `notify` array specifies programs to run on turn-complete / approval events.
-# Payload shape is not in public docs (§7.6 unverified) — the hook script reads
-# stdin and emits what it can; unknown fields are omitted by jq (honesty contract).
-
+# Codex reads config from $CODEX_CONFIG_DIR/config.toml. Two mechanisms (verified
+# against openai/codex + developers.openai.com/codex/hooks):
+#   • legacy `notify` — fires ONLY on agent-turn-complete; the event JSON is
+#     appended as a trailing ARGV arg (stdin is null). codehub-hook just needs the
+#     "Stop" kind, so it ignores that arg. NOTE the array is [program, args...] —
+#     the previous single space-joined string never exec'd.
+#   • structured `hooks` (enabled by default) — give what notify can't: turn start,
+#     tool calls, and AWAITING APPROVAL (PermissionRequest). Each runs codehub-hook
+#     with the event JSON on STDIN (codehub-hook reads tool_name etc. from it).
+#     PermissionRequest reuses the Notification/permission_prompt kind → the
+#     awaiting path. No Stop hook here — `notify` owns turn-finish (no double-count).
+#
+# Delivery caveat (same as Claude's old settings.json): $CODEX_CONFIG_DIR=/config
+# is bind-mounted, so this image default is shadowed if the host /config/codex has
+# its own config.toml. Unlike Claude, Codex exposes no system path outside the
+# mount, so guaranteed delivery needs CodeHub to seed the host config (follow-up).
 RUN mkdir -p /config/codex && cat > /config/codex/config.toml <<'CODEX_EOF'
-# CodeHub event capture — appends turn/approval events to the session event file.
-# The notify program receives event JSON on stdin (shape TBD; §7.6).
-notify = ["/usr/local/bin/codehub-hook Stop"]
+# CodeHub event capture — appends turn/tool/approval events to the session file.
+notify = ["/usr/local/bin/codehub-hook", "Stop"]
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "/usr/local/bin/codehub-hook UserPromptSubmit"
+
+[[hooks.PreToolUse]]
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/usr/local/bin/codehub-hook PreToolUse"
+
+[[hooks.PostToolUse]]
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "/usr/local/bin/codehub-hook PostToolUse"
+
+[[hooks.PermissionRequest]]
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command = "/usr/local/bin/codehub-hook Notification permission_prompt"
+
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "/usr/local/bin/codehub-hook SessionStart"
 CODEX_EOF
 
 # Idle entrypoint — CodeHub spawns tmux sessions via docker exec

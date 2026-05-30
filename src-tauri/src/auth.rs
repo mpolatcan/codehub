@@ -35,8 +35,12 @@ pub fn login_spec(provider: &str) -> Option<(Vec<&'static str>, &'static str)> {
             "__claude_config_bundle__",
         )),
         "codex" => Some((
+            // Codex writes auth under $CODEX_HOME (=/config/codex). /config is NOT
+            // mounted, so this is container-local — we read it here, right after
+            // login, and store it in the vault; the vault (keychain) is what
+            // persists, re-injected per launch by account_launch_script.
             vec!["codex", "login", "--device-auth"],
-            "/root/.codex/auth.json",
+            "/config/codex/auth.json",
         )),
         "antigravity" => Some((
             vec!["agy", "auth", "login"],
@@ -188,7 +192,27 @@ async fn capture_claude_bundle(
     docker: &Arc<DockerClient>,
     session_name: &str,
 ) -> Result<Option<String>, String> {
-    let dir = claude_login_config_dir(session_name);
+    capture_claude_bundle_at(docker, &claude_login_config_dir(session_name)).await
+}
+
+/// Tar+base64 a live Claude config `dir` into a vault bundle string, guarded on
+/// that dir reporting a logged-in account. Shared by the interactive login
+/// capture (which reads the temp login dir) and the background credential-sync
+/// loop (which reads a session's `/config/claude-profiles/<env>` dir to persist
+/// the token Claude refreshed in place). Returns `None` when the dir is absent or
+/// not logged in — so a logged-out dir never overwrites a good vault entry.
+///
+/// The bundle is an ALLOWLIST of the auth-essential files only — `.credentials.json`
+/// (the token), `.claude.json` (account + onboarding flags + project trust), and
+/// `settings.json`. NOT the whole dir: a denylist let `plugins/` (and any future
+/// big dir Claude writes) bloat the bundle to MEGABYTES, and the bundle is later
+/// delivered to the restore as a single ENV VAR — which Linux caps at
+/// `MAX_ARG_STRLEN` (128 KiB). A 3 MB bundle silently broke restore (`argument list
+/// too long`) → Claude launched logged-out. The three files stay well under the cap.
+pub async fn capture_claude_bundle_at(
+    docker: &DockerClient,
+    dir: &str,
+) -> Result<Option<String>, String> {
     let script = format!(
         r#"set -eu
 dir={dir}
@@ -205,21 +229,18 @@ cleanup() {{ rm -f "$tmp"; }}
 trap cleanup EXIT
 (
   cd "$dir"
-  tar -czf "$tmp" \
-    --exclude='./projects' \
-    --exclude='./sessions' \
-    --exclude='./debug' \
-    --exclude='./cache' \
-    --exclude='./backups' \
-    --exclude='./logs' \
-    --exclude='./statsig' \
-    --exclude='./shell-snapshots' \
-    .
+  files=""
+  for f in .credentials.json .claude.json settings.json; do
+    [ -e "$f" ] && files="$files ./$f"
+  done
+  # `.credentials.json` is guaranteed present (loggedIn check above), so $files is
+  # never empty — but guard anyway so `set -e` can't abort on an empty tar.
+  [ -n "$files" ] && tar -czf "$tmp" $files || tar -czf "$tmp" --files-from /dev/null
 )
 printf %s {prefix}
 base64 "$tmp" | tr -d '\n'
 "#,
-        dir = shell_single_quote(&dir),
+        dir = shell_single_quote(dir),
         onboarding = claude_onboarding_patch_script("dir"),
         prefix = shell_single_quote(CLAUDE_AUTH_BUNDLE_PREFIX),
     );
@@ -232,6 +253,239 @@ base64 "$tmp" | tr -d '\n'
         Ok(Some(trimmed.to_string()))
     } else {
         Ok(None)
+    }
+}
+
+/// `mtime-size` of a profile dir's `.credentials.json`, or `None` when the file
+/// is absent (the profile was never seeded into this container) or the stat
+/// fails. The runtime base is Debian, so GNU `stat -c` is available. The value
+/// changes whenever Claude Code rewrites the file on a token refresh — that change
+/// is the cheap signal the sync loop uses to skip unchanged creds.
+async fn credential_fingerprint(docker: &DockerClient, file: &str) -> Option<String> {
+    let script = format!(
+        "stat -c '%Y-%s' {file} 2>/dev/null || true",
+        file = shell_single_quote(file),
+    );
+    let out = docker
+        .exec_capture_pub(vec!["sh", "-c", &script])
+        .await
+        .ok()?;
+    let fp = out.trim().to_string();
+    if fp.is_empty() {
+        None
+    } else {
+        Some(fp)
+    }
+}
+
+/// Read the live Codex `auth.json` from a container, or `None` when it's absent
+/// or lacks a usable access token (so a cleared/partial file never overwrites a
+/// good vault entry). Codex stores credentials at `$CODEX_HOME/auth.json`
+/// (pinned to `/config/codex`), shared across that container's Codex sessions —
+/// unlike Claude's per-profile dirs.
+async fn capture_codex_auth_at(docker: &DockerClient) -> Result<Option<String>, String> {
+    let out = docker
+        .exec_capture_pub(vec![
+            "sh",
+            "-c",
+            "[ -f /config/codex/auth.json ] && cat /config/codex/auth.json || true",
+        ])
+        .await
+        .map_err(|e| e.to_string())?;
+    let trimmed = out.trim();
+    if codex_has_access_token(trimmed) {
+        Ok(Some(trimmed.to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+/// True when `json` is a Codex `auth.json` carrying a non-empty OAuth access
+/// token — the marker that it's a real logged-in credential worth persisting.
+fn codex_has_access_token(json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|v| {
+            v.get("tokens")
+                .and_then(|t| t.get("access_token"))
+                .and_then(|a| a.as_str())
+                .map(|s| !s.is_empty())
+        })
+        .unwrap_or(false)
+}
+
+/// The ChatGPT account id inside a Codex `auth.json`, used to attribute a live
+/// credential back to the right vault profile when more than one Codex account
+/// exists.
+fn codex_account_id(json: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|v| {
+            v.get("tokens")
+                .and_then(|t| t.get("account_id"))
+                .and_then(|a| a.as_str())
+                .map(String::from)
+        })
+}
+
+/// Interval between credential-sync sweeps. Claude access tokens live for hours,
+/// so a 10-minute sweep captures a refresh well within the access-token window
+/// while costing only one cheap `stat` per running container in steady state.
+const CREDENTIAL_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Single global loop that keeps each vault-backed Claude **and Codex** profile's
+/// stored credential current with the token the CLI refreshes *in place* inside
+/// the container.
+///
+/// Why this exists: login captures a one-time snapshot into the keychain, and
+/// every session launch restores that snapshot. The CLI then refreshes the
+/// short-lived access token in place, but the refresh is never written back — so
+/// the vault's tokens stay frozen at login and eventually 401 once the refresh
+/// token ages out, forcing manual re-login. This loop closes that gap by writing
+/// the live, refreshed credential back to the vault.
+///
+/// One task, not one-per-container (cf. the events tailer): each sweep lists the
+/// running workspace containers and, per profile, stats the on-disk credential
+/// file; only when the fingerprint changed since the last sweep (the CLI just
+/// refreshed) does it re-capture and `vault.store` it. The `seen` map is keyed by
+/// `(container id, profile id)` so a recreated container (fresh `/config`)
+/// re-syncs and independent containers don't suppress each other. Tauri-only —
+/// the dev bridge has no vault.
+///
+/// Claude vs Codex shape: Claude isolates each profile under its own
+/// `/config/claude-profiles/<env>` dir, so the file is per-profile. Codex shares
+/// one `$CODEX_HOME/auth.json` (`/config/codex`) across a container's Codex
+/// sessions, so the live file is attributed back to a profile by its ChatGPT
+/// `account_id` (falling back to the sole profile when only one exists).
+pub async fn credential_sync_loop(
+    manager: Arc<crate::manager::LifecycleManager>,
+    config: Arc<crate::config::ConfigStore>,
+    vault: Arc<Vault>,
+) {
+    use crate::lifecycle::ContainerState;
+    // Sentinel profile-id slot for Codex's shared per-container auth.json (its
+    // file isn't per-profile, so it can't key by a real profile id like Claude).
+    const CODEX_SLOT: &str = "\0codex-auth";
+    let mut seen: std::collections::HashMap<(String, String), String> =
+        std::collections::HashMap::new();
+    loop {
+        tokio::time::sleep(CREDENTIAL_SYNC_INTERVAL).await;
+
+        let all = config.get().account_profiles;
+        let is_vault = |p: &crate::config::AccountProfile| {
+            matches!(p.credential, crate::config::CredentialSource::Vault)
+        };
+        // Vault-backed Claude profiles: (profile id, per-profile config dir).
+        let claude_profiles: Vec<(String, String)> = all
+            .iter()
+            .filter(|p| p.agent == "claude" && is_vault(p))
+            .map(|p| {
+                let dir = crate::docker::claude_profile_dir_for_env(
+                    &crate::config::vault_env_name(&p.id),
+                );
+                (p.id.clone(), dir)
+            })
+            .collect();
+        // Vault-backed Codex profiles: (profile id, stored account_id) for
+        // attributing the shared auth.json back to the right account.
+        let codex_profiles: Vec<(String, Option<String>)> = all
+            .iter()
+            .filter(|p| p.agent == "codex" && is_vault(p))
+            .map(|p| {
+                let acct = vault
+                    .read(&p.id)
+                    .ok()
+                    .flatten()
+                    .and_then(|s| codex_account_id(&s));
+                (p.id.clone(), acct)
+            })
+            .collect();
+        if claude_profiles.is_empty() && codex_profiles.is_empty() {
+            continue;
+        }
+
+        // A transient daemon error must not churn the `seen` map — skip the sweep.
+        let containers = match manager.list_workspace_containers().await {
+            Ok(list) => list,
+            Err(e) => {
+                tracing::debug!("credential sync: fleet list failed ({e}); skipping sweep");
+                continue;
+            },
+        };
+        // Forget fingerprints for containers that no longer exist (removed or
+        // recreated) so the map stays bounded across the app's lifetime.
+        let live_ids: std::collections::HashSet<String> = containers
+            .iter()
+            .filter_map(|wc| wc.status.id.clone())
+            .collect();
+        seen.retain(|(cid, _), _| live_ids.contains(cid));
+
+        for wc in containers {
+            if wc.status.state != ContainerState::Running {
+                continue;
+            }
+            let Some(cid) = wc.status.id.clone() else {
+                continue;
+            };
+            let docker = manager.workspace_container(&wc.key).docker_client();
+
+            // Claude: one credential file per profile dir.
+            for (pid, dir) in &claude_profiles {
+                let file = format!("{dir}/.credentials.json");
+                let Some(fp) = credential_fingerprint(&docker, &file).await else {
+                    continue; // profile not seeded in this container
+                };
+                let key = (cid.clone(), pid.clone());
+                if seen.get(&key) == Some(&fp) {
+                    continue; // unchanged since the last sweep
+                }
+                match capture_claude_bundle_at(&docker, dir).await {
+                    Ok(Some(bundle)) => {
+                        if vault.store(pid, &bundle).is_ok() {
+                            seen.insert(key, fp);
+                        }
+                    },
+                    // Logged-out / no bundle: leave the existing vault entry intact
+                    // and don't record the fingerprint, so the next sweep retries.
+                    Ok(None) => {},
+                    Err(e) => tracing::debug!("credential sync capture failed: {e}"),
+                }
+            }
+
+            // Codex: one shared auth.json per container, attributed by account_id.
+            if !codex_profiles.is_empty() {
+                let key = (cid.clone(), CODEX_SLOT.to_string());
+                if let Some(fp) = credential_fingerprint(&docker, "/config/codex/auth.json").await {
+                    if seen.get(&key) != Some(&fp) {
+                        if let Ok(Some(json)) = capture_codex_auth_at(&docker).await {
+                            let live_acct = codex_account_id(&json);
+                            // Match by account_id; if we can't (no id parsed) but there's
+                            // exactly one Codex profile, attribute to it. Otherwise skip —
+                            // never guess which of several accounts a file belongs to.
+                            let target = codex_profiles
+                                .iter()
+                                .find(|(_, stored)| match (stored, &live_acct) {
+                                    (Some(s), Some(l)) => s == l,
+                                    _ => false,
+                                })
+                                .map(|(pid, _)| pid.clone())
+                                .or_else(|| {
+                                    if codex_profiles.len() == 1 {
+                                        Some(codex_profiles[0].0.clone())
+                                    } else {
+                                        None
+                                    }
+                                });
+                            if let Some(pid) = target {
+                                if vault.store(&pid, &json).is_ok() {
+                                    seen.insert(key, fp);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

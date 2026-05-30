@@ -26,7 +26,10 @@ export function MetricStat({
     <span
       style={{
         display: "inline-flex",
-        alignItems: "baseline",
+        // Center (not baseline) so a row mixing MetricStat with ContextGauge — which
+        // vertically-centers its text around the gauge bar — keeps every label and
+        // value on one line (pane footer).
+        alignItems: "center",
         gap: 6,
         height: 18,
         lineHeight: 1,

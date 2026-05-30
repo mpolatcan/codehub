@@ -52,6 +52,34 @@ dev-web: ## Browser-mode dev: Vite (:1420) + backend bridge (:4555), no Tauri wi
 	  npm run dev & \
 	  wait
 
+# Stable self-signed identity for dev builds. macOS Keychain "Always Allow" binds to
+# an app's code signature; the linker ad-hoc-signs each `cargo`/`tauri dev` rebuild
+# with a NEW content hash, so the keychain re-prompts every rebuild. Signing with a
+# stable self-signed cert (create once: Keychain Access → Certificate Assistant →
+# Create a Certificate → type "Code Signing", self-signed) gives a constant
+# designated requirement, so "Always Allow" persists. Override the identity name with
+# `make dev-signed CODEHUB_DEV_IDENTITY=my-cert`.
+CODEHUB_DEV_IDENTITY ?= codehub-dev
+
+.PHONY: sign-dev
+sign-dev: ## Codesign the debug binary with $(CODEHUB_DEV_IDENTITY) (stable Keychain identity)
+	codesign --force --sign "$(CODEHUB_DEV_IDENTITY)" src-tauri/target/debug/codehub
+	@echo "signed src-tauri/target/debug/codehub as $(CODEHUB_DEV_IDENTITY)"
+
+.PHONY: dev-signed
+dev-signed: ## Like `make dev` but codesigns the binary with a stable identity so Keychain stops re-prompting. Rerun to pick up Rust changes (no hot Rust reload).
+	# --no-default-features drops `custom-protocol`, which is what `tauri dev` does.
+	# WITH it (the default), Tauri embeds + serves the stale ../dist build and ignores
+	# devUrl, so the launched binary shows an OLD frontend, not live Vite at :1420.
+	cd src-tauri && cargo build -p codehub --no-default-features
+	codesign --force --sign "$(CODEHUB_DEV_IDENTITY)" src-tauri/target/debug/codehub
+	@echo "Vite → http://localhost:1420  ·  signed as $(CODEHUB_DEV_IDENTITY)  ·  Ctrl-C to stop"
+	@trap 'kill 0' EXIT; \
+	  npm run dev & \
+	  sleep 2; \
+	  src-tauri/target/debug/codehub & \
+	  wait
+
 .PHONY: build
 build: ## Production build — Tauri bundle (DMG/AppImage/deb under src-tauri/target/release/bundle/)
 	npm run tauri build

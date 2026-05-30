@@ -19,6 +19,7 @@ import type {
   GithubStatus,
   KeyStatus,
   Mode,
+  ModelProvider,
   PendingPrompt,
   RuntimeHealth,
   SavedWorkspace,
@@ -169,6 +170,10 @@ interface CodeHubState {
   // presence), loaded for the Settings + spawn dialog account picker.
   workspaceInfo: WorkspaceInfo | null;
   accountProfiles: AccountProfileStatus[];
+  // Configured model providers with live token presence (Settings → Coding
+  // Agents + spawn dialog). Loaded via `loadProviders`; mutation actions return
+  // the fresh list. Separate from `config.providers` (which carries no presence).
+  providers: ModelProvider[];
 
   // ── Phase-0 completion contract ──────────────────────
   // New slices for the parallel fleet. Backend fns are stubs (honest-empty)
@@ -344,6 +349,11 @@ interface CodeHubState {
   toggleWorkspacePin: (id: string) => Promise<void>;
   openSavedWorkspace: (id: string) => Promise<void>;
 
+  // Model providers (Settings → Coding Agents). `setProviders` replaces the
+  // slice from a mutation's returned list.
+  loadProviders: () => Promise<void>;
+  setProviders: (list: ModelProvider[]) => void;
+
   // Tier-3 account profiles (label-only).
   loadAccountProfiles: () => Promise<void>;
   // Add a profile. Throws (string) on validation failure so the UI shows it.
@@ -355,6 +365,7 @@ interface CodeHubState {
   ) => Promise<void>;
   removeAccountProfile: (id: string) => Promise<void>;
   renameAccountProfile: (id: string, label: string) => Promise<void>;
+  setAccountProfileEnabled: (id: string, enabled: boolean) => Promise<void>;
 
   // Phase-0 completion contract load actions (best-effort, mirror the existing
   // load* pattern). Each catches its own failure so it can't block callers.
@@ -545,6 +556,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     config: null,
     workspaceInfo: null,
     accountProfiles: [],
+    providers: [],
     // Phase-0 completion contract slices (empty/null until the fleet loads them).
     pendingPrompts: [],
     activityHistory: [],
@@ -1608,6 +1620,16 @@ export const useStore = create<CodeHubState>((set, get) => {
       await get().selectWorkspaceDir(ws.dir);
     },
 
+    loadProviders: async () => {
+      try {
+        set({ providers: await ipc.listProviders() });
+      } catch (e) {
+        console.warn("list_providers failed", e);
+      }
+    },
+
+    setProviders: (list) => set({ providers: list }),
+
     loadAccountProfiles: async () => {
       try {
         set({ accountProfiles: await ipc.listAccountProfiles() });
@@ -1636,6 +1658,14 @@ export const useStore = create<CodeHubState>((set, get) => {
         set({ accountProfiles: await ipc.renameAccountProfile(id, label) });
       } catch (e) {
         set({ error: `rename account failed: ${e}` });
+      }
+    },
+
+    setAccountProfileEnabled: async (id, enabled) => {
+      try {
+        set({ accountProfiles: await ipc.setAccountProfileEnabled(id, enabled) });
+      } catch (e) {
+        set({ error: `toggle account failed: ${e}` });
       }
     },
 

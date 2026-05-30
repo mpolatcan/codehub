@@ -17,16 +17,9 @@
  * the first agent tab. Reuses the shared spawn-form pieces so it can't drift from
  * the spawn dialog.
  */
-import { Segmented } from "@/app/components/primitives/Segmented";
-import { StatusDot } from "@/app/components/primitives/StatusDot";
 import { Ico } from "@/app/components/primitives/icons";
-import { AccountCard, AgentCard, FormRow, RepositoryPicker } from "@/app/components/spawn-form";
-import {
-  AUTO_ACCOUNT,
-  HOST_ACCOUNT,
-  accountProfileSubtitle,
-  agentAccountState,
-} from "@/app/lib/accounts";
+import { FormRow } from "@/app/components/spawn-form";
+import { AUTO_ACCOUNT, agentAccountState } from "@/app/lib/accounts";
 import { CLIS, MODE_BY_ID, modesFor } from "@/app/lib/catalog";
 import { type Cli, type ImageInfo, type Mode, ipc } from "@/app/lib/ipc";
 import { useOverlay } from "@/app/lib/overlay";
@@ -270,7 +263,6 @@ export function NewWorkspace() {
                   }}
                   placeholder="e.g. honey-badger"
                   spellCheck={false}
-                  // biome-ignore lint/a11y/noAutofocus: first field of the final step
                   autoFocus
                   className="mono h-auto rounded-lg px-3.5 py-2.5 text-sm"
                 />

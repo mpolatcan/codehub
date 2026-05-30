@@ -14,7 +14,7 @@ Any frontend task — new screens, component changes, layout fixes, design polis
 ```
 src/app/ui/          ← shadcn primitives (Button, Dialog, Popover, etc.) — lowest level
 src/app/components/primitives/  ← domain primitives (AgentGlyph, StatusDot, Spark, etc.)
-src/app/components/hub/         ← hub chrome (HubSidebar, HubTabs, ActivityRail, etc.)
+src/app/components/hub/         ← hub chrome (HubSidebar, HubTabs, HubStatusBar, etc.)
 src/app/components/             ← top-level shared (PaneHead, PaneMount, SpawnModal, etc.)
 src/app/screens/                ← full-page views (Dashboard, Settings, Welcome, etc.)
 ```
@@ -75,7 +75,7 @@ If the backend work is out of scope or deferred, say so explicitly — don't shi
 
 ## Frontend-specific behavioral notes
 
-- **Don't refactor adjacent components** while fixing one screen. If you're fixing Dashboard, don't "also clean up" ActivityRail.
+- **Don't refactor adjacent components** while fixing one screen. If you're fixing Dashboard, don't "also clean up" HubSidebar.
 - **Match existing inline-style patterns.** This codebase uses inline styles extensively (not Tailwind classes) for component-level layout. Don't convert existing inline styles to Tailwind unless asked.
 - **No speculative abstractions.** Three similar `<div>` blocks are fine. Don't extract a `<Card variant={...}>` wrapper unless it's used 5+ times.
 - **Verify before and after.** Screenshot the screen before your change, make the change, screenshot after. Compare both.

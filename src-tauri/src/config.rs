@@ -77,6 +77,11 @@ pub struct AccountProfile {
     /// "claude" | "codex" | "antigravity" | "github".
     pub agent: String,
     pub label: String,
+    /// Whether this credential is offered at spawn. Disabled profiles are kept
+    /// (and their secret stays in the vault) but never appear in the spawn
+    /// dialog's account picker. Defaults to true for back-compat.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     #[serde(flatten)]
     pub credential: CredentialSource,
 }
@@ -138,6 +143,8 @@ impl<'de> Deserialize<'de> for AccountProfile {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        // Absent in older settings.json → enabled (back-compat default).
+        let enabled = obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
 
         let credential = match obj.get("source").and_then(|v| v.as_str()) {
             Some("vault") => CredentialSource::Vault,
@@ -158,6 +165,7 @@ impl<'de> Deserialize<'de> for AccountProfile {
             id,
             agent,
             label,
+            enabled,
             credential,
         })
     }
@@ -178,6 +186,8 @@ pub struct AccountProfileStatus {
     pub var_name: Option<String>,
     /// Whether the credential is available right now.
     pub present: bool,
+    /// Whether the profile is offered at spawn (user-toggleable).
+    pub enabled: bool,
 }
 
 /// Map stored profiles to their live presence status.
@@ -208,6 +218,7 @@ pub fn profile_statuses(
                 source,
                 var_name,
                 present,
+                enabled: p.enabled,
             }
         })
         .collect()
@@ -330,6 +341,12 @@ pub struct Settings {
     pub notify_turn_finish: bool,
     #[serde(default)]
     pub play_sound: bool,
+    /// Master enable for the always-on-top ambient surface — the macOS Dynamic
+    /// Island (native NSPanel) or the companion window elsewhere. Default on:
+    /// the island shows on launch and auto-pops on agent events. Turning this off
+    /// hides it and suppresses the auto-pop.
+    #[serde(default = "default_true")]
+    pub show_companion: bool,
 
     // — Container sizing —
     #[serde(default)]
@@ -383,20 +400,127 @@ pub struct PromptTemplate {
     pub cli: Option<String>,
 }
 
-/// A registered model provider (Agent Settings screen).
+/// A registered model provider (Agent Settings screen). When a session is
+/// launched under a provider, CodeHub injects its endpoint + model + vault-stored
+/// token into the pane as the Claude/OpenAI harness env vars (see
+/// [`provider_session_env`]). The secret token itself is NOT stored here — it
+/// lives in the OS keychain vault, keyed by the provider `id` (same as a
+/// vault-backed account profile), and is read just-in-time at session create.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelProvider {
     pub id: String,
     pub name: String,
-    /// "openai-compatible" | "bedrock" | "vertex" | "ollama".
+    /// "anthropic" | "openai-compatible" | "openrouter" | "bedrock" | "vertex".
+    /// Drives which harness env vars get injected (see [`provider_session_env`]).
     pub kind: String,
     pub endpoint: Option<String>,
-    /// Env var NAME for auth (no secret stored).
+    /// Legacy: env var NAME for auth (no secret). Retained for back-compat with
+    /// older settings.json; the token now lives in the vault keyed by `id`.
     pub api_key_var: Option<String>,
     pub models: Vec<String>,
+    /// Primary model id sent to the harness (e.g. `glm-4.6`, `MiniMax-M2`).
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Background / small-fast model id (e.g. Claude's `ANTHROPIC_SMALL_FAST_MODEL`).
+    #[serde(default)]
+    pub small_fast_model: Option<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
+}
+
+/// A model provider plus live token presence (whether a secret is stored in the
+/// vault for it). Mirrors the [`AccountProfile`] → [`AccountProfileStatus`] split
+/// so the read path can report presence without ever exposing the secret.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProviderStatus {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub endpoint: Option<String>,
+    pub api_key_var: Option<String>,
+    pub models: Vec<String>,
+    pub model: Option<String>,
+    pub small_fast_model: Option<String>,
+    pub enabled: bool,
+    /// A secret token is stored in the vault for this provider.
+    pub has_token: bool,
+}
+
+/// Map stored providers to their token presence (metadata-only vault check, so
+/// no Keychain prompt). `vault` is `None` in the dev bridge — every provider then
+/// reports `has_token: false`.
+pub fn provider_statuses(
+    providers: Vec<ModelProvider>,
+    vault: Option<&crate::vault::Vault>,
+) -> Vec<ModelProviderStatus> {
+    providers
+        .into_iter()
+        .map(|p| {
+            let has_token = vault.map(|v| v.exists(&p.id)).unwrap_or(false);
+            ModelProviderStatus {
+                id: p.id,
+                name: p.name,
+                kind: p.kind,
+                endpoint: p.endpoint,
+                api_key_var: p.api_key_var,
+                models: p.models,
+                model: p.model,
+                small_fast_model: p.small_fast_model,
+                enabled: p.enabled,
+                has_token,
+            }
+        })
+        .collect()
+}
+
+/// Build the harness env assignments that point a CLI at this provider, given the
+/// resolved secret `token`. These are injected as pane env (`-e KEY=value`) at
+/// `tmux new-session`, so the agent picks them up exactly as if the user had
+/// exported them. Returns empty for kinds that can't be wired with a bare token
+/// (bedrock/vertex use cloud creds; openrouter needs an Anthropic-compatible
+/// router proxy) — those are surfaced in the UI but not launch-wired.
+pub fn provider_session_env(provider: &ModelProvider, token: &str) -> Vec<String> {
+    let endpoint = provider.endpoint.as_deref().unwrap_or("").trim();
+    let primary = provider
+        .model
+        .as_deref()
+        .or_else(|| provider.models.first().map(String::as_str));
+    let mut out = Vec::new();
+    match provider.kind.as_str() {
+        "anthropic" | "anthropic-compatible" => {
+            if !endpoint.is_empty() {
+                out.push(format!("ANTHROPIC_BASE_URL={endpoint}"));
+            }
+            out.push(format!("ANTHROPIC_AUTH_TOKEN={token}"));
+            if let Some(m) = primary {
+                out.push(format!("ANTHROPIC_MODEL={m}"));
+            }
+            if let Some(m) = provider.small_fast_model.as_deref() {
+                out.push(format!("ANTHROPIC_SMALL_FAST_MODEL={m}"));
+            }
+        },
+        "openai" | "openai-compatible" => {
+            if !endpoint.is_empty() {
+                out.push(format!("OPENAI_BASE_URL={endpoint}"));
+            }
+            out.push(format!("OPENAI_API_KEY={token}"));
+        },
+        // Not launch-wired: cloud-credential or router-proxy providers.
+        _ => {},
+    }
+    out
+}
+
+/// Whether a provider of this `kind` can be launch-wired from a stored token
+/// alone. The UI uses the mirror of this to gate the "selectable in spawn dialog"
+/// affordance (openrouter / bedrock / vertex stay catalog-only for now).
+pub fn provider_kind_launchable(kind: &str) -> bool {
+    matches!(
+        kind,
+        "anthropic" | "anthropic-compatible" | "openai" | "openai-compatible"
+    )
 }
 
 /// Preferences for the always-on-top companion avatar window. Persisted to disk
@@ -517,6 +641,19 @@ impl ConfigStore {
             .find(|p| p.id == id)
             .ok_or_else(|| format!("no profile with id {id}"))?;
         profile.label = label.to_string();
+        self.set(next)
+    }
+
+    /// Enable or disable an account profile. A disabled profile is kept (secret
+    /// retained) but filtered out of the spawn picker. Errors if the id is unknown.
+    pub fn set_account_profile_enabled(&self, id: &str, enabled: bool) -> Result<Settings, String> {
+        let mut next = self.get();
+        let profile = next
+            .account_profiles
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or_else(|| format!("no profile with id {id}"))?;
+        profile.enabled = enabled;
         self.set(next)
     }
 }

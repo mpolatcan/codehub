@@ -32,9 +32,7 @@ const DEFAULT_GROUPS: SidebarNavGroup[] = [
   },
   {
     label: "Library",
-    items: [
-      { key: "resume", label: "Resume" },
-    ],
+    items: [{ key: "resume", label: "Resume" }],
   },
   {
     items: [
