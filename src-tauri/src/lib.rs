@@ -23,7 +23,7 @@ pub mod pty_output;
 pub mod stats_history;
 /// Shared IPC response types (Phase-0 completion contract).
 pub mod types;
-/// OS-keychain credential vault for built-in agent accounts + GitHub.
+/// Encrypted-file credential vault for built-in agent accounts + GitHub.
 pub mod vault;
 
 use activity::SessionActivity;
@@ -71,7 +71,7 @@ pub struct AppState {
     pub events: Arc<EventsTracker>,
     /// Per-workspace container stats ring buffer (sparkline charts).
     pub stats_history: Arc<stats_history::StatsHistory>,
-    /// OS-keychain credential vault for built-in agent accounts + GitHub.
+    /// Encrypted-file credential vault for built-in agent accounts + GitHub.
     pub vault: Arc<vault::Vault>,
 }
 
@@ -282,9 +282,9 @@ pub fn preserve_backend_owned_settings(mut next: Settings, current: &Settings) -
 #[tauri::command]
 fn set_config(config: Settings, state: tauri::State<'_, AppState>) -> Result<Settings, String> {
     // Account profiles are mutated through dedicated add/remove commands because
-    // they are coupled to keychain entries. Generic UI settings writes can be
+    // they are coupled to vault entries. Generic UI settings writes can be
     // based on an older frontend config snapshot, so never let them roll account
-    // metadata backward and orphan freshly stored keychain credentials.
+    // metadata backward and orphan freshly stored vault credentials.
     let current = state.config.get();
     state
         .config
@@ -391,7 +391,7 @@ fn update_provider(
     ))
 }
 
-/// Store (or clear) a model provider's secret token in the OS keychain vault,
+/// Store (or clear) a model provider's secret token in the encrypted vault,
 /// keyed by the provider id — the same vault namespace as account profiles. An
 /// empty token deletes the entry. The secret is never returned or persisted to
 /// settings.json; only its presence is reported (via `list_providers`).
@@ -1251,7 +1251,7 @@ async fn create_session(
     let alias = alias.unwrap_or_default();
     // Resolve the chosen account profile to the env var name the session should
     // remap its CLI's canonical auth var from. Env-backed profiles use the host
-    // var name. Vault-backed profiles are read just-in-time from the keychain and
+    // var name. Vault-backed profiles are read just-in-time from the vault and
     // forwarded through this Docker exec's structured env, so existing workspace
     // containers can use accounts created after the container started.
     let mut account_var: Option<String> = None;
@@ -1310,7 +1310,7 @@ async fn create_session(
                         .ok_or_else(|| {
                             let _ = state.config.remove_account_profile(&profile.id);
                             format!(
-                                "selected account '{}' is missing from keychain; removed the broken profile. Sign in again.",
+                                "selected account '{}' is missing from the vault; removed the broken profile. Sign in again.",
                                 profile.label
                             )
                         })?;
@@ -1877,13 +1877,13 @@ async fn check_update() -> Result<UpdateStatus, String> {
 }
 
 // ── Vault commands ────────────────────────────────────────────────────────
-// Manage secrets in the OS keychain for built-in agents + GitHub. The ONLY
-// command that accepts a secret over IPC is `vault_store_key` (paste flow);
-// no command ever returns a secret value.
+// Manage secrets in the encrypted-file vault for built-in agents + GitHub. The
+// ONLY command that accepts a secret over IPC is `vault_store_key` (paste
+// flow); no command ever returns a secret value.
 
 /// Store an API key / token in the vault (paste flow for Codex/Antigravity/
-/// GitHub PAT). The secret crosses IPC exactly once (paste → backend → keyring)
-/// and is never logged, stored on disk, or returned.
+/// GitHub PAT). The secret crosses IPC exactly once (paste → backend → vault)
+/// and is never logged, returned, or written outside the encrypted vault file.
 #[tauri::command]
 fn vault_store_key(
     profile_id: String,
@@ -1902,8 +1902,8 @@ fn vault_delete_key(profile_id: String, state: tauri::State<'_, AppState>) -> Re
     state.vault.delete(&profile_id).map_err(|e| e.to_string())
 }
 
-/// Metadata-only presence check. Does not read the keychain because macOS may
-/// prompt on protected secret reads; launch/use paths perform the real read.
+/// Metadata-only presence check — consults the in-memory vault index, never
+/// decrypting or returning the secret; launch/use paths perform the real read.
 #[tauri::command]
 fn vault_has_key(profile_id: String, state: tauri::State<'_, AppState>) -> Result<bool, String> {
     let configured = state
@@ -2161,7 +2161,7 @@ pub fn run() {
             // Loaded BEFORE the lifecycle: the effective workspace dir + account
             // profile env vars are read from it at container-create time.
             let config = Arc::new(ConfigStore::load(app_data.join("settings.json")));
-            let app_vault = Arc::new(vault::Vault::new());
+            let app_vault = Arc::new(vault::Vault::new(app_data.clone()));
 
             let manager = Arc::new(
                 LifecycleManager::new(image.clone(), config_dir, workspace_dir, config.clone())?
@@ -2210,8 +2210,8 @@ pub fn run() {
 
             // Credential-sync loop: persist the OAuth token Claude refreshes in
             // place back to the vault so a profile doesn't drift into 401 once its
-            // login-time access token expires. Tauri-only (the vault is the OS
-            // keychain; the dev bridge has none). Spawned on Tauri's runtime — a
+            // login-time access token expires. Tauri-only (the vault lives under
+            // the app data dir; the dev bridge has none). Spawned on Tauri's runtime — a
             // bare tokio::spawn in `setup` would abort (CLAUDE.md spawner gotcha).
             {
                 let cred_manager = manager.clone();
@@ -2563,7 +2563,7 @@ pub fn run() {
             remove_provider,
             update_provider,
             set_provider_token,
-            // Vault: OS-keychain credential management for built-in agents + GitHub.
+            // Vault: encrypted-file credential management for built-in agents + GitHub.
             vault_store_key,
             vault_delete_key,
             vault_has_key,

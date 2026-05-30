@@ -146,11 +146,17 @@ function HubView() {
   useActivityPoll();
   useAgentEvents();
 
+  // Hub utility panels (Files / Diff / FilePreview / Resume) dock around a LIVE
+  // workspace; they must never render over the Welcome empty state or the
+  // launcher overlay (otherwise an open Files panel traps the user on Welcome).
+  // Gate them on the same `active && !launcher` the right-dock panels already use.
+  const hubPanels = !!active && !launcher;
+
   return (
     <>
-      {resume && resumeSide === "left" && <ResumeDrawer />}
+      {resume && resumeSide === "left" && hubPanels && <ResumeDrawer />}
       <AnimatePresence>
-        {files && <FilesBrowser key="files" onClose={() => setFiles(false)} />}
+        {files && hubPanels && <FilesBrowser key="files" onClose={() => setFiles(false)} />}
       </AnimatePresence>
       <main
         style={{
@@ -163,7 +169,10 @@ function HubView() {
         }}
       >
         <RuntimeBanner />
-        <HubTabs />
+        {/* Tab strip only when a workspace is open or the launcher tab is showing —
+            on the Welcome empty state there are no tabs (and its own CTA replaces
+            the "+" / bell, which belong to a live hub). */}
+        {(active || launcher) && <HubTabs />}
         {launcher ? (
           // Launcher tab content: recent / resume / create, filling the area
           // below the tab bar. `onClose` returns to the active workspace.

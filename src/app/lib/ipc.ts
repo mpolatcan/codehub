@@ -225,10 +225,13 @@ export interface SavedWorkspace {
   pinned: boolean;
   // Epoch-ms of the last open, or null if not opened since it was saved.
   lastOpened: number | null;
+  // Epoch-ms the workspace was created, or null for entries saved before this
+  // field existed. Disambiguates two workspaces that share a name.
+  createdAt?: number | null;
   // Per-workspace container resource limits override.
   sizing?: ContainerSizing | null;
   // Additional host directories to mount alongside /workspace. Each mounts at
-  // /workspace/<basename>. Requires backend multi-mount support (lifecycle.rs).
+  // /workspace/<basename> (backend multi-mount in lifecycle.rs::ensure_container).
   additionalDirs?: string[];
 }
 

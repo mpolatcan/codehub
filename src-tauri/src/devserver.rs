@@ -42,7 +42,7 @@ struct AppState {
     events: Arc<EventsTracker>,
     stats_history: Arc<crate::stats_history::StatsHistory>,
     tx: broadcast::Sender<String>,
-    /// Dev-only stand-in for the OS keychain: which provider ids have a token
+    /// Dev-only stand-in for the vault: which provider ids have a token
     /// "stored". The browser bridge has no vault, so this lets the Settings UI
     /// reflect token presence during visual verification.
     provider_tokens: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
@@ -340,7 +340,7 @@ pub async fn serve() {
         .route("/panes/:id/write", post(write))
         .route("/panes/:id/resize", post(resize))
         .route("/panes/:id", delete(detach))
-        // Vault: Tauri-only (OS keychain). Stub 501 for browser dev bridge.
+        // Vault: Tauri-only (encrypted file vault). Stub 501 for browser dev bridge.
         .route("/vault-store-key", post(vault_not_supported))
         .route("/vault-delete-key", post(vault_not_supported))
         .route("/vault-has-key", get(vault_has_key_not_supported))

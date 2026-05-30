@@ -232,6 +232,18 @@ interface CodeHubState {
   // the launcher after a lifecycle action (stop-idle / prune-stopped / card
   // remove) so the cards + counts reflect the change without a full reboot.
   refreshWorkspaceContainers: () => Promise<void>;
+  // Per-container lifecycle op in flight, keyed by containerKey → the verb. Set
+  // by start/stop/restartContainer while the docker call runs; the Welcome cards
+  // and sidebar rows read it to show an inline spinner + disable their controls.
+  // Cleared (and the fleet refreshed) when the op settles.
+  containerBusy: Record<string, "starting" | "stopping" | "restarting">;
+  // Container lifecycle, shared by the Welcome launcher card + the sidebar
+  // workspace row so both show the same in-flight state. Each manages
+  // `containerBusy` and refreshes the fleet after; callers confirm destructive
+  // ops (stop/restart kill the container's sessions) BEFORE calling.
+  startContainer: (key: string) => Promise<void>;
+  stopContainer: (key: string) => Promise<void>;
+  restartContainer: (key: string) => Promise<void>;
   setGitStatus: (g: GitStatus | null) => void;
   ensureDockedShell: () => Promise<string | null>;
   createExtraShell: () => Promise<string | null>;
@@ -344,7 +356,7 @@ interface CodeHubState {
   // container. saveWorkspace returns the new id. openSavedWorkspace touches lastOpened and
   // points the /workspace mount at its dir (the caller then opens the spawn
   // launcher to start the first agent).
-  saveWorkspace: (name: string, dir: string) => Promise<string>;
+  saveWorkspace: (name: string, dir: string, additionalDirs?: string[]) => Promise<string>;
   removeSavedWorkspace: (id: string) => Promise<void>;
   toggleWorkspacePin: (id: string) => Promise<void>;
   openSavedWorkspace: (id: string) => Promise<void>;
@@ -552,6 +564,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     dockerRuntime: null,
     keyStatus: null,
     workspaceContainers: null,
+    containerBusy: {},
     agentVersions: null,
     config: null,
     workspaceInfo: null,
@@ -669,6 +682,11 @@ export const useStore = create<CodeHubState>((set, get) => {
         // best-effort — keep the last snapshot rather than blanking the launcher
       }
     },
+
+    startContainer: async (key) => runContainerOp(get, set, key, "starting", ipc.containerStart),
+    stopContainer: async (key) => runContainerOp(get, set, key, "stopping", ipc.containerStop),
+    restartContainer: async (key) =>
+      runContainerOp(get, set, key, "restarting", ipc.containerRestart),
 
     setGitStatus: (gitStatus) => set({ gitStatus }),
 
@@ -1583,7 +1601,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     // All mutations route through updateConfig (optimistic + reverts on failure)
     // — a saved workspace lives in settings.json alongside the other prefs, so
     // there's no separate command to wire.
-    saveWorkspace: async (name, dir) => {
+    saveWorkspace: async (name, dir, additionalDirs) => {
       const id = `sw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const entry: SavedWorkspace = {
         id,
@@ -1591,6 +1609,10 @@ export const useStore = create<CodeHubState>((set, get) => {
         dir,
         pinned: false,
         lastOpened: null,
+        createdAt: Date.now(),
+        // Extra repos this workspace mounts beside `dir` (each at
+        // /workspace/<basename>); omit the key entirely when there are none.
+        ...(additionalDirs?.length ? { additionalDirs } : {}),
       };
       const list = get().config?.savedWorkspaces ?? [];
       await get().updateConfig({ savedWorkspaces: [...list, entry] });
@@ -1762,6 +1784,33 @@ function applyDensity(density: string) {
   if (typeof document === "undefined") return;
   if (density === "compact") document.documentElement.dataset.density = "compact";
   else delete document.documentElement.dataset.density;
+}
+
+// Run a container lifecycle op (start/stop/restart) with shared in-flight state:
+// flag `containerBusy[key]` for the duration so every surface (Welcome card,
+// sidebar row) shows a spinner + disables its controls, then refresh the fleet
+// and clear the flag. Swallows errors (logs them) so a failed op still settles
+// the busy flag rather than wedging the spinner forever.
+async function runContainerOp(
+  get: Get,
+  set: Set,
+  key: string,
+  verb: "starting" | "stopping" | "restarting",
+  op: (workspace: string) => Promise<unknown>,
+) {
+  set((s) => ({ containerBusy: { ...s.containerBusy, [key]: verb } }));
+  try {
+    await op(key);
+  } catch (e) {
+    console.warn(`container ${verb} (${key}) failed:`, e);
+  } finally {
+    await get().refreshWorkspaceContainers();
+    set((s) => {
+      const containerBusy = { ...s.containerBusy };
+      delete containerBusy[key];
+      return { containerBusy };
+    });
+  }
 }
 
 function removeWorkspace(get: Get, set: Set, id: string) {

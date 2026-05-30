@@ -18,6 +18,10 @@ function dirName(path: string | undefined): string | null {
   return path.split("/").filter(Boolean).pop() ?? null;
 }
 
+// Compact size for the workspace row's lifecycle IconBtns (restart/stop/start) —
+// smaller than the default 26 so two fit the dense 264px sidebar row.
+const LIFE_BTN = { width: 22, height: 22 } as const;
+
 // Left sidebar — ported 1:1 from design/components.jsx `AppSidebar`. Two forms:
 // an expanded 264px panel and a collapsed 52px icon rail (⌘B / header chevron
 // toggles `sidebarCollapsed`). Structure matches the design exactly:
@@ -253,10 +257,39 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
   const activeId = useStore((s) => s.activeWorkspaceId);
   const switchWorkspace = useStore((s) => s.switchWorkspace);
   const git = useStore((s) => s.gitStatus);
+  const containers = useStore((s) => s.workspaceContainers);
+  // Shared container lifecycle actions + in-flight flag (also used by the Welcome
+  // card), so the row shows a spinner + disables its controls while an op runs.
+  const lcStart = useStore((s) => s.startContainer);
+  const lcStop = useStore((s) => s.stopContainer);
+  const lcRestart = useStore((s) => s.restartContainer);
+  const busy = useStore((s) => (ws ? s.containerBusy[ws.containerKey] : undefined));
   if (!ws) return null;
   const open = ws.id === activeId;
   const sessions = workspaceLeaves(ws);
   const title = workspaceTitle(ws);
+  // Container lifecycle, mirrored from the Welcome card. Restart/stop kill every
+  // attached tmux session (the bollard execs die with the container), so both
+  // confirm + name how many go. Hover-revealed (like the session close button).
+  const state = containers?.find((c) => c.key === ws.containerKey)?.status.state;
+  const killClause =
+    sessions.length > 0
+      ? ` This kills ${sessions.length} attached session${sessions.length === 1 ? "" : "s"}.`
+      : "";
+  const restartContainer = async () => {
+    if (busy) return;
+    if (!window.confirm(`Restart the "${title}" workspace container?${killClause}`)) return;
+    await lcRestart(ws.containerKey);
+  };
+  const stopContainer = async () => {
+    if (busy) return;
+    if (!window.confirm(`Stop the "${title}" workspace container?${killClause}`)) return;
+    await lcStop(ws.containerKey);
+  };
+  const startContainer = async () => {
+    if (busy) return;
+    await lcStart(ws.containerKey);
+  };
   const repoLabel =
     open && git?.isRepo ? (git.branch ?? "detached") : (dirName(ws.dir) ?? "workspace");
   // Show a group sublabel only when the workspace has more than one group
@@ -273,45 +306,115 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
         border: `1px solid ${open ? "var(--bd-soft)" : "transparent"}`,
       }}
     >
-      <button
-        type="button"
-        onClick={() => switchWorkspace(ws.id)}
+      <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 6,
+          gap: 4,
           padding: "4px 6px 6px",
-          width: "100%",
-          background: "transparent",
-          border: "none",
           borderBottom: open ? "1px solid var(--bd-soft)" : "none",
           marginBottom: open ? 4 : 0,
-          cursor: "pointer",
-          color: "inherit",
         }}
       >
-        <span style={{ display: "inline-flex", color: open ? "var(--pri)" : "var(--fg-2)" }}>
-          {open ? Ico.hub : Ico.container}
-        </span>
-        <span
-          className="mono"
+        <button
+          type="button"
+          onClick={() => switchWorkspace(ws.id)}
           style={{
-            fontSize: 11,
-            color: "var(--fg-1)",
-            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
             flex: 1,
-            textAlign: "left",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            minWidth: 0,
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            color: "inherit",
           }}
         >
-          {title}
-        </span>
-        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+          <span
+            style={{
+              display: "inline-flex",
+              color: open ? "var(--pri)" : "var(--fg-2)",
+              flexShrink: 0,
+            }}
+          >
+            {open ? Ico.hub : Ico.container}
+          </span>
+          <span
+            className="mono"
+            style={{
+              fontSize: 11,
+              color: "var(--fg-1)",
+              fontWeight: 500,
+              flex: 1,
+              textAlign: "left",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {title}
+          </span>
+        </button>
+        {busy ? (
+          <span
+            title={`${busy}…`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              color: "var(--wait)",
+              flexShrink: 0,
+            }}
+          >
+            {Ico.spinner}
+          </span>
+        ) : (
+          <>
+            {state === "running" && (
+              <span style={{ display: "inline-flex", gap: 1 }}>
+                <IconBtn
+                  title="Restart container"
+                  style={LIFE_BTN}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void restartContainer();
+                  }}
+                >
+                  {Ico.restart}
+                </IconBtn>
+                <IconBtn
+                  title="Stop container"
+                  style={LIFE_BTN}
+                  hoverColor="var(--err)"
+                  hoverBg="color-mix(in oklab, var(--err) 16%, transparent)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void stopContainer();
+                  }}
+                >
+                  {Ico.stop}
+                </IconBtn>
+              </span>
+            )}
+            {state === "stopped" && (
+              <IconBtn
+                title="Start container"
+                style={LIFE_BTN}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void startContainer();
+                }}
+              >
+                {Ico.play}
+              </IconBtn>
+            )}
+          </>
+        )}
+        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)", flexShrink: 0 }}>
           {sessions.length}
         </span>
-      </button>
+      </div>
 
       <div
         style={{

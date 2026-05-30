@@ -175,23 +175,38 @@ export function SpawnPane({ id }: { id: string }) {
   ];
   const accountActive = accountOptions.find((o) => o.value === effectiveAccountChoice);
 
-  // Repo row presentation.
-  const repoLabel = (r: RepoInfo): string => {
-    const name =
-      r.path === WORKSPACE_ROOT ? (ws?.dir ? dirName(ws.dir) : "workspace") : dirName(r.path);
-    return r.branch ? `${name} · ${r.branch}` : name;
+  // Repo row presentation. This picks the REPO, so show the repo name primary
+  // and its branch as a muted secondary — never branch-forward.
+  //
+  // A multi-repo workspace mounts every repo UNDER /workspace, so /workspace is a
+  // parent (not itself a git repo) — `container_repos` never returns it, yet the
+  // first agent starts there. Always offer /workspace as the root option so that
+  // cwd is selectable; for a single-repo workspace the repo IS /workspace, so it's
+  // already in the list (don't duplicate it).
+  const isMultiRepo = repos.some((r) => r.path !== WORKSPACE_ROOT);
+  const repoDisplayName = (r: RepoInfo): string => {
+    if (r.path === WORKSPACE_ROOT) {
+      // The /workspace entry is the single repo (single-repo ws) or the shared
+      // parent over the nested repos (multi-repo ws).
+      return isMultiRepo ? "workspace" : ws?.dir ? dirName(ws.dir) : "workspace";
+    }
+    return dirName(r.path);
   };
-  const cwdRepo = repos.find((r) => r.path === cwd);
+  const hasRoot = repos.some((r) => r.path === WORKSPACE_ROOT);
+  const repoOptions: RepoInfo[] = hasRoot
+    ? repos
+    : [{ path: WORKSPACE_ROOT, branch: null }, ...repos];
+  const selectedRepo = repoOptions.find((r) => r.path === cwd);
   const repoValue = isNewWs
     ? draft.workspaceDir
       ? dirName(draft.workspaceDir)
       : "Choose a repo…"
-    : cwdRepo
-      ? repoLabel(cwdRepo)
+    : selectedRepo
+      ? repoDisplayName(selectedRepo)
       : ws?.dir
         ? dirName(ws.dir)
-        : "/workspace";
-  const repoOptions = repos.length ? repos : [{ path: WORKSPACE_ROOT, branch: null }];
+        : "workspace";
+  const repoBranch = !isNewWs && selectedRepo ? selectedRepo.branch : null;
 
   return (
     <div
@@ -321,7 +336,7 @@ export function SpawnPane({ id }: { id: string }) {
           {/* REPO — pick the working repo, or the host dir to mount for a new ws */}
           {isNewWs ? (
             <button type="button" className={ROW} onClick={pickMount}>
-              <RowHead icon={Ico.branch} label="Repo" />
+              <RowHead icon={Ico.files} label="Repo" />
               <RowValue value={repoValue} meta="browse" />
               <span style={{ display: "inline-flex", color: "var(--fg-2)", flexShrink: 0 }}>
                 {Ico.chevD}
@@ -330,17 +345,75 @@ export function SpawnPane({ id }: { id: string }) {
           ) : (
             <Select value={cwd} onValueChange={(v) => update(id, { cwd: v })}>
               <SelectTrigger className={ROW} aria-label="Repo">
-                <RowHead icon={Ico.branch} label="Repo" />
-                <RowValue value={repoValue} />
+                <RowHead icon={Ico.files} label="Repo" />
+                {/* repo name primary; branch muted + truncating so a long branch
+                    can't crowd out the repo it belongs to */}
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    display: "inline-flex",
+                    alignItems: "baseline",
+                    gap: 8,
+                    textAlign: "left",
+                  }}
+                >
+                  <span
+                    style={{
+                      color: "var(--fg-0)",
+                      fontWeight: 500,
+                      flexShrink: 0,
+                      maxWidth: "60%",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {repoValue}
+                  </span>
+                  {repoBranch && (
+                    <span
+                      className="mono"
+                      style={{
+                        fontSize: 10.5,
+                        color: "var(--fg-3)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {repoBranch}
+                    </span>
+                  )}
+                </span>
               </SelectTrigger>
               <SelectContent position="popper" sideOffset={6} className={POPOVER}>
                 {repoOptions.map((r) => (
                   <SelectItem key={r.path} value={r.path} className={ITEM}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <span>{repoLabel(r)}</span>
+                      <span style={{ color: "var(--fg-0)", fontWeight: 500 }}>
+                        {repoDisplayName(r)}
+                      </span>
+                      {r.branch && (
+                        <span
+                          className="mono"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 3,
+                            fontSize: 10.5,
+                            color: "var(--fg-3)",
+                          }}
+                        >
+                          <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                            {Ico.branch}
+                          </span>
+                          {r.branch}
+                        </span>
+                      )}
                       {r.path === WORKSPACE_ROOT && (
                         <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-                          mount root
+                          {isMultiRepo ? "all repos" : "mount root"}
                         </span>
                       )}
                     </span>
