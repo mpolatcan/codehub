@@ -296,12 +296,7 @@ export function AboutDialog() {
               </div>
             </div>
           )}
-          <Button
-            variant="outline"
-            size="xs"
-            className="mono self-start"
-            onClick={close}
-          >
+          <Button variant="outline" size="xs" className="mono self-start" onClick={close}>
             esc
           </Button>
         </div>
@@ -409,7 +404,11 @@ export function AboutDialog() {
           <span style={{ color: "var(--fg-3)" }}>·</span>
           <span>built on Tauri, tmux, Docker, and Geist Mono</span>
           <span style={{ flex: 1 }} />
-          <Button variant="outline" size="xs" onClick={() => copyAbout("Tauri, tmux, Docker, Geist Mono")}>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => copyAbout("Tauri, tmux, Docker, Geist Mono")}
+          >
             Credits
           </Button>
           <Button variant="outline" size="xs" onClick={() => copyAbout("MIT licensed")}>
@@ -463,14 +462,21 @@ export function AboutDialog() {
           >
             {REPO_RELEASES}
           </span>
-          <Button variant="outline" size="sm" onClick={checkNow} disabled={updateState === "checking"}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={checkNow}
+            disabled={updateState === "checking"}
+          >
             Check now
           </Button>
           {hasUpdate ? (
             <Button
               variant="success"
               size="sm"
-              onClick={() => { void ipc.checkUpdate(); }}
+              onClick={() => {
+                void ipc.checkUpdate();
+              }}
             >
               Install v{update?.available} &amp; restart
             </Button>

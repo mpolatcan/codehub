@@ -17,6 +17,7 @@ import {
   HOST_ACCOUNT,
   accountProfileSubtitle,
   agentAccountState,
+  providerTargetAgent,
 } from "@/app/lib/accounts";
 import { CLIS, MODE_BY_ID, modesFor } from "@/app/lib/catalog";
 import { type Cli, type Mode, type RepoInfo, ipc } from "@/app/lib/ipc";
@@ -87,6 +88,8 @@ export function SpawnPane({ id }: { id: string }) {
   const keyStatus = useStore((s) => s.keyStatus);
   const accountProfiles = useStore((s) => s.accountProfiles);
   const loadAccountProfiles = useStore((s) => s.loadAccountProfiles);
+  const providers = useStore((s) => s.providers);
+  const loadProviders = useStore((s) => s.loadProviders);
 
   const [accountChoice, setAccountChoice] = useState<string>(AUTO_ACCOUNT);
   const [repos, setRepos] = useState<RepoInfo[]>([]);
@@ -110,7 +113,8 @@ export function SpawnPane({ id }: { id: string }) {
 
   useEffect(() => {
     void loadAccountProfiles();
-  }, [loadAccountProfiles]);
+    void loadProviders();
+  }, [loadAccountProfiles, loadProviders]);
 
   if (!draft) return null;
 
@@ -119,12 +123,17 @@ export function SpawnPane({ id }: { id: string }) {
   const cwd = draft.cwd ?? WORKSPACE_ROOT;
   const resuming = !!draft.resume;
   const modes = modesFor(agent);
-  const { agentAccounts, defaultKey, effectiveAccountChoice, selectedAccount } = agentAccountState(
-    agent,
-    accountProfiles,
-    keyStatus,
-    accountChoice,
+  // Launch-wired providers for this agent (enabled + token stored), offered in
+  // the account picker as an alternative credential. Selecting one routes its
+  // id through the `account` param; the backend injects its harness env.
+  const agentProviders = providers.filter(
+    (p) => providerTargetAgent(p.kind) === agent && p.enabled && p.hasToken,
   );
+  const isProviderChoice = agentProviders.some((p) => p.id === accountChoice);
+  const base = agentAccountState(agent, accountProfiles, keyStatus, accountChoice);
+  const { agentAccounts, defaultKey } = base;
+  const effectiveAccountChoice = isProviderChoice ? accountChoice : base.effectiveAccountChoice;
+  const selectedAccount = isProviderChoice ? accountChoice : base.selectedAccount;
 
   const setAgent = (next: Cli) => {
     update(id, { cli: next, mode: modesFor(next).includes(mode) ? mode : "standard" });
@@ -155,6 +164,13 @@ export function SpawnPane({ id }: { id: string }) {
       sub: accountProfileSubtitle(p),
       present: p.present,
       disabled: !p.present,
+    })),
+    ...agentProviders.map((p) => ({
+      value: p.id,
+      label: p.name,
+      sub: `provider · ${p.model ?? p.models[0] ?? p.kind}`,
+      present: true,
+      disabled: false,
     })),
   ];
   const accountActive = accountOptions.find((o) => o.value === effectiveAccountChoice);

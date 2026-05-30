@@ -20,7 +20,6 @@
  *    never a faked success.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Input } from "../ui/input";
 import { DiffBody, SplitDiffBody, diffCounts, parseDiff } from "../components/hub/DiffBody";
 import { HubTabs } from "../components/hub/HubTabs";
 import { AgentGlyph } from "../components/primitives/AgentGlyph";
@@ -31,6 +30,7 @@ import { fmtTokens, useSessionUsage } from "../hooks/useSessionUsage";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
 import { ipc } from "../lib/ipc";
 import { useStore } from "../lib/store";
+import { Input } from "../ui/input";
 
 type Filter = "all" | "staged" | "unstaged";
 type Layout = "unified" | "split";
@@ -346,7 +346,6 @@ export function SessionDetail({ session }: { session: string }) {
             <Metric label="ctx" value={fmtTokens(usage.contextUsed)} />
             <Metric label="turn" value={String(usage.turns)} />
             <Metric label="tokens" value={fmtTokens(usage.tokensIn + usage.tokensOut)} />
-            <Metric label="edits" value={String(usage.edits)} />
             <span className="vr" style={{ height: 16 }} />
           </span>
         )}

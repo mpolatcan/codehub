@@ -4,6 +4,7 @@ import { IconBtn } from "../../components/primitives/IconBtn";
 import { Spark } from "../../components/primitives/Spark";
 import { StatusDot } from "../../components/primitives/StatusDot";
 import { Ico } from "../../components/primitives/icons";
+import { deriveLiveStatus } from "../../lib/activity";
 import { type ContainerState, ipc } from "../../lib/ipc";
 import { deriveNetRate, netRateSeries } from "../../lib/metrics";
 import { useOverlay } from "../../lib/overlay";
@@ -429,11 +430,14 @@ function GridStatusLine() {
 
   const sessions = workspaces.flatMap((ws) => workspaceLeaves(ws));
   const awaiting = new Set(pending.map((p) => p.session));
-  // Awaiting takes precedence; otherwise "working" (live output) counts as running.
+  // Awaiting takes precedence; otherwise a session counts as running when the
+  // shared hook-truth status is "live" (a turn in flight) — not merely when raw
+  // output is flowing, so a redrawing spinner no longer inflates the count.
   const awaitingCount = sessions.filter((s) => awaiting.has(s)).length;
-  const runningCount = sessions.filter(
-    (s) => !awaiting.has(s) && activity[s]?.state === "working",
-  ).length;
+  const runningCount = sessions.filter((s) => {
+    const act = activity[s];
+    return act != null && !awaiting.has(s) && deriveLiveStatus(act, false).status === "live";
+  }).length;
 
   return (
     <div style={{ ...lineStyle, gap: 12 }}>

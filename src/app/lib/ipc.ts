@@ -47,6 +47,7 @@ export type Mode = "standard" | "auto" | "yolo";
 // total output seen since attach. NOT tokens/cost — those need per-CLI capture.
 export type ActivityState = "working" | "idle";
 export type SessionStatusKind = "running" | "idle" | "awaiting" | "done" | "failed";
+export type TurnOutcome = "completed" | "failed";
 
 export interface SessionActivity {
   session: string;
@@ -56,11 +57,27 @@ export interface SessionActivity {
   cli: string | null;
   alias: string | null;
   claudeId: string | null;
+  // Codex conversation/rollout uuid (notify thread-id), the per-session key for
+  // codexSessionUsage. Codex's analog of claudeId; null until the first turn-finish.
+  codexId: string | null;
   taskDescription: string | null;
   turnElapsedMs: number | null;
   sessionStatus: SessionStatusKind;
   failureReason: string | null;
   gitBranch: string | null;
+  // Hook-driven turn telemetry (real, never inferred). turns/toolCalls stay 0
+  // and seenHooks false for hook-less CLIs.
+  turns: number;
+  toolCalls: number;
+  // Tool executing right now (PreToolUse → PostToolUse). Non-null ⇒ "running
+  // <tool>"; null while running ⇒ "thinking".
+  currentTool: string | null;
+  // Outcome of the last finished turn + age, for the transient finished/failed
+  // badge (see deriveLiveStatus in lib/activity.ts).
+  lastOutcome: TurnOutcome | null;
+  outcomeMsAgo: number | null;
+  // True once any agent hook has fired: trust sessionStatus over byte-flow state.
+  seenHooks: boolean;
 }
 
 // Tier-1 reads. docker_info backs the empty-state daemon pill;
@@ -111,7 +128,9 @@ export interface RepoInfo {
 // Persisted UI preferences (config::Settings in the backend). Mirrors the Rust
 // struct field-for-field; every field is always present (the backend fills
 // defaults), so this is never partial.
-// A registered model provider (Agent Settings).
+// A registered model provider (Agent Settings), with live token presence.
+// Mirrors the backend `ModelProviderStatus`. The secret token itself is never
+// sent over IPC — only `hasToken` (whether one is stored in the vault).
 export interface ModelProvider {
   id: string;
   name: string;
@@ -119,7 +138,13 @@ export interface ModelProvider {
   endpoint: string | null;
   apiKeyVar: string | null;
   models: string[];
+  /** Primary model id injected into the harness (ANTHROPIC_MODEL / model). */
+  model: string | null;
+  /** Background / small-fast model id (ANTHROPIC_SMALL_FAST_MODEL). */
+  smallFastModel: string | null;
   enabled: boolean;
+  /** A secret token is stored in the keychain vault for this provider. */
+  hasToken: boolean;
 }
 
 // A saved prompt template for the spawn dialog.
@@ -166,6 +191,8 @@ export interface AppSettings {
   notifyAwaitInput: boolean;
   notifyTurnFinish: boolean;
   playSound: boolean;
+  // Ambient surface (macOS Dynamic Island / companion window). Default on.
+  showCompanion: boolean;
   // Container sizing
   defaultSizing: ContainerSizing;
   // Agent behaviour
@@ -213,6 +240,9 @@ export interface AccountProfile {
   label: string;
   source: "env" | "vault";
   varName: string | null;
+  // Whether the profile is offered at spawn (user-toggleable; disabled profiles
+  // are kept but hidden from the account picker).
+  enabled: boolean;
 }
 
 // An account profile plus whether its credential is available right now.
@@ -439,10 +469,11 @@ export interface SessionUsage {
   // agent made this session — a real tally, not a guess.
   edits: number;
   // Live context footprint: tokens the model read on its most recent turn
-  // (input + cache). No window maximum — the transcript never records it and it
-  // varies by model/version/tier, so the UI shows this count alone, never a
-  // fabricated used/max ratio.
+  // (input + cache).
   contextUsed: number;
+  // Context-window size for the gauge, mapped from the model family (the
+  // transcript records no window). 0 for unknown models → gauge shows an em-dash.
+  contextWindow: number;
 }
 
 // The Claude account the runtime is signed into (Integrations view), read from
@@ -645,6 +676,9 @@ export interface CodexSessionUsage {
   tokensOut: number;
   edits: number;
   contextUsed: number;
+  // Context-window size for the gauge (Codex's `model_context_window`). 0 until a
+  // turn has started → gauge shows an em-dash.
+  contextWindow: number;
 }
 
 // Codex rate-limit / plan meters — the ONE on-disk quota source (latest
@@ -762,6 +796,8 @@ export const ipc = {
     invoke<AccountProfileStatus[]>("remove_account_profile", { id }),
   renameAccountProfile: (id: string, label: string) =>
     invoke<AccountProfileStatus[]>("rename_account_profile", { id, label }),
+  setAccountProfileEnabled: (id: string, enabled: boolean) =>
+    invoke<AccountProfileStatus[]>("set_account_profile_enabled", { id, enabled }),
   // Vault: OS-keychain credential management for built-in agents + GitHub.
   // vaultStoreKey is the ONLY method that accepts a secret over IPC (paste flow).
   // No method ever returns a secret value.
@@ -975,7 +1011,18 @@ export const ipc = {
     endpoint?: string,
     apiKeyVar?: string,
     models?: string[],
-  ) => invoke<ModelProvider[]>("add_provider", { name, kind, endpoint, apiKeyVar, models }),
+    model?: string,
+    smallFastModel?: string,
+  ) =>
+    invoke<ModelProvider[]>("add_provider", {
+      name,
+      kind,
+      endpoint,
+      apiKeyVar,
+      models,
+      model,
+      smallFastModel,
+    }),
   removeProvider: (id: string) => invoke<ModelProvider[]>("remove_provider", { id }),
   updateProvider: (
     id: string,
@@ -983,7 +1030,21 @@ export const ipc = {
     endpoint?: string,
     enabled?: boolean,
     models?: string[],
-  ) => invoke<ModelProvider[]>("update_provider", { id, name, endpoint, enabled, models }),
+    model?: string,
+    smallFastModel?: string,
+  ) =>
+    invoke<ModelProvider[]>("update_provider", {
+      id,
+      name,
+      endpoint,
+      enabled,
+      models,
+      model,
+      smallFastModel,
+    }),
+  // Store/clear a provider's secret token in the keychain vault (empty clears).
+  setProviderToken: (id: string, token: string) =>
+    invoke<ModelProvider[]>("set_provider_token", { id, token }),
 } as const;
 
 // Live agent-native hook events (§7). Fires per normalized event; the store fans

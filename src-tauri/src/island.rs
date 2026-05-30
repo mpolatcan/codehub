@@ -5,13 +5,20 @@
 //!
 //! Behaviour:
 //! - **Collapsed:** a notch-width pill showing a colored dot + running-agent
-//!   count.
-//! - **Expanded (on hover):** the panel drops down into a list of every running
-//!   session — colored working/idle dot + name. Clicking a row focuses that
-//!   session in the main window. The mouse leaving collapses it again.
+//!   count, tinted by the highest-priority row state.
+//! - **Expanded:** a list of every session — a status dot/glyph + name + a live
+//!   sub-line (`running <tool>` / `thinking` + tool count + turn clock, or
+//!   `needs input` / `finished` / `failed`, or the Claude metric when idle).
+//!   Clicking a row focuses its pane; an awaiting row carries inline ✕/✓ zones on
+//!   its right edge that relay deny/approve to `respond_prompt` (via the main
+//!   window). Expands on hover, or automatically (below).
+//! - **Auto-pop:** the feed ([`drive`]) pops the island open to announce a row
+//!   newly awaiting input, or a turn that just finished/failed, then collapses
+//!   it back to the pill after a short window (awaiting holds it open until
+//!   answered) — a Live-Activity-style nudge.
 //!
-//! Everything shown is the honest `session_activity` signal — no fabricated
-//! turn/token/approval state.
+//! Everything shown is the honest hook/activity signal (turn + tool counts, the
+//! current tool, the last-turn outcome) — nothing is fabricated.
 //!
 //! Threading: AppKit objects are neither `Send` nor `Sync` and must only be
 //! touched on the main thread, so the whole island lives in a main-thread
@@ -64,10 +71,10 @@ impl IslandStatus {
     }
 }
 
-/// A rich island row: identity + status + an optional one-line metric string
-/// (e.g. "14 edits · 184.2k tok") that the screen has REAL data for (Claude
-/// only today). `awaiting` carries the session name to answer when the row's
-/// inline Approve/Deny is used.
+/// A rich island row: identity + status + live turn telemetry. The sub-line the
+/// row renders is built from these REAL signals (see [`row_detail`]) — current
+/// tool / thinking + turn elapsed while Live, "needs input"/"finished"/"failed"
+/// for the transient states, the Claude metric when idle. Nothing is fabricated.
 #[derive(Clone)]
 pub struct IslandRow {
     /// Display label (alias or session name).
@@ -78,12 +85,20 @@ pub struct IslandRow {
     /// Agent cli id ("claude"/"codex"/…) for the dot color; None = neutral.
     pub agent: Option<String>,
     pub status: IslandStatus,
-    /// Honest, already-real metric line; None → omitted (never a fake zero).
+    /// Honest, already-real metric line (Claude edits·tok); None → omitted.
     pub metric: Option<String>,
     /// Active model (e.g. "opus-4.7"); None when unknown.
     pub model: Option<String>,
     /// Git branch the session's workspace is on; None when unknown.
     pub branch: Option<String>,
+    /// Tool executing right now (Some ⇒ "running <tool>"; None while Live ⇒
+    /// "thinking"). Hook-driven, Claude-only today.
+    pub current_tool: Option<String>,
+    /// Turns + tool calls observed via hooks (0 for hook-less CLIs → omitted).
+    pub turns: u64,
+    pub tool_calls: u64,
+    /// Elapsed ms of the in-flight turn (Some while Live), for the live clock.
+    pub turn_ms: Option<u64>,
 }
 
 /// The full snapshot the rich feed pushes: the rows + whether any row is
@@ -120,11 +135,18 @@ struct Island {
     header: Retained<NSTextField>,
     /// (dot, name) field pair per current row.
     rows: Vec<(Retained<NSTextField>, Retained<NSTextField>)>,
+    /// Inline (deny ✕, approve ✓) labels — `Some` only for awaiting rows, index-
+    /// aligned with `rows`. `handle_click` maps the row's right edge to deny /
+    /// approve zones; non-awaiting rows click through to focus.
+    actions: Vec<Option<(Retained<NSTextField>, Retained<NSTextField>)>>,
     /// Per-row click target + status, in row order. Index-aligned with `rows`.
-    /// `(tmux session, status)`: session drives click→focus and approve, status
-    /// drives whether an inline Approve affordance applies.
     targets: Vec<(String, IslandStatus)>,
+    /// Effective expansion (the applied frame state) = `feed_expanded || hovering`.
     expanded: bool,
+    /// Expansion requested by the live feed (auto-pop on awaiting/finish/fail).
+    feed_expanded: bool,
+    /// Expansion from the mouse being over the pill (manual peek).
+    hovering: bool,
     /// Collapsed-pill geometry for the current display (origin + size).
     pill: NSRect,
 }
@@ -155,12 +177,12 @@ define_class!(
 
         #[unsafe(method(mouseEntered:))]
         fn mouse_entered(&self, _event: &NSEvent) {
-            set_expanded(true);
+            set_hovering(true);
         }
 
         #[unsafe(method(mouseExited:))]
         fn mouse_exited(&self, _event: &NSEvent) {
-            set_expanded(false);
+            set_hovering(false);
         }
 
         #[unsafe(method(mouseDown:))]
@@ -168,7 +190,7 @@ define_class!(
             // Window coords → this view's flipped local coords.
             let win_pt = event.locationInWindow();
             let local = self.convertPoint_fromView(win_pt, None);
-            handle_click(local.y);
+            handle_click(local.x, local.y);
         }
     }
 );
@@ -238,28 +260,41 @@ pub fn hide(app: &AppHandle) {
     });
 }
 
-/// Push a RICH snapshot — per-agent identity, awaiting status, and (where real) a
-/// metric line. This is the live entry point the `lib.rs` setup-hook feed calls:
-/// it maps `pending_prompts()` → [`IslandStatus::Wait`], activity Working →
-/// [`IslandStatus::Live`], and `claude_session_usage` → `metric`. Rebuilds the
-/// rows and refreshes the collapsed count; re-lays-out live if currently
-/// expanded. Cheap no-op when the island has never been shown.
-pub fn update_rich(app: &AppHandle, snapshot: IslandSnapshot) {
+/// Drive the island from one live feed tick. This is the entry point the
+/// `lib.rs` setup-hook feed calls every ~1s with:
+///   - `snapshot`: the per-agent rows (identity, status, live tool/turn telemetry)
+///   - `want_present`: auto-pop — bring the island on screen if it's hidden
+///     (the feed asserts this on a fresh awaiting / finished / failed event, so
+///     the island announces itself like a Live Activity)
+///   - `want_expanded`: drop the panel open (the feed holds this while any row is
+///     awaiting input, and for a few seconds after a turn finishes/fails, then
+///     lets it collapse back to the pill)
+///
+/// Auto-present reuses [`show`] (idempotent). Rows are rebuilt every tick; the
+/// effective expansion is `want_expanded || hovering`, so a manual hover still
+/// peeks. Cheap no-op when `want_present` is false and the island was never
+/// shown.
+pub fn drive(app: &AppHandle, snapshot: IslandSnapshot, want_present: bool, want_expanded: bool) {
+    // Auto-present (pop) when the feed asks and we're hidden. `show` hops to the
+    // main thread, builds/positions/orders-front, and sets VISIBLE; it's a no-op
+    // when already up.
+    if want_present && !is_visible() {
+        show(app);
+    }
     let _ = app.run_on_main_thread(move || {
         let mtm = MainThreadMarker::new().expect("run_on_main_thread is on the main thread");
-        // Phase 1 (under borrow): swap in the new rows. If expanded, capture a
-        // fresh frame plan so the panel height tracks the row count.
-        let plan = ISLAND.with(|cell| {
-            let mut slot = cell.borrow_mut();
-            let island = slot.as_mut()?;
-            rebuild_rows(island, &snapshot.rows, mtm);
-            island.expanded.then(|| plan_frame(island))
+        // Swap in the new rows + record the feed's desired expansion under one
+        // borrow. If the island has never been shown (and we're not presenting),
+        // there's no island to update — a cheap no-op.
+        ISLAND.with(|cell| {
+            if let Some(island) = cell.borrow_mut().as_mut() {
+                rebuild_rows(island, &snapshot.rows, mtm);
+                island.feed_expanded = want_expanded;
+            }
         });
-        // Phase 2 (borrow released): reframe if expanded, then relayout.
-        if let Some(plan) = plan {
-            apply_frame(&plan, true);
-        }
-        relayout();
+        // Re-derive effective expansion and reflow (forced so the panel height
+        // tracks the new row count while expanded).
+        apply_expansion(true);
     });
 }
 
@@ -337,8 +372,11 @@ fn build(app: AppHandle, mtm: MainThreadMarker) -> Island {
         view,
         header,
         rows: Vec::new(),
+        actions: Vec::new(),
         targets: Vec::new(),
         expanded: false,
+        feed_expanded: false,
+        hovering: false,
         pill,
     };
     layout(&island);
@@ -356,17 +394,23 @@ fn rebuild_rows(island: &mut Island, rows: &[IslandRow], mtm: MainThreadMarker) 
         dot.removeFromSuperview();
         name.removeFromSuperview();
     }
+    for (deny, approve) in island.actions.drain(..).flatten() {
+        deny.removeFromSuperview();
+        approve.removeFromSuperview();
+    }
     island.targets.clear();
 
     for row in rows {
         let dot = label(mtm, status_glyph(row.status), 11.0);
         dot.setTextColor(Some(&status_color(row.status)));
-        // Name line carries the honest metric where it exists (Claude only), or
-        // an awaiting hint, both already real. No fabricated suffix otherwise.
-        let line = match (row.status, &row.metric) {
-            (IslandStatus::Wait, _) => format!("{}  · needs input", row.label),
-            (_, Some(m)) => format!("{}  · {m}", row.label),
-            _ => row.label.clone(),
+        // Name line carries the live, REAL detail for the row's state (running
+        // <tool> · N tools · turn clock / needs input / finished / failed / the
+        // Claude metric when idle). No fabricated suffix otherwise.
+        let detail = row_detail(row);
+        let line = if detail.is_empty() {
+            row.label.clone()
+        } else {
+            format!("{}  · {detail}", row.label)
         };
         let name = label(mtm, &line, 12.0);
         name.setTextColor(Some(&color_text()));
@@ -378,6 +422,24 @@ fn rebuild_rows(island: &mut Island, rows: &[IslandRow], mtm: MainThreadMarker) 
         island.view.addSubview(nv);
         island.rows.push((dot, name));
         island.targets.push((row.session.clone(), row.status));
+
+        // Awaiting rows get inline Deny (✕) / Approve (✓) affordances on the
+        // right; `handle_click` maps the row's right edge to their zones.
+        if row.status == IslandStatus::Wait {
+            let deny = label(mtm, "✕", 12.0);
+            deny.setTextColor(Some(&color_text()));
+            deny.setHidden(!island.expanded);
+            let approve = label(mtm, "✓", 12.0);
+            approve.setTextColor(Some(&status_color(IslandStatus::Live)));
+            approve.setHidden(!island.expanded);
+            let dv2: &NSView = &deny;
+            let av2: &NSView = &approve;
+            island.view.addSubview(dv2);
+            island.view.addSubview(av2);
+            island.actions.push(Some((deny, approve)));
+        } else {
+            island.actions.push(None);
+        }
     }
 
     // Collapsed pill shows the running-agent count, tinted by the highest-rank
@@ -400,56 +462,102 @@ fn rebuild_rows(island: &mut Island, rows: &[IslandRow], mtm: MainThreadMarker) 
     island.header.setTextColor(Some(&status_color(top)));
 }
 
-/// Expand or collapse. The visibility flips happen under the borrow; the
-/// animated panel resize is applied AFTER the borrow is dropped, because
-/// `setFrame…animate:true` can pump a nested run loop that synchronously
-/// re-enters the hover callbacks — re-borrowing `ISLAND` then would panic.
-fn set_expanded(expanded: bool) {
-    let plan = ISLAND.with(|cell| {
+/// Set the hover flag (manual peek) and re-derive the effective expansion.
+fn set_hovering(hovering: bool) {
+    ISLAND.with(|cell| {
+        if let Some(island) = cell.borrow_mut().as_mut() {
+            island.hovering = hovering;
+        }
+    });
+    refresh_expansion();
+}
+
+/// Re-derive the effective expansion (`feed_expanded || hovering`) and resize the
+/// panel to match. `force_reframe` additionally re-applies the frame when already
+/// expanded — the feed sets it so the panel height tracks a changed row count.
+/// Animates only on an actual expand/collapse toggle (a forced row-count reflow
+/// is instant, so the panel doesn't re-animate every feed tick).
+///
+/// The visibility flips happen under the borrow; the resize is applied AFTER the
+/// borrow is dropped, because `setFrame…animate:true` can pump a nested run loop
+/// that synchronously re-enters the hover callbacks — re-borrowing `ISLAND` then
+/// would panic.
+fn apply_expansion(force_reframe: bool) {
+    let res = ISLAND.with(|cell| {
         let mut slot = cell.borrow_mut();
         let island = slot.as_mut()?;
-        if island.expanded == expanded {
+        let want = island.feed_expanded || island.hovering;
+        let changed = island.expanded != want;
+        // Apply on a toggle, or on a forced reflow while expanded (row-count change).
+        let should_apply = changed || (force_reframe && want);
+        if !should_apply {
             return None;
         }
-        island.expanded = expanded;
+        island.expanded = want;
         for (dot, name) in &island.rows {
-            dot.setHidden(!expanded);
-            name.setHidden(!expanded);
+            dot.setHidden(!want);
+            name.setHidden(!want);
+        }
+        for (deny, approve) in island.actions.iter().flatten() {
+            deny.setHidden(!want);
+            approve.setHidden(!want);
         }
         // The collapsed count is hidden once the rows take over.
-        island.header.setHidden(expanded);
-        Some(plan_frame(island))
+        island.header.setHidden(want);
+        Some((plan_frame(island), changed))
     });
-    if let Some(plan) = plan {
-        apply_frame(&plan, true);
+    if let Some((plan, changed)) = res {
+        apply_frame(&plan, changed);
         relayout();
     }
 }
 
-/// A click at flipped local-y; focus the row it lands on (expanded only). A row
-/// awaiting input emits an approve intent instead of a focus jump — the main
-/// window relays it to `respond_prompt` (the island itself can't invoke a Tauri
-/// command from a raw AppKit callback). All other rows jump to the terminal.
-fn handle_click(local_y: f64) {
-    let target = ISLAND.with(|cell| {
+/// Re-derive effective expansion after a hover change (no forced reframe).
+fn refresh_expansion() {
+    apply_expansion(false);
+}
+
+/// A click at flipped local-(x,y); resolve the row it lands on (expanded only).
+/// An awaiting row's right edge carries deny (✕) / approve (✓) zones that relay
+/// to the main window; clicking anywhere else on a row focuses its terminal pane.
+fn handle_click(local_x: f64, local_y: f64) {
+    enum Act {
+        Focus(AppHandle, String),
+        Approve(AppHandle, String),
+        Deny(AppHandle, String),
+    }
+    let act = ISLAND.with(|cell| {
         let borrow = cell.borrow();
         let island = borrow.as_ref()?;
         if !island.expanded || local_y < COLLAPSE_H {
             return None;
         }
         let idx = ((local_y - COLLAPSE_H) / ROW_H) as usize;
-        island
-            .targets
+        let (session, _status) = island.targets.get(idx)?.clone();
+        let app = island.app.clone();
+        // Awaiting rows: right edge = approve (✓) zone, then deny (✕) just left.
+        // Mirror the glyph frames in `layout` (approve at w-26, deny at w-50).
+        if island
+            .actions
             .get(idx)
-            .cloned()
-            .map(|(session, status)| (island.app.clone(), session, status))
-    });
-    if let Some((app, session, status)) = target {
-        if status == IslandStatus::Wait {
-            approve_session(&app, &session);
-        } else {
-            focus_session(&app, &session);
+            .map(|a| a.is_some())
+            .unwrap_or(false)
+        {
+            let w = island.view.bounds().size.width;
+            if local_x >= w - 30.0 {
+                return Some(Act::Approve(app, session));
+            }
+            if local_x >= w - 54.0 {
+                return Some(Act::Deny(app, session));
+            }
         }
+        Some(Act::Focus(app, session))
+    });
+    match act {
+        Some(Act::Approve(app, session)) => approve_session(&app, &session),
+        Some(Act::Deny(app, session)) => deny_session(&app, &session),
+        Some(Act::Focus(app, session)) => focus_session(&app, &session),
+        None => {},
     }
 }
 
@@ -554,10 +662,27 @@ fn layout(island: &Island) {
             NSPoint::new(12.0, y + 4.0),
             NSSize::new(14.0, ROW_H - 8.0),
         ));
+        // Awaiting rows reserve the right ~52px for the deny/approve glyphs.
+        let action = island.actions.get(i).and_then(|a| a.as_ref());
+        let name_w = if action.is_some() {
+            (w - 92.0).max(40.0)
+        } else {
+            w - 40.0
+        };
         name.setFrame(NSRect::new(
             NSPoint::new(30.0, y + 3.0),
-            NSSize::new(w - 40.0, ROW_H - 6.0),
+            NSSize::new(name_w, ROW_H - 6.0),
         ));
+        if let Some((deny, approve)) = action {
+            deny.setFrame(NSRect::new(
+                NSPoint::new(w - 50.0, y + 3.0),
+                NSSize::new(20.0, ROW_H - 6.0),
+            ));
+            approve.setFrame(NSRect::new(
+                NSPoint::new(w - 26.0, y + 3.0),
+                NSSize::new(20.0, ROW_H - 6.0),
+            ));
+        }
     }
 }
 
@@ -622,6 +747,46 @@ fn status_glyph(status: IslandStatus) -> &'static str {
     }
 }
 
+/// The live sub-line shown after a row's label, built from REAL signals only:
+/// - `Wait`  → "needs input"
+/// - `Done`  → "finished"   (transient, ~6s after the turn ended)
+/// - `Err`   → "failed"
+/// - `Live`  → "running <tool>" / "thinking", plus tool count + the turn clock
+/// - `Idle`  → the Claude metric (edits·tok) when present, else empty
+fn row_detail(row: &IslandRow) -> String {
+    match row.status {
+        IslandStatus::Wait => "needs input".to_string(),
+        IslandStatus::Err => "failed".to_string(),
+        IslandStatus::Done => "finished".to_string(),
+        IslandStatus::Live => {
+            let mut s = match &row.current_tool {
+                Some(t) => format!("running {t}"),
+                None => "thinking".to_string(),
+            };
+            if row.tool_calls > 0 {
+                let plural = if row.tool_calls == 1 { "" } else { "s" };
+                s.push_str(&format!(" · {} tool{plural}", row.tool_calls));
+            }
+            if let Some(ms) = row.turn_ms {
+                s.push_str(&format!(" · {}", fmt_clock(ms)));
+            }
+            s
+        },
+        IslandStatus::Idle => row.metric.clone().unwrap_or_default(),
+    }
+}
+
+/// Turn clock "0:42" / "3:05" / "1:02:33" from elapsed milliseconds.
+fn fmt_clock(ms: u64) -> String {
+    let total = ms / 1000;
+    let (h, m, s) = (total / 3600, (total % 3600) / 60, total % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
 /// Raise + focus the main window and ask the app to focus the named session.
 /// Mirrors the `focus_session_from_companion` command used by the webview build.
 fn focus_session(app: &AppHandle, name: &str) {
@@ -632,15 +797,13 @@ fn focus_session(app: &AppHandle, name: &str) {
     let _ = app.emit("codehub://focus-session", name);
 }
 
-/// Emit an approve intent for an awaiting session. The island can't call the
-/// `respond_prompt` Tauri command directly from an AppKit click, so it raises a
-/// thin event the main window relays to `respond_prompt(session, allow=true)`.
-//
-// F-COMPANION: the main-window listener for `codehub://island-approve` (calling
-// `ipc.respondPrompt(session, true)`) belongs to whoever owns the Hub focus
-// wiring (F-HUB / coordinator). It is intentionally NOT added here — this track
-// owns only the island. The payload is the tmux session name, same key as
-// `codehub://focus-session`.
+/// Relay an approve/deny intent for an awaiting row to the main window (the
+/// island can't invoke the `respond_prompt` Tauri command from a raw AppKit
+/// click). Payload is the tmux session name — App.tsx listens and calls
+/// `respond_prompt(session, allow)`.
 fn approve_session(app: &AppHandle, name: &str) {
     let _ = app.emit("codehub://island-approve", name);
+}
+fn deny_session(app: &AppHandle, name: &str) {
+    let _ = app.emit("codehub://island-deny", name);
 }

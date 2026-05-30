@@ -487,25 +487,23 @@ impl Lifecycle {
             }
         }
 
-        // create new
-        std::fs::create_dir_all(&self.config_dir)?;
+        // create new. We mount ONLY /workspace (the repo). Agent config — settings,
+        // hooks, transcripts under /config/{claude,codex,…} — is DELIBERATELY NOT
+        // mounted from the host: the container is a clean sandbox seeded from the
+        // image. The only host→container flow is credentials (OAuth tokens, API
+        // keys, custom model providers), injected per-launch from the keychain
+        // vault as env (see account_launch_script / provider_session_env), never
+        // via a config bind mount. Configs/transcripts are therefore container-
+        // local and ephemeral; persistence of credentials lives in the vault.
         let workspace_dir = self.workspace_dir();
         std::fs::create_dir_all(&workspace_dir)?;
 
-        let mounts = vec![
-            Mount {
-                target: Some("/config".into()),
-                source: Some(self.config_dir.to_string_lossy().to_string()),
-                typ: Some(MountTypeEnum::BIND),
-                ..Default::default()
-            },
-            Mount {
-                target: Some("/workspace".into()),
-                source: Some(workspace_dir.to_string_lossy().to_string()),
-                typ: Some(MountTypeEnum::BIND),
-                ..Default::default()
-            },
-        ];
+        let mounts = vec![Mount {
+            target: Some("/workspace".into()),
+            source: Some(workspace_dir.to_string_lossy().to_string()),
+            typ: Some(MountTypeEnum::BIND),
+            ..Default::default()
+        }];
 
         let sizing = self.resolve_sizing();
         let host_config = HostConfig {

@@ -6,7 +6,8 @@ import { Logo } from "../../components/primitives/Logo";
 import { StatusDot } from "../../components/primitives/StatusDot";
 import { Tip } from "../../components/primitives/Tip";
 import { Ico } from "../../components/primitives/icons";
-import { fmtTokens, useSessionUsage } from "../../hooks/useSessionUsage";
+import { fmtTokens, useCodexUsage, useSessionUsage } from "../../hooks/useSessionUsage";
+import { deriveLiveStatus } from "../../lib/activity";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../../lib/catalog";
 import { useOverlay } from "../../lib/overlay";
 import { confirmCloseRunningSession, useStore } from "../../lib/store";
@@ -387,13 +388,35 @@ function SessionRow({
   // would render fewer hooks, throwing "Rendered fewer hooks than expected" and
   // (with no error boundary) blanking the whole app.
   const claudeId = activity?.claudeId ?? (meta?.cli === "claude" ? meta.claudeId : undefined);
-  const usage = useSessionUsage(claudeId ?? null);
+  const codexId = meta?.cli === "codex" ? (activity?.codexId ?? undefined) : undefined;
+  // Both hooks run unconditionally (above the meta guard AND not `??`-gated) —
+  // Claude reads its transcript, Codex its rollout; the unused one returns null.
+  const claudeUsage = useSessionUsage(claudeId ?? null);
+  const codexUsage = useCodexUsage(codexId ?? null);
+  const usage = claudeUsage ?? codexUsage;
   if (!meta) return null;
   const spec = SPEC_BY_CLI[meta.cli];
   const badge = MODE_BY_ID[meta.mode].badge;
   const focused = workspaceFocused === session;
-  const working = activity?.state === "working";
-  const status = awaiting ? "wait" : working ? "live" : focused ? "live" : "idle";
+  // Drive the whole row from the shared derived status so it agrees with the
+  // pane head + island (deriveLiveStatus folds in sessionStatus==="awaiting", so
+  // we don't lag the pane on the slower pendingPrompts poll). Focus is shown by
+  // the row highlight, NOT a fake "live" dot — live/working means a real turn is
+  // in flight (tool use / thinking), never just "this pane is selected".
+  const view = activity ? deriveLiveStatus(activity, awaiting) : null;
+  const status = view?.status ?? "idle";
+  const working = status === "live";
+  const isWait = status === "wait";
+  const label = view?.label ?? spec.label;
+  const statusColor = isWait
+    ? "var(--wait)"
+    : status === "err"
+      ? "var(--err)"
+      : status === "done"
+        ? "var(--done)"
+        : working
+          ? "var(--live)"
+          : "var(--fg-3)";
   const isAgent = meta.cli !== "shell";
 
   return (
@@ -410,7 +433,7 @@ function SessionRow({
               borderLeft: "2px solid var(--live)",
               paddingLeft: 8,
             }
-          : awaiting
+          : isWait
             ? {
                 background: "color-mix(in oklab, var(--wait) 8%, transparent)",
                 borderLeft: "2px solid var(--wait)",
@@ -421,7 +444,7 @@ function SessionRow({
       onClick={() => focusSession(session)}
     >
       <div style={{ display: "flex", alignItems: "center", paddingTop: 1 }}>
-        <StatusDot status={status} pulse={working || awaiting || focused} />
+        <StatusDot status={status} pulse={working} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
@@ -440,7 +463,7 @@ function SessionRow({
             {meta.alias}
           </span>
           {badge && <span className={`mode-badge badge-${meta.mode}`}>{badge}</span>}
-          {awaiting && (
+          {isWait && (
             <span
               className="mono"
               style={{
@@ -486,21 +509,13 @@ function SessionRow({
           className="mono tnum"
           style={{
             fontSize: 10.5,
-            color: working ? "var(--live)" : awaiting ? "var(--wait)" : "var(--fg-3)",
+            color: statusColor,
             display: "flex",
             alignItems: "center",
             gap: 6,
           }}
         >
-          <span style={working ? { fontWeight: 500 } : undefined}>
-            {awaiting
-              ? "needs input"
-              : working
-                ? "working"
-                : activity
-                  ? `idle ${fmtIdle(activity.idleMs)}`
-                  : spec.label}
-          </span>
+          <span style={working ? { fontWeight: 500 } : undefined}>{label}</span>
           {isAgent && usage && (
             <>
               <span style={{ color: "var(--fg-3)" }}>·</span>
@@ -513,13 +528,6 @@ function SessionRow({
       </div>
     </div>
   );
-}
-
-function fmtIdle(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  return `${Math.floor(s / 3600)}h`;
 }
 
 // ── footer — design's account row, fed by real runtime identity ──────────────

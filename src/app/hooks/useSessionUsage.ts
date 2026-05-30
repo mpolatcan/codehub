@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type SessionUsage, ipc } from "../lib/ipc";
+import { type CodexSessionUsage, type SessionUsage, ipc } from "../lib/ipc";
 
 // Live token tally for one Claude conversation, polled from its own transcript
 // by the `--session-id`/resumed id it launched with. Returns null when there is
@@ -33,6 +33,35 @@ export function useSessionUsage(claudeId: string | null | undefined): SessionUsa
       clearInterval(h);
     };
   }, [claudeId]);
+  return usage;
+}
+
+// Live token tally for one Codex conversation, polled from its rollout file by
+// the `codexId` (notify thread-id) captured for the session. Parity with
+// useSessionUsage; CodexSessionUsage shares the metric shape (turns / tokensIn /
+// tokensOut / edits / contextUsed). Null until the session has a captured id and a
+// readable rollout — callers render an em-dash, never a fake zero.
+export function useCodexUsage(codexId: string | null | undefined): CodexSessionUsage | null {
+  const [usage, setUsage] = useState<CodexSessionUsage | null>(null);
+  useEffect(() => {
+    if (!codexId) {
+      setUsage(null);
+      return;
+    }
+    let alive = true;
+    const tick = () => {
+      ipc
+        .codexSessionUsage(codexId)
+        .then((u) => alive && setUsage(u))
+        .catch(() => alive && setUsage(null));
+    };
+    tick();
+    const h = setInterval(tick, POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(h);
+    };
+  }, [codexId]);
   return usage;
 }
 

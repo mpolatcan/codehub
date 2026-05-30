@@ -98,6 +98,7 @@ sequenceDiagram
 - **Splits** — split any pane (its head controls, or ⌘\) into a binary tree; drag the divider to resize. Groups organize splits; each tab holds one or more groups.
 - **Color & rename** — click the identity dot on any pane head, group tab, or workspace tab to recolor it; double-click the title to rename. Colors and names persist across reloads.
 - **Hub panels** — a Files browser (⌘E), a workspace Diff viewer (⌘D), a Shell panel (⌘J), a Details/metrics panel (⌘I), and a Resume drawer (action-bar button) of past Claude/Codex sessions, docked beside the panes.
+- **Per-pane telemetry** — each agent pane carries a live footer: a context-window gauge (tokens used / model max), the turn count, and total tokens. Real per-session data read from the Claude transcript / Codex rollout — never estimated. Idle or pre-first-turn panes drop the strip rather than show placeholders.
 - **Command palette** (⌘K) — jump to a view, focus a running session, spawn an agent, or open a recent/connected repo.
 - **Views** — Hub, Dashboard, Workspaces (container manager), Usage (token/cost rollup from session transcripts), Settings (agents · runtime · integrations · appearance · keyboard shortcuts). Three themes: dark, gray, light.
 - **GitHub integration** — connect a PAT or sign in via OAuth in Settings → Integrations. Browse repos, see scopes and permissions. Repos appear in the workspace wizard for cloning.
@@ -130,6 +131,12 @@ make dev
 ```
 
 > See `make help` for the full target list (`build`, `check`, `fix`, `image-verify`, …).
+
+> **macOS:** `make dev-signed` builds + codesigns the debug binary with a stable
+> self-signed cert (`CODEHUB_DEV_IDENTITY`, default `codehub-dev`) so Keychain
+> "Always Allow" survives rebuilds instead of re-prompting on every launch.
+> Create the cert once via Keychain Access → Certificate Assistant (Code Signing,
+> self-signed). Rerun to pick up Rust changes (no hot Rust reload).
 
 ### Browser mode (dev bridge)
 
@@ -176,7 +183,6 @@ configured in `src-tauri/tauri.conf.json`.
 - [ ] Multiple bind mounts per workspace (frontend ready, backend `lifecycle.rs` needs multi `-v` flags)
 - [ ] Git clone inside container for GitHub repos (`docker exec git clone`)
 - [ ] Container resource limits enforcement (`--cpus`, `--memory` flags in `lifecycle.rs`)
-- [ ] macOS Keychain for OAuth token storage (`security-framework` crate)
 - [ ] Native OS notifications when an agent finishes
 - [ ] Auto-update via Tauri updater plugin
 - [ ] App icon set

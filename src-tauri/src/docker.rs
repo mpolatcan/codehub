@@ -319,6 +319,10 @@ pub struct SessionUsage {
     /// Tokens the model read on its most recent turn (`input + cache_read +
     /// cache_creation`) — the live context footprint. 0 when no turn has usage.
     pub context_used: u64,
+    /// The model's context-window size, for the UI gauge. The transcript records no
+    /// window, so this is mapped from the model family (see `claude_context_window`).
+    /// 0 for unknown models → the gauge shows an em-dash rather than a fake ratio.
+    pub context_window: u64,
 }
 
 /// The Claude account the runtime is signed into, read from `oauthAccount` in
@@ -491,29 +495,62 @@ impl Cli {
     /// the sandbox boundary. Antigravity is unverified, so it ignores `mode`.
     pub fn launch_argv(self, mode: LaunchMode) -> Vec<&'static str> {
         let bin = self.executable();
-        match (self, mode) {
+        let mut argv = match (self, mode) {
             // Claude Code: `auto` uses the classifier to auto-approve safe tool calls
             // (incl. shell) while still blocking dangerous ones — a better Auto tier
             // than `acceptEdits`, which frees only edits and prompts on shell. `skip`
             // bypasses every guard.
             (Cli::Claude, LaunchMode::Auto) => vec![bin, "--permission-mode", "auto"],
             (Cli::Claude, LaunchMode::Yolo) => vec![bin, "--dangerously-skip-permissions"],
-            // Codex (0.132): --full-auto was removed; the sandbox+approval pair is the
-            // equivalent (auto-run inside the workspace, escalate only on failure).
-            // --yolo is a still-accepted alias for the no-sandbox/no-approval bypass.
+            // Codex sandbox: the runtime CONTAINER is the boundary, so we never use
+            // Codex's own OS sandbox. `workspace-write`/`read-only` shell out to
+            // bubblewrap, which can't create a user namespace inside the container
+            // (`bwrap: No permissions to create a new namespace` — Docker's VM forbids
+            // unprivileged userns, and installing bwrap wouldn't help) → EVERY tool
+            // call fails. `danger-full-access` runs tools directly (no bwrap); the
+            // approval policy is the only mode knob.
+            //   Auto → never  : autonomous (auto-approve), the auto-run tier.
+            //   Yolo → --yolo : bypass approvals + sandbox (alias for the above + no asks).
             (Cli::Codex, LaunchMode::Auto) => {
                 vec![
                     bin,
                     "--sandbox",
-                    "workspace-write",
+                    "danger-full-access",
                     "--ask-for-approval",
-                    "on-failure",
+                    "never",
                 ]
             },
             (Cli::Codex, LaunchMode::Yolo) => vec![bin, "--yolo"],
-            // Standard, and any Antigravity mode, launch the bare binary.
+            // Codex Standard: still no OS sandbox (bwrap is unavailable in-container),
+            // but `on-request` asks before each command — Codex's recommended
+            // interactive policy, and the cautious default tier. Asking fires the
+            // PermissionRequest hook → the awaiting state.
+            (Cli::Codex, LaunchMode::Standard) => {
+                vec![
+                    bin,
+                    "--sandbox",
+                    "danger-full-access",
+                    "--ask-for-approval",
+                    "on-request",
+                ]
+            },
+            // Antigravity (all modes) launches the bare binary.
             _ => vec![bin],
+        };
+        // Codex agent-event hooks are delivered as launch-time `-c` overrides, NOT
+        // via config.toml: Codex rewrites $CODEX_HOME/config.toml on first run
+        // (trust + tui nux) and DROPS any baked `[[hooks.*]]`/`notify`, so a
+        // file-seeded config silently vanishes and CodeHub sees zero Codex activity.
+        // `-c` rides the argv (codex execs it directly — no shell/clobber) every
+        // launch. `--dangerously-bypass-hook-trust` runs our own baked codehub-hook
+        // commands without the interactive startup trust review (the container vets
+        // the source). `notify` (turn-finish → Stop) is verified to fire; the
+        // structured lifecycle hooks are delivered the same way for the interactive
+        // session. See CODEX_HOOK_ARGS.
+        if matches!(self, Cli::Codex) {
+            argv.extend_from_slice(CODEX_HOOK_ARGS);
         }
+        argv
     }
 }
 
@@ -572,6 +609,30 @@ pub fn is_env_name(s: &str) -> bool {
 
 pub const CONTAINER_PATH: &str =
     "/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
+/// Codex agent-event hook config, injected on the launch argv (see `launch_argv`).
+/// Each `-c key=value` value is inline TOML, parsed by Codex; `codehub-hook` is the
+/// image-baked append script that writes `/tmp/codehub/events/$CODEHUB_SESSION.jsonl`
+/// (which `events.rs` tails). Mirrors the Claude managed-settings hooks. `notify`
+/// covers turn-finish (Stop); the `[[hooks.*]]` cover prompt/tool/approval/start.
+/// `--dangerously-bypass-hook-trust` skips Codex's interactive startup trust review
+/// for these (the container is a vetted source). Event names are Codex 0.135's.
+const CODEX_HOOK_ARGS: &[&str] = &[
+    "--dangerously-bypass-hook-trust",
+    "-c",
+    "notify=[\"/usr/local/bin/codehub-hook\",\"Stop\"]",
+    "-c",
+    "hooks.UserPromptSubmit=[{hooks=[{type=\"command\",command=\"/usr/local/bin/codehub-hook UserPromptSubmit\"}]}]",
+    "-c",
+    "hooks.PreToolUse=[{hooks=[{type=\"command\",command=\"/usr/local/bin/codehub-hook PreToolUse\"}]}]",
+    "-c",
+    "hooks.PostToolUse=[{hooks=[{type=\"command\",command=\"/usr/local/bin/codehub-hook PostToolUse\"}]}]",
+    "-c",
+    "hooks.PermissionRequest=[{hooks=[{type=\"command\",command=\"/usr/local/bin/codehub-hook Notification permission_prompt\"}]}]",
+    "-c",
+    "hooks.SessionStart=[{hooks=[{type=\"command\",command=\"/usr/local/bin/codehub-hook SessionStart\"}]}]",
+];
+
 pub const CLAUDE_CONFIG_DIR: &str = "/config/claude";
 pub const CODEX_CONFIG_DIR: &str = "/config/codex";
 pub const ANTIGRAVITY_CONFIG_DIR: &str = "/config/antigravity";
@@ -586,6 +647,12 @@ pub fn base_container_env() -> Vec<String> {
         "TMUX_TMPDIR=/tmp/codehub".to_string(),
         "IS_SANDBOX=1".to_string(),
         format!("CLAUDE_CONFIG_DIR={CLAUDE_CONFIG_DIR}"),
+        // CODEX_HOME is the REAL Codex var (default ~/.codex) — auth.json + config.toml
+        // live under it. Pin it to /config/codex (a container-local, image-baked dir
+        // — /config is NOT mounted) so Codex reads the baked config.toml (its
+        // structured hooks) and the login flow can capture auth.json from a known
+        // path into the vault. CODEX_CONFIG_DIR is a no-op for Codex (back-compat).
+        format!("CODEX_HOME={CODEX_CONFIG_DIR}"),
         format!("CODEX_CONFIG_DIR={CODEX_CONFIG_DIR}"),
         format!("ANTIGRAVITY_CONFIG_DIR={ANTIGRAVITY_CONFIG_DIR}"),
     ]
@@ -628,7 +695,7 @@ fn account_launch_script(cli: Cli, canon: &str, src: &str, argv: &[String]) -> S
             )
         },
         Cli::Codex => format!(
-            "if [ -n \"${{{src}:-}}\" ]; then case \"${{{src}}}\" in \\{{*|\\[*) mkdir -p \"$HOME/.codex\"; umask 077; printf '%s' \"${{{src}}}\" > \"$HOME/.codex/auth.json\"; unset {src} ;; *) export {canon}=\"${{{src}}}\"; unset {src} ;; esac; fi; exec {launch}"
+            "if [ -n \"${{{src}:-}}\" ]; then case \"${{{src}}}\" in \\{{*|\\[*) mkdir -p /config/codex; umask 077; printf '%s' \"${{{src}}}\" > /config/codex/auth.json; unset {src} ;; *) export {canon}=\"${{{src}}}\"; unset {src} ;; esac; fi; exec {launch}"
         ),
         Cli::Antigravity => format!(
             "if [ -n \"${{{src}:-}}\" ]; then case \"${{{src}}}\" in \\{{*|\\[*) mkdir -p \"$HOME/.config/agy\"; umask 077; printf '%s' \"${{{src}}}\" > \"$HOME/.config/agy/credentials.json\"; unset {src} ;; *) export {canon}=\"${{{src}}}\"; unset {src} ;; esac; fi; exec {launch}"
@@ -637,7 +704,7 @@ fn account_launch_script(cli: Cli, canon: &str, src: &str, argv: &[String]) -> S
     }
 }
 
-fn claude_profile_dir_for_env(src: &str) -> String {
+pub fn claude_profile_dir_for_env(src: &str) -> String {
     format!("/config/claude-profiles/{src}")
 }
 
@@ -951,7 +1018,19 @@ impl DockerClient {
             push_tmux_env(&mut cmd, env.clone());
         }
         if let Some(src) = account_var.filter(|src| is_env_name(src)) {
-            push_tmux_env(&mut cmd, src.to_string());
+            // tmux sets a session var ONLY from `-e VAR=VALUE`; a bare `-e VAR` is a
+            // no-op (it does NOT import the value from this exec's environment), which
+            // silently left `${src}` empty in the launch wrapper. Push the full
+            // assignment the wrapper reads from. The value lives only in this
+            // container's tmux session env — the sandbox boundary. (Claude-bundle and
+            // Codex use a pre-exec instead and leave account_var None, so they skip
+            // this and never put a secret in the session env.)
+            if let Some(assignment) = account_env
+                .iter()
+                .find(|e| e.split_once('=').map(|(k, _)| k == src).unwrap_or(false))
+            {
+                push_tmux_env(&mut cmd, assignment.clone());
+            }
         }
 
         // Build the CLI argv (binary + mode flags + resume/session-id) as owned
@@ -1037,7 +1116,21 @@ chmod 700 "$dir"
 if [ -f /config/claude/settings.json ] && [ ! -f "$dir/settings.json" ]; then
   cp /config/claude/settings.json "$dir/settings.json"
 fi
-printf '%s' "$payload" | base64 -d | tar --no-same-owner -xzf - -C "$dir"
+# Conditional restore: NEVER roll a container's freshly-refreshed token back to the
+# vault snapshot. Compare the incoming bundle's access-token expiry (epoch ms) to
+# what's on disk; extract only when the container has no creds OR the bundle is newer.
+inc=$(printf '%s' "$payload" | base64 -d | tar -xzO ./.credentials.json 2>/dev/null | jq -r '.claudeAiOauth.expiresAt // 0' 2>/dev/null || echo 0)
+cur=0
+if [ -f "$dir/.credentials.json" ]; then
+  cur=$(jq -r '.claudeAiOauth.expiresAt // 0' "$dir/.credentials.json" 2>/dev/null || echo 0)
+fi
+case "$cur" in ''|*[!0-9]*) cur=0 ;; esac
+case "$inc" in ''|*[!0-9]*) inc=0 ;; esac
+if [ "$cur" -gt 0 ] && [ "$cur" -ge "$inc" ]; then
+  : # container holds same-or-newer creds — keep them, don't overwrite
+else
+  printf '%s' "$payload" | base64 -d | tar --no-same-owner -xzf - -C "$dir"
+fi
 {onboarding}
 unset secret payload {src}
 "#,
@@ -1049,6 +1142,67 @@ unset secret payload {src}
         self.exec_capture_env(vec!["sh", "-c", &script], account_env)
             .await?;
         Ok(dir)
+    }
+
+    /// Materialize a Codex credential into `$CODEX_HOME/auth.json` before tmux
+    /// starts, mirroring [`restore_claude_bundle_from_env`]. The secret is read
+    /// from the exec ENVIRONMENT by name (never an argv), so it can't leak via
+    /// `docker top` or the tmux session environment. This replaces the old
+    /// account-remap shell wrapper for Codex, which relied on `tmux new-session
+    /// -e VARNAME` *importing* the value from the exec env — tmux does NOT do that
+    /// (only `-e VAR=VALUE` sets a var), so `${SRC}` was always empty in the pane
+    /// and Codex launched unauthenticated (onboarding).
+    ///
+    /// A JSON secret (ChatGPT OAuth `auth.json`) is written verbatim; a bare API
+    /// key is piped to `codex login --with-api-key` so Codex writes `auth.json` in
+    /// its own format.
+    pub async fn restore_codex_auth_from_env(
+        &self,
+        src: &str,
+        account_env: &[String],
+    ) -> Result<(), DockerError> {
+        if !is_env_name(src) {
+            return Err(DockerError::Command(format!(
+                "invalid Codex auth env name: {src}"
+            )));
+        }
+        let script = format!(
+            r#"set -eu
+PATH="{path}"
+secret="${{{src}:-}}"
+if [ -z "$secret" ]; then
+  echo "missing Codex auth env {src}" >&2
+  exit 1
+fi
+mkdir -p {home}
+umask 077
+case "$secret" in
+  \{{*|\[*)
+    # Conditional restore: don't roll a container's freshly-refreshed auth.json back
+    # to the vault snapshot. Compare `last_refresh` (ISO-8601 UTC — lexicographic
+    # order is chronological); write only when the container has none OR the snapshot
+    # is newer. dash has no string `>`, so pick the later via `sort`.
+    inc=$(printf '%s' "$secret" | jq -r '.last_refresh // ""' 2>/dev/null || echo "")
+    cur=""
+    [ -f {home}/auth.json ] && cur=$(jq -r '.last_refresh // ""' {home}/auth.json 2>/dev/null || echo "")
+    if [ -n "$cur" ] && [ -n "$inc" ] \
+       && [ "$(printf '%s\n%s\n' "$cur" "$inc" | sort | tail -n1)" = "$cur" ] \
+       && [ "$cur" != "$inc" ]; then
+      : # container holds a newer auth.json — keep it
+    else
+      printf '%s' "$secret" > {home}/auth.json
+    fi ;;
+  *) printf '%s' "$secret" | CODEX_HOME={home} codex login --with-api-key ;;
+esac
+unset secret {src}
+"#,
+            path = CONTAINER_PATH,
+            home = CODEX_CONFIG_DIR,
+            src = src,
+        );
+        self.exec_capture_env(vec!["sh", "-c", &script], account_env)
+            .await?;
+        Ok(())
     }
 
     pub async fn kill_tmux_session(&self, name: &str) -> Result<(), DockerError> {
@@ -1856,6 +2010,9 @@ rm -f /tmp/codehub-pr.json"#,
             tokens_out: u.totals.output,
             edits: count_session_edits(&raw),
             context_used: latest_context_used(&raw),
+            context_window: latest_claude_model(&raw)
+                .map(|m| claude_context_window(&m))
+                .unwrap_or(0),
         }))
     }
 
@@ -1933,7 +2090,7 @@ rm -f /tmp/codehub-pr.json"#,
     // ── Codex usage reader ───────────────────────────────────────────────────
 
     /// Aggregate token analytics read from Codex's on-disk rollout files
-    /// (`/root/.codex/sessions/**/rollout-*.jsonl`). Mirrors the Claude usage
+    /// (`/config/codex/sessions/**/rollout-*.jsonl`). Mirrors the Claude usage
     /// surface but uses Codex's per-turn `token_count` event payload. Errors only
     /// when the container is down; a missing sessions dir yields an all-zero report.
     pub async fn codex_usage(&self) -> Result<crate::types::CodexUsage, DockerError> {
@@ -1950,7 +2107,7 @@ rm -f /tmp/codehub-pr.json"#,
         self.exec_capture(vec![
             "sh",
             "-c",
-            "find /root/.codex/sessions -type f -name 'rollout-*.jsonl' -exec cat {} + 2>/dev/null || true",
+            "find /config/codex/sessions -type f -name 'rollout-*.jsonl' -exec cat {} + 2>/dev/null || true",
         ])
         .await
     }
@@ -2049,27 +2206,26 @@ rm -f /tmp/codehub-pr.json"#,
         Ok(parse_codex_sessions(&self.cat_all_rollouts().await?))
     }
 
-    /// Live per-session Codex tally from the session's own rollout file.
-    /// `id` is the session dir identifier (a date-prefixed path segment or uuid).
+    /// Live per-session Codex tally from the session's OWN rollout file. `id` is the
+    /// Codex conversation/rollout uuid (the notify `thread-id`, captured per session
+    /// via codehub-hook → `activity::codex_id`). Rollouts are named
+    /// `rollout-<ts>-<uuid>.jsonl`, so this matches the one file carrying that uuid.
     /// `None` when there is no usable data yet.
     pub async fn codex_session_usage(
         &self,
-        session_dir: &str,
+        id: &str,
     ) -> Result<Option<crate::types::CodexSessionUsage>, DockerError> {
-        // Guard against path traversal: allow only alphanumeric, dash, underscore,
-        // and forward-slash (for the date path prefix like "2026/05/24").
-        if session_dir.is_empty()
-            || session_dir.len() > 128
-            || !session_dir
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '/')
-            || session_dir.contains("..")
+        // Guard against glob/path injection: a rollout uuid is alphanumeric + dashes
+        // only (no slash, no dot — so `*` and `..` can't be smuggled into the glob).
+        if id.is_empty()
+            || id.len() > 64
+            || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
         {
             return Ok(None);
         }
         self.require_running().await?;
         let pattern = format!(
-            "find /root/.codex/sessions/{session_dir} -type f -name 'rollout-*.jsonl' -exec cat {{}} + 2>/dev/null || true"
+            "find /config/codex/sessions -type f -name 'rollout-*{id}.jsonl' -exec cat {{}} + 2>/dev/null || true"
         );
         let raw = self.exec_capture(vec!["sh", "-c", &pattern]).await?;
         Ok(codex_session_usage_from_raw(&raw))
@@ -2086,7 +2242,7 @@ rm -f /tmp/codehub-pr.json"#,
             .exec_capture(vec![
                 "sh",
                 "-c",
-                "f=$(find /root/.codex/sessions -type f -name 'rollout-*.jsonl' 2>/dev/null | sort | tail -1); [ -n \"$f\" ] && cat \"$f\" || true",
+                "f=$(find /config/codex/sessions -type f -name 'rollout-*.jsonl' 2>/dev/null | sort | tail -1); [ -n \"$f\" ] && cat \"$f\" || true",
             ])
             .await?;
         Ok(extract_codex_rate_limits(&raw))
@@ -2815,6 +2971,48 @@ fn latest_context_used(raw: &str) -> u64 {
     used
 }
 
+/// The most recent `message.model` in a Claude transcript (last assistant line
+/// with a non-empty model). `None` when no model is recorded — drives the
+/// context-window lookup.
+fn latest_claude_model(raw: &str) -> Option<String> {
+    let mut model: Option<String> = None;
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if let Some(m) = v
+            .get("message")
+            .and_then(|m| m.get("model"))
+            .and_then(|m| m.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            model = Some(m.to_string());
+        }
+    }
+    model
+}
+
+/// Map a Claude model id to its context-window size for the UI gauge. The
+/// transcript records NO window (it varies by model/tier), so this is a best-known
+/// lookup, NOT ground truth: Claude 4.x Opus/Sonnet expose a 1M window, Haiku 200K.
+/// Unknown models → 0 so the gauge shows an em-dash instead of guessing. Keep in
+/// step with the families CodeHub actually launches (`catalog.ts`).
+fn claude_context_window(model: &str) -> u64 {
+    // Match the model FAMILY, ignoring date/tier suffixes (`claude-opus-4-8`,
+    // `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`, …).
+    if model.contains("opus-4") || model.contains("sonnet-4") {
+        1_000_000
+    } else if model.contains("haiku") {
+        200_000
+    } else {
+        0
+    }
+}
+
 /// Normalize and confine a browser path to `/workspace`. Empty → the workspace
 /// root. Rejects any `..` component (and anything not under `/workspace`) so the
 /// Files browser can never read outside the mount.
@@ -3281,8 +3479,8 @@ fn clip_title(prompt: &str) -> String {
 }
 
 // ── Codex rollout file parser ────────────────────────────────────────────────
-// Codex writes per-session rollout files to
-// `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`.
+// Codex writes per-session rollout files under $CODEX_HOME (pinned to
+// `/config/codex`): `/config/codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`.
 // Each file contains one JSON object per line representing an event.
 //
 // Relevant event types (field `event_msg`):
@@ -3355,47 +3553,92 @@ fn codex_acc_common(acc: &mut CodexSessionAcc, v: &serde_json::Value) {
         }
     }
 
-    if let Some(model) = v
-        .get("turn_context")
-        .and_then(|tc| tc.get("model"))
-        .and_then(|m| m.as_str())
-    {
-        if !model.is_empty() {
-            acc.model = Some(model.to_string());
-        }
-    }
+    let Some(payload) = v.get("payload") else {
+        return;
+    };
 
-    match v.get("event_msg").and_then(|e| e.as_str()) {
-        Some("task_complete") => acc.turns = acc.turns.saturating_add(1),
-        Some("task_started") if acc.title.is_none() => {
-            if let Some(t) = v
-                .get("payload")
-                .and_then(|p| p.get("task"))
-                .and_then(|t| t.as_str())
-                .map(|s| s.trim())
+    // Codex 0.135 envelopes every rollout line under a top-level `type`; the session
+    // header (`session_meta`), per-turn config (`turn_context`) and the events
+    // (`event_msg`, with `payload.type` the kind + `*_tokens` counts) are SEPARATE
+    // lines, not fields on one. Older Codex flattened them — see `codex_line_sid` for
+    // the matching session-id migration.
+    match v.get("type").and_then(|t| t.as_str()) {
+        Some("session_meta") => {
+            if let Some(ver) = payload
+                .get("cli_version")
+                .and_then(|s| s.as_str())
                 .filter(|s| !s.is_empty())
             {
-                acc.title = Some(clip_title(t));
+                acc.version = Some(ver.to_string());
+            }
+            if let Some(branch) = payload
+                .get("git")
+                .and_then(|g| g.get("branch"))
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                acc.branch = Some(branch.to_string());
             }
         },
-        Some("token_count") => {
-            let tok =
-                |obj: &serde_json::Value, k: &str| obj.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
-            if let Some(total) = v
-                .get("payload")
-                .and_then(|p| p.get("info"))
-                .and_then(|i| i.get("total_token_usage"))
+        Some("turn_context") => {
+            if let Some(model) = payload
+                .get("model")
+                .and_then(|m| m.as_str())
+                .filter(|s| !s.is_empty())
             {
-                acc.cumulative = crate::types::CodexTokenTotals {
-                    input: tok(total, "input"),
-                    cached_input: tok(total, "cached_input"),
-                    output: tok(total, "output"),
-                    reasoning_output: tok(total, "reasoning_output"),
-                };
+                acc.model = Some(model.to_string());
             }
+        },
+        Some("event_msg") => match payload.get("type").and_then(|t| t.as_str()) {
+            Some("task_complete") => acc.turns = acc.turns.saturating_add(1),
+            // Session title = first real user prompt; `task_started` no longer carries
+            // the task text in 0.135.
+            Some("user_message") if acc.title.is_none() => {
+                if let Some(t) = payload
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    acc.title = Some(clip_title(t));
+                }
+            },
+            Some("token_count") => {
+                let tok = |obj: &serde_json::Value, k: &str| {
+                    obj.get(k).and_then(|n| n.as_u64()).unwrap_or(0)
+                };
+                if let Some(total) = payload.get("info").and_then(|i| i.get("total_token_usage")) {
+                    acc.cumulative = crate::types::CodexTokenTotals {
+                        input: tok(total, "input_tokens"),
+                        cached_input: tok(total, "cached_input_tokens"),
+                        output: tok(total, "output_tokens"),
+                        reasoning_output: tok(total, "reasoning_output_tokens"),
+                    };
+                }
+            },
+            _ => {},
         },
         _ => {},
     }
+}
+
+/// Resolve which Codex session a rollout line belongs to. Codex 0.135 writes the id
+/// once — in the `session_meta` line's `payload.id` — instead of stamping every line
+/// with `session_id`. Carry it forward from the last `session_meta`: rollouts are
+/// catted whole and contiguously ([`cat_all_rollouts`](DockerClient::cat_all_rollouts)),
+/// so every line trails its own file's meta. None before any meta (malformed stream).
+fn codex_line_sid(v: &serde_json::Value, current: &mut Option<String>) -> Option<String> {
+    if v.get("type").and_then(|t| t.as_str()) == Some("session_meta") {
+        if let Some(id) = v
+            .get("payload")
+            .and_then(|p| p.get("id"))
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            *current = Some(id.to_string());
+        }
+    }
+    current.clone()
 }
 
 /// Fold concatenated Codex rollout JSONL into a [`CodexUsage`] aggregate.
@@ -3409,6 +3652,9 @@ fn parse_codex_usage(raw: &str) -> crate::types::CodexUsage {
     // (CodexTokenTotals, est_cost_usd) accumulated per UTC day.
     let mut by_day: BTreeMap<String, (crate::types::CodexTokenTotals, f64)> = BTreeMap::new();
 
+    // Session id is written once per rollout (in `session_meta`); carry it forward.
+    let mut current_sid: Option<String> = None;
+
     for line in raw.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -3418,16 +3664,9 @@ fn parse_codex_usage(raw: &str) -> crate::types::CodexUsage {
             continue;
         };
 
-        // Session id comes from `session_id` or `sessionId` field.
-        let sid = v
-            .get("session_id")
-            .or_else(|| v.get("sessionId"))
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        if sid.is_empty() {
+        let Some(sid) = codex_line_sid(&v, &mut current_sid) else {
             continue;
-        }
+        };
 
         let acc = session_accs
             .entry(sid.clone())
@@ -3436,34 +3675,30 @@ fn parse_codex_usage(raw: &str) -> crate::types::CodexUsage {
                 ..Default::default()
             });
 
-        // Shared per-session fields (timestamp window, model, turns, title).
+        // Shared per-session fields (timestamp window, model, turns, title, and the
+        // cumulative `total_token_usage` session total).
         codex_acc_common(acc, &v);
 
-        // Usage-only: fold this turn's token deltas into the cost totals.
-        if v.get("event_msg").and_then(|e| e.as_str()) == Some("token_count") {
-            let Some(info) = v.get("payload").and_then(|p| p.get("info")) else {
-                continue;
-            };
+        // Usage-only: fold this turn's token DELTA (`last_token_usage`) into per-model
+        // / per-day cost. The cumulative session total is handled by codex_acc_common.
+        let is_token_count = v.get("type").and_then(|t| t.as_str()) == Some("event_msg")
+            && v.get("payload")
+                .and_then(|p| p.get("type"))
+                .and_then(|t| t.as_str())
+                == Some("token_count");
+        if is_token_count {
             let tok =
                 |obj: &serde_json::Value, k: &str| obj.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
-
-            // Use total_token_usage (cumulative) for the session total.
-            if let Some(total) = info.get("total_token_usage") {
-                acc.cumulative = crate::types::CodexTokenTotals {
-                    input: tok(total, "input"),
-                    cached_input: tok(total, "cached_input"),
-                    output: tok(total, "output"),
-                    reasoning_output: tok(total, "reasoning_output"),
-                };
-            }
-
-            // Use last_token_usage (this-turn delta) for by-model/by-day.
-            if let Some(last) = info.get("last_token_usage") {
+            if let Some(last) = v
+                .get("payload")
+                .and_then(|p| p.get("info"))
+                .and_then(|i| i.get("last_token_usage"))
+            {
                 let delta = crate::types::CodexTokenTotals {
-                    input: tok(last, "input"),
-                    cached_input: tok(last, "cached_input"),
-                    output: tok(last, "output"),
-                    reasoning_output: tok(last, "reasoning_output"),
+                    input: tok(last, "input_tokens"),
+                    cached_input: tok(last, "cached_input_tokens"),
+                    output: tok(last, "output_tokens"),
+                    reasoning_output: tok(last, "reasoning_output_tokens"),
                 };
                 let model_key = acc.model.clone().unwrap_or_else(|| "unknown".to_string());
                 let rate = codex_model_rate(&model_key);
@@ -3571,6 +3806,9 @@ fn parse_codex_sessions(raw: &str) -> Vec<crate::types::CodexSession> {
 
     let mut accs: HashMap<String, CodexSessionAcc> = HashMap::new();
 
+    // Session id is written once per rollout (in `session_meta`); carry it forward.
+    let mut current_sid: Option<String> = None;
+
     for line in raw.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -3580,15 +3818,9 @@ fn parse_codex_sessions(raw: &str) -> Vec<crate::types::CodexSession> {
             continue;
         };
 
-        let sid = v
-            .get("session_id")
-            .or_else(|| v.get("sessionId"))
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string();
-        if sid.is_empty() {
+        let Some(sid) = codex_line_sid(&v, &mut current_sid) else {
             continue;
-        }
+        };
 
         let acc = accs.entry(sid.clone()).or_insert_with(|| CodexSessionAcc {
             session_id: sid.clone(),
@@ -3637,6 +3869,8 @@ fn codex_session_usage_from_raw(raw: &str) -> Option<crate::types::CodexSessionU
     let mut tokens_in = 0u64;
     let mut tokens_out = 0u64;
     let mut context_used = 0u64;
+    let mut context_window = 0u64;
+    let mut saw_tokens = false;
 
     for line in raw.lines() {
         let line = line.trim();
@@ -3646,37 +3880,53 @@ fn codex_session_usage_from_raw(raw: &str) -> Option<crate::types::CodexSessionU
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        let event = match v.get("event_msg").and_then(|e| e.as_str()) {
-            Some(e) => e,
-            None => continue,
+        // Codex rollout lines are enveloped: a top-level `type` ("event_msg",
+        // "response_item", "session_meta", …) wraps a `payload` whose own `type` is
+        // the event kind, and token fields are `*_tokens`. Older Codex used a flat
+        // top-level `event_msg` field with `input`/`output` keys; 0.135+ nests it —
+        // keying off the old shape silently matched nothing (turns stayed 0 → None →
+        // the whole per-pane strip read blank).
+        if v.get("type").and_then(|t| t.as_str()) != Some("event_msg") {
+            continue;
+        }
+        let Some(payload) = v.get("payload") else {
+            continue;
         };
-        match event {
-            "task_complete" => turns += 1,
-            "token_count" => {
-                if let Some(last) = v
-                    .get("payload")
-                    .and_then(|p| p.get("info"))
-                    .and_then(|i| i.get("last_token_usage"))
-                {
-                    let tok = |k: &str| last.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
-                    tokens_in += tok("input");
-                    tokens_out += tok("output");
+        match payload.get("type").and_then(|t| t.as_str()) {
+            Some("task_complete") => turns += 1,
+            Some("task_started") => {
+                // The model context window rides task_started — last turn wins.
+                if let Some(w) = payload.get("model_context_window").and_then(|n| n.as_u64()) {
+                    context_window = w;
                 }
-                // Overwrite each turn — ends at the last (current) one.
-                if let Some(total) = v
-                    .get("payload")
-                    .and_then(|p| p.get("info"))
-                    .and_then(|i| i.get("total_token_usage"))
-                {
-                    let tok = |k: &str| total.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
-                    context_used = tok("input") + tok("cached_input");
-                }
+            },
+            Some("token_count") => {
+                let Some(info) = payload.get("info") else {
+                    continue;
+                };
+                let tok = |obj: Option<&serde_json::Value>, k: &str| {
+                    obj.and_then(|o| o.get(k))
+                        .and_then(|n| n.as_u64())
+                        .unwrap_or(0)
+                };
+                // Cumulative session totals (Codex already accumulates these) — the
+                // last token_count line wins.
+                let total = info.get("total_token_usage");
+                tokens_in = tok(total, "input_tokens");
+                tokens_out = tok(total, "output_tokens");
+                // Live context footprint = most recent turn's prompt size (parity
+                // with Claude's `latest_context_used`); `input_tokens` already folds
+                // in the cached portion.
+                context_used = tok(info.get("last_token_usage"), "input_tokens");
+                saw_tokens = true;
             },
             _ => {},
         }
     }
 
-    if turns == 0 {
+    // Surface as soon as there's a usable signal — a session mid-first-turn has
+    // token_count lines but no task_complete yet.
+    if turns == 0 && !saw_tokens {
         return None;
     }
     Some(crate::types::CodexSessionUsage {
@@ -3687,6 +3937,7 @@ fn codex_session_usage_from_raw(raw: &str) -> Option<crate::types::CodexSessionU
         // absence rather than fabrication).
         edits: 0,
         context_used,
+        context_window,
     })
 }
 
@@ -3702,7 +3953,15 @@ fn extract_codex_rate_limits(raw: &str) -> Option<crate::types::CodexRateLimits>
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        if v.get("event_msg").and_then(|e| e.as_str()) != Some("token_count") {
+        // Codex 0.135 envelope: `type:"event_msg"` + `payload.type:"token_count"`
+        // (older Codex used a flat top-level `event_msg` field). `rate_limits` rides
+        // the same token_count payload, alongside `info`.
+        if v.get("type").and_then(|t| t.as_str()) != Some("event_msg")
+            || v.get("payload")
+                .and_then(|p| p.get("type"))
+                .and_then(|t| t.as_str())
+                != Some("token_count")
+        {
             continue;
         }
         let rl = match v.get("payload").and_then(|p| p.get("rate_limits")) {
@@ -3719,16 +3978,23 @@ fn extract_codex_rate_limits(raw: &str) -> Option<crate::types::CodexRateLimits>
 
         let f64_field = |obj: Option<&serde_json::Value>, k: &str| obj?.get(k)?.as_f64();
         let u64_field = |obj: Option<&serde_json::Value>, k: &str| obj?.get(k)?.as_u64();
-        let str_field =
-            |obj: Option<&serde_json::Value>, k: &str| obj?.get(k)?.as_str().map(String::from);
+        // `resets_at` is an epoch number in real rollouts (older fixtures used an
+        // RFC3339 string) — accept either, surfacing the epoch as a string so a real
+        // value reaches the UI instead of null.
+        let resets_field = |obj: Option<&serde_json::Value>| -> Option<String> {
+            let r = obj?.get("resets_at")?;
+            r.as_str()
+                .map(String::from)
+                .or_else(|| r.as_u64().map(|n| n.to_string()))
+        };
 
         last_rl = Some(crate::types::CodexRateLimits {
             primary_used_pct: f64_field(primary, "used_percent"),
             primary_window_minutes: u64_field(primary, "window_minutes"),
-            primary_resets_at: str_field(primary, "resets_at"),
+            primary_resets_at: resets_field(primary),
             secondary_used_pct: f64_field(secondary, "used_percent"),
             secondary_window_minutes: u64_field(secondary, "window_minutes"),
-            secondary_resets_at: str_field(secondary, "resets_at"),
+            secondary_resets_at: resets_field(secondary),
             plan_type,
         });
     }
@@ -4036,7 +4302,7 @@ mod tests {
         let script =
             account_launch_script(Cli::Codex, "OPENAI_API_KEY", "CODEHUB_VAULT_profile", &argv);
 
-        assert!(script.contains("$HOME/.codex/auth.json"));
+        assert!(script.contains("/config/codex/auth.json"));
         assert!(script.contains("export OPENAI_API_KEY=\"${CODEHUB_VAULT_profile}\""));
         assert!(script.contains("unset CODEHUB_VAULT_profile"));
         assert!(script.contains("exec 'codex' '--yolo'"));
@@ -4588,9 +4854,28 @@ mod tests {
         parse_codex_usage, parse_github_repos,
     };
 
+    // Codex 0.135 rollout lines: a top-level `type` envelope, the session id only in
+    // `session_meta`, the model only in `turn_context`, events under `event_msg` with
+    // `payload.type` the kind and `*_tokens` counts. Tests stitch these in order.
+    fn codex_session_meta_line(session_id: &str, ts: &str, branch: &str) -> String {
+        serde_json::json!({
+            "timestamp": ts,
+            "type": "session_meta",
+            "payload": { "id": session_id, "cli_version": "0.135.0", "git": { "branch": branch } }
+        })
+        .to_string()
+    }
+
+    fn codex_turn_context_line(ts: &str, model: &str) -> String {
+        serde_json::json!({
+            "timestamp": ts,
+            "type": "turn_context",
+            "payload": { "model": model }
+        })
+        .to_string()
+    }
+
     fn codex_token_count_line(
-        session_id: &str,
-        model: &str,
         ts: &str,
         last_input: u64,
         last_output: u64,
@@ -4598,25 +4883,24 @@ mod tests {
         total_output: u64,
     ) -> String {
         serde_json::json!({
-            "session_id": session_id,
             "timestamp": ts,
-            "event_msg": "token_count",
-            "turn_context": { "model": model, "effort": "medium" },
+            "type": "event_msg",
             "payload": {
+                "type": "token_count",
                 "info": {
                     "last_token_usage": {
-                        "input": last_input,
-                        "cached_input": 0u64,
-                        "output": last_output,
-                        "reasoning_output": 0u64,
-                        "total": last_input + last_output
+                        "input_tokens": last_input,
+                        "cached_input_tokens": 0u64,
+                        "output_tokens": last_output,
+                        "reasoning_output_tokens": 0u64,
+                        "total_tokens": last_input + last_output
                     },
                     "total_token_usage": {
-                        "input": total_input,
-                        "cached_input": 0u64,
-                        "output": total_output,
-                        "reasoning_output": 0u64,
-                        "total": total_input + total_output
+                        "input_tokens": total_input,
+                        "cached_input_tokens": 0u64,
+                        "output_tokens": total_output,
+                        "reasoning_output_tokens": 0u64,
+                        "total_tokens": total_input + total_output
                     }
                 },
                 "rate_limits": {
@@ -4632,33 +4916,37 @@ mod tests {
         .to_string()
     }
 
-    fn codex_task_complete_line(session_id: &str, ts: &str) -> String {
+    fn codex_task_complete_line(ts: &str) -> String {
         serde_json::json!({
-            "session_id": session_id,
             "timestamp": ts,
-            "event_msg": "task_complete"
+            "type": "event_msg",
+            "payload": { "type": "task_complete" }
         })
         .to_string()
     }
 
-    fn codex_task_started_line(session_id: &str, ts: &str, task: &str) -> String {
+    fn codex_user_message_line(ts: &str, message: &str) -> String {
         serde_json::json!({
-            "session_id": session_id,
             "timestamp": ts,
-            "event_msg": "task_started",
-            "payload": { "task": task }
+            "type": "event_msg",
+            "payload": { "type": "user_message", "message": message }
         })
         .to_string()
     }
 
     #[test]
     fn codex_usage_sums_real_tokens_and_counts_sessions_turns() {
-        let line1 =
-            codex_token_count_line("s1", "gpt-4o", "2026-05-22T12:00:00Z", 100, 200, 100, 200);
-        let line2 = codex_token_count_line("s2", "o4-mini", "2026-05-23T09:00:00Z", 10, 20, 10, 20);
-        let complete1 = codex_task_complete_line("s1", "2026-05-22T12:00:01Z");
-        let complete2 = codex_task_complete_line("s2", "2026-05-23T09:00:01Z");
-        let raw = format!("{line1}\n{complete1}\n{line2}\n{complete2}\n");
+        let raw = [
+            codex_session_meta_line("s1", "2026-05-22T12:00:00Z", "main"),
+            codex_turn_context_line("2026-05-22T12:00:00Z", "gpt-4o"),
+            codex_token_count_line("2026-05-22T12:00:00Z", 100, 200, 100, 200),
+            codex_task_complete_line("2026-05-22T12:00:01Z"),
+            codex_session_meta_line("s2", "2026-05-23T09:00:00Z", "main"),
+            codex_turn_context_line("2026-05-23T09:00:00Z", "o4-mini"),
+            codex_token_count_line("2026-05-23T09:00:00Z", 10, 20, 10, 20),
+            codex_task_complete_line("2026-05-23T09:00:01Z"),
+        ]
+        .join("\n");
         let u = parse_codex_usage(&raw);
         assert_eq!(u.sessions, 2);
         assert_eq!(u.turns, 2);
@@ -4687,19 +4975,13 @@ mod tests {
 
     #[test]
     fn codex_usage_flags_unpriced_models_without_fabricating_cost() {
-        let line = serde_json::json!({
-            "session_id": "s1",
-            "timestamp": "2026-05-22T12:00:00Z",
-            "event_msg": "token_count",
-            "turn_context": { "model": "future-model-xyz", "effort": "low" },
-            "payload": {
-                "info": {
-                    "last_token_usage": { "input": 40u64, "cached_input": 0u64, "output": 60u64, "reasoning_output": 0u64, "total": 100u64 },
-                    "total_token_usage": { "input": 40u64, "cached_input": 0u64, "output": 60u64, "reasoning_output": 0u64, "total": 100u64 }
-                }
-            }
-        }).to_string();
-        let u = parse_codex_usage(&line);
+        let raw = [
+            codex_session_meta_line("s1", "2026-05-22T12:00:00Z", "main"),
+            codex_turn_context_line("2026-05-22T12:00:00Z", "future-model-xyz"),
+            codex_token_count_line("2026-05-22T12:00:00Z", 40, 60, 40, 60),
+        ]
+        .join("\n");
+        let u = parse_codex_usage(&raw);
         assert_eq!(u.est_cost_usd, 0.0);
         assert_eq!(u.unpriced_tokens, 100); // input + output
         assert!(!u.by_model[0].priced);
@@ -4707,11 +4989,15 @@ mod tests {
 
     #[test]
     fn codex_sessions_groups_by_id_newest_first() {
-        let start1 = codex_task_started_line("s-old", "2026-05-20T10:00:00Z", "Fix the bug");
-        let complete1 = codex_task_complete_line("s-old", "2026-05-20T10:01:00Z");
-        let start2 = codex_task_started_line("s-new", "2026-05-22T09:00:00Z", "Add tests");
-        let complete2 = codex_task_complete_line("s-new", "2026-05-22T09:02:00Z");
-        let raw = format!("{start1}\n{complete1}\n{start2}\n{complete2}\n");
+        let raw = [
+            codex_session_meta_line("s-old", "2026-05-20T10:00:00Z", "main"),
+            codex_user_message_line("2026-05-20T10:00:30Z", "Fix the bug"),
+            codex_task_complete_line("2026-05-20T10:01:00Z"),
+            codex_session_meta_line("s-new", "2026-05-22T09:00:00Z", "main"),
+            codex_user_message_line("2026-05-22T09:00:30Z", "Add tests"),
+            codex_task_complete_line("2026-05-22T09:02:00Z"),
+        ]
+        .join("\n");
         let sessions = parse_codex_sessions(&raw);
         assert_eq!(sessions.len(), 2);
         // Newest first.
@@ -4729,20 +5015,75 @@ mod tests {
     }
 
     #[test]
+    fn claude_context_window_maps_family_to_window() {
+        assert_eq!(super::claude_context_window("claude-opus-4-8"), 1_000_000);
+        assert_eq!(super::claude_context_window("claude-sonnet-4-6"), 1_000_000);
+        assert_eq!(
+            super::claude_context_window("claude-haiku-4-5-20251001"),
+            200_000
+        );
+        // Unknown family → 0 so the gauge shows an em-dash, not a guess.
+        assert_eq!(super::claude_context_window("claude-3-5-sonnet"), 0);
+        assert_eq!(super::claude_context_window(""), 0);
+    }
+
+    #[test]
+    fn latest_claude_model_reads_last_assistant_model() {
+        let raw = concat!(
+            r#"{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":1}}}"#,
+            "\n",
+            r#"{"type":"user","message":{"content":"hi"}}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"model":"claude-opus-4-8","usage":{"input_tokens":2}}}"#,
+            "\n",
+        );
+        assert_eq!(
+            super::latest_claude_model(raw).as_deref(),
+            Some("claude-opus-4-8")
+        );
+        assert_eq!(super::latest_claude_model(""), None);
+    }
+
+    #[test]
     fn codex_session_usage_counts_turns_and_tokens() {
-        let line1 =
-            codex_token_count_line("s1", "gpt-4o", "2026-05-22T12:00:00Z", 100, 200, 100, 200);
-        let complete = codex_task_complete_line("s1", "2026-05-22T12:00:01Z");
-        let raw = format!("{line1}\n{complete}\n");
-        let usage = codex_session_usage_from_raw(&raw).unwrap();
+        // Real Codex 0.135 rollout shape: enveloped `type:"event_msg"` + `payload.type`,
+        // `*_tokens` field names. total_token_usage is cumulative (→ tokens_in/out),
+        // last_token_usage is this-turn (→ context_used footprint).
+        let raw = concat!(
+            r#"{"type":"session_meta","payload":{"id":"019e75ea"}}"#,
+            "\n",
+            r#"{"type":"event_msg","payload":{"type":"task_started","model_context_window":258400}}"#,
+            "\n",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":200},"last_token_usage":{"input_tokens":60,"cached_input_tokens":20,"output_tokens":30}}}}"#,
+            "\n",
+            r#"{"type":"event_msg","payload":{"type":"task_complete"}}"#,
+            "\n",
+        );
+        let usage = codex_session_usage_from_raw(raw).unwrap();
         assert_eq!(usage.turns, 1);
         assert_eq!(usage.tokens_in, 100);
         assert_eq!(usage.tokens_out, 200);
+        assert_eq!(usage.context_used, 60);
+        assert_eq!(usage.context_window, 258_400);
+        assert_eq!(usage.edits, 0);
+    }
+
+    #[test]
+    fn codex_session_usage_surfaces_before_first_task_complete() {
+        // Mid-first-turn: token_count seen, no task_complete yet → still report.
+        let raw = concat!(
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":42,"output_tokens":7},"last_token_usage":{"input_tokens":42,"output_tokens":7}}}}"#,
+            "\n",
+        );
+        let usage = codex_session_usage_from_raw(raw).unwrap();
+        assert_eq!(usage.turns, 0);
+        assert_eq!(usage.tokens_in, 42);
+        assert_eq!(usage.context_used, 42);
     }
 
     #[test]
     fn extract_codex_rate_limits_reads_primary_fields() {
-        let line = codex_token_count_line("s1", "gpt-4o", "2026-05-22T12:00:00Z", 10, 20, 10, 20);
+        let line = codex_token_count_line("2026-05-22T12:00:00Z", 10, 20, 10, 20);
         let rl = extract_codex_rate_limits(&line).unwrap();
         assert!((rl.primary_used_pct.unwrap() - 42.5).abs() < 1e-9);
         assert_eq!(rl.primary_window_minutes, Some(60));

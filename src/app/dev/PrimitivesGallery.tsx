@@ -192,6 +192,15 @@ export default function PrimitivesGallery() {
         <Cell label="narrow width">
           <ContextGauge used={50000} max={200000} width={60} />
         </Cell>
+        {/* Mirrors PaneFoot's exact row so gauge + metric baselines can be checked. */}
+        <Cell label="pane footer row">
+          <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <ContextGauge used={10800} max={258400} width={84} />
+            <span className="vr" style={{ height: 14 }} />
+            <MetricStat label="turn" value="6" />
+            <MetricStat label="tok" value="65K" />
+          </span>
+        </Cell>
       </Section>
 
       {/* ── MetricStat ── */}
@@ -445,9 +454,7 @@ export default function PrimitivesGallery() {
               },
               {
                 label: "Library",
-                items: [
-                  { key: "resume", label: "Resume" },
-                ],
+                items: [{ key: "resume", label: "Resume" }],
               },
             ]}
           />

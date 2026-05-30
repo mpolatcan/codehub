@@ -57,7 +57,7 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
     case "detect_docker_runtime":
       return jget("/detect-docker-runtime") as Promise<T>;
     case "start_docker_app":
-      return jsend("POST", `/start-docker-app`, { runtime: args.runtime }) as Promise<T>;
+      return jsend("POST", "/start-docker-app", { runtime: args.runtime }) as Promise<T>;
     case "agent_key_status":
       return jget("/agent-key-status") as Promise<T>;
     case "agent_versions":
@@ -144,6 +144,10 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
     case "rename_account_profile":
       return jsend("PATCH", `/account-profiles/${encodeURIComponent(String(args.id))}`, {
         label: args.label,
+      }) as Promise<T>;
+    case "set_account_profile_enabled":
+      return jsend("POST", `/account-profiles/${encodeURIComponent(String(args.id))}/enabled`, {
+        enabled: args.enabled,
       }) as Promise<T>;
     // Vault: OS-keychain ops — Tauri-only, degrade to no-op in browser mode.
     case "vault_store_key":
@@ -261,6 +265,8 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
         endpoint: args.endpoint,
         api_key_var: args.apiKeyVar,
         models: args.models,
+        model: args.model,
+        small_fast_model: args.smallFastModel,
       }) as Promise<T>;
     case "remove_provider":
       return jsend("DELETE", `/providers?id=${encodeURIComponent(String(args.id))}`) as Promise<T>;
@@ -271,6 +277,13 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
         endpoint: args.endpoint,
         enabled: args.enabled,
         models: args.models,
+        model: args.model,
+        small_fast_model: args.smallFastModel,
+      }) as Promise<T>;
+    case "set_provider_token":
+      return jsend("POST", "/providers/token", {
+        id: args.id,
+        token: args.token,
       }) as Promise<T>;
     case "search_transcripts": {
       const params = new URLSearchParams({ query: String(args.query) });

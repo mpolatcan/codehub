@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { deriveLiveStatus } from "../lib/activity";
 import { useOverlay } from "../lib/overlay";
 import * as registry from "../lib/panes";
 import { confirmCloseRunningSession, isSpawnPlaceholder, useStore } from "../lib/store";
 import type { Group, LayoutNode, SplitNode, Workspace } from "../lib/tree";
 import { activeGroup, leavesList, leavesOf } from "../lib/tree";
+import { PaneFoot } from "./PaneFoot";
 import { PaneHead } from "./PaneHead";
 import { PaneMount } from "./PaneMount";
 import { SpawnPane } from "./SpawnPane";
@@ -366,6 +368,7 @@ function Leaf({ session, group, wsId }: { session: string; group: Group; wsId: s
       <div className="pane-body">
         <PaneMount session={session} />
       </div>
+      <PaneFoot session={session} />
       {/* Drop overlay — only while another pane is dragged over this one. Sits
           above the xterm surface so the terminal never sees the drag events. */}
       {isDropTarget && (
@@ -553,6 +556,7 @@ function FocusLayout({ group, leaves }: { group: Group; leaves: string[] }) {
         <div className="pane-body">
           <PaneMount session={focused} />
         </div>
+        <PaneFoot session={focused} />
       </div>
       <div
         style={{
@@ -609,8 +613,9 @@ function MiniPane({
   const activity = useStore((s) => s.sessionActivity[session]);
   const awaiting = useStore((s) => s.pendingPrompts.some((p) => p.session === session));
   if (!meta) return null;
-  const working = activity?.state === "working";
-  const status = awaiting ? "wait" : working ? "live" : "idle";
+  const view = activity ? deriveLiveStatus(activity, awaiting) : null;
+  const working = view?.status === "live";
+  const status = view?.status ?? "idle";
   const accent = `var(--a-${meta.cli})`;
   return (
     <button

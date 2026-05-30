@@ -99,6 +99,14 @@ fn normalize_kind(raw: &str) -> Option<&'static str> {
     }
 }
 
+/// Tools whose invocation blocks the turn on a user answer — the structured
+/// "ask the user a question" tools. Mapped to the awaiting state like a permission
+/// prompt. Claude: `AskUserQuestion`; Codex: `request_user_input`. A plain-text
+/// question at turn-end is indistinguishable from "done" and stays idle.
+fn is_ask_tool(tool: Option<&str>) -> bool {
+    matches!(tool, Some("AskUserQuestion") | Some("request_user_input"))
+}
+
 /// One pending permission prompt.
 #[derive(Clone)]
 pub struct PendingEntry {
@@ -111,6 +119,12 @@ pub struct PendingEntry {
 struct SessionState {
     pending: Option<PendingEntry>,
     history: VecDeque<ActivityEvent>,
+    /// `(kind, tool_name, notification_type, at)` of the last ingested event — used
+    /// to drop Codex's duplicate hook fires (0.135 emits some hooks twice with an
+    /// IDENTICAL timestamp), which would otherwise double-count turns/tool_calls.
+    /// `notification_type` is in the key so a permission_prompt and an idle_prompt at
+    /// the same instant aren't mistaken for duplicates.
+    last_sig: Option<(String, Option<String>, Option<String>, i64)>,
 }
 
 /// Shared, in-memory per-session event state. Filled by the tail task and read
@@ -165,11 +179,23 @@ impl EventsTracker {
             notification_type: Option<String>,
             #[serde(default)]
             tool_name: Option<String>,
+            // Codex notify carries its conversation/rollout uuid here (emitted by
+            // codehub-hook). Captured as the session's `codex_id` for telemetry.
+            #[serde(default)]
+            codex_thread_id: Option<String>,
         }
 
         let Ok(ev) = serde_json::from_str::<Line>(line) else {
             return None;
         };
+
+        // Capture the Codex rollout id (stable per session) before taking the events
+        // lock — `set_codex_id` locks the separate activity map. Independent of the
+        // event kind, so it lands even though it rides the turn-finish line.
+        if let (Some(id), Some(act)) = (ev.codex_thread_id.as_deref(), self.activity.as_ref()) {
+            act.set_codex_id(&ev.session, id);
+        }
+
         let kind = normalize_kind(&ev.kind)?;
 
         let agent_event = AgentEvent {
@@ -191,15 +217,73 @@ impl EventsTracker {
         let mut map = self.lock_inner();
         let state = map.entry(ev.session.clone()).or_default();
 
-        // Update pending-prompt state + session status on the activity tracker.
+        // Drop an exact duplicate of the immediately-preceding event (same kind +
+        // tool + millisecond) — Codex 0.135 double-fires some structured hooks with
+        // an identical timestamp, which would double-count turns/tool_calls. Exact
+        // match only (not a fuzzy window), so two genuinely distinct rapid events
+        // (different tool, or a different ms) are never collapsed.
+        let sig = (
+            kind.to_string(),
+            ev.tool_name.clone(),
+            ev.notification_type.clone(),
+            ev.at,
+        );
+        if state.last_sig.as_ref() == Some(&sig) {
+            return None;
+        }
+        state.last_sig = Some(sig);
+
+        // Update pending-prompt state + drive the activity tracker's turn
+        // lifecycle (turn/tool counters, current tool, transient outcome). Every
+        // branch is a REAL hook — nothing here is timer-inferred.
         match kind {
             KIND_NOTIFICATION => {
-                let is_prompt = ev
-                    .notification_type
-                    .as_deref()
-                    .map(|t| t == "permission_prompt")
-                    .unwrap_or(false);
-                if is_prompt {
+                match ev.notification_type.as_deref() {
+                    // A real block: the agent is gated on tool approval and cannot
+                    // proceed until the user answers.
+                    Some("permission_prompt") => {
+                        state.pending = Some(PendingEntry {
+                            message: ev.message.clone(),
+                            since: ev.at,
+                        });
+                        if let Some(ref act) = self.activity {
+                            act.set_status(
+                                &ev.session,
+                                crate::activity::SessionStatus::Awaiting,
+                                None,
+                            );
+                        }
+                    },
+                    // NOT a block: Claude fires `idle_prompt` after EVERY turn-end
+                    // once it has sat idle at the prompt ("Claude is waiting for your
+                    // input"). That's ordinary idle, not "needs input" — treating it as
+                    // awaiting made every finished Claude session read "needs input".
+                    // Clear any stale pending (e.g. an interrupted permission prompt)
+                    // and settle to idle.
+                    Some("idle_prompt") => {
+                        state.pending = None;
+                        if let Some(ref act) = self.activity {
+                            act.set_status(&ev.session, crate::activity::SessionStatus::Idle, None);
+                        }
+                    },
+                    _ => {},
+                }
+            },
+            KIND_PROMPT_SUBMIT => {
+                state.pending = None;
+                if let Some(ref act) = self.activity {
+                    act.on_prompt_submit(&ev.session);
+                }
+            },
+            KIND_PRE_TOOL => {
+                if let Some(ref act) = self.activity {
+                    act.on_pre_tool(&ev.session, ev.tool_name.as_deref());
+                }
+                // A structured "ask the user" tool (Claude `AskUserQuestion` / Codex
+                // `request_user_input`) blocks the turn on a user answer — surface it
+                // as awaiting, like a permission prompt. Cleared on PostToolUse (the
+                // answer arrived) or the next UserPromptSubmit.
+                if is_ask_tool(ev.tool_name.as_deref()) {
                     state.pending = Some(PendingEntry {
                         message: ev.message.clone(),
                         since: ev.at,
@@ -209,30 +293,38 @@ impl EventsTracker {
                     }
                 }
             },
-            KIND_STOP | KIND_PROMPT_SUBMIT => {
+            KIND_POST_TOOL => {
+                // A tool returned ⇒ not blocked (covers an answered ask tool and an
+                // approved permission whose tool just ran).
                 state.pending = None;
                 if let Some(ref act) = self.activity {
-                    if ev.kind == "StopFailure" {
-                        act.set_status(
-                            &ev.session,
-                            crate::activity::SessionStatus::Failed,
-                            ev.message.clone(),
-                        );
-                    } else if kind == KIND_STOP {
-                        act.set_status(&ev.session, crate::activity::SessionStatus::Idle, None);
-                    } else {
-                        act.set_status(&ev.session, crate::activity::SessionStatus::Running, None);
-                    }
+                    act.on_post_tool(&ev.session);
                 }
             },
-            KIND_PRE_TOOL => {
+            KIND_STOP => {
+                state.pending = None;
                 if let Some(ref act) = self.activity {
-                    act.set_status(&ev.session, crate::activity::SessionStatus::Running, None);
+                    // `ev.kind` is the raw hook name; "StopFailure" normalizes to
+                    // KIND_STOP but marks a failed turn.
+                    act.on_turn_end(
+                        &ev.session,
+                        ev.at,
+                        ev.kind == "StopFailure",
+                        ev.message.clone(),
+                    );
+                }
+            },
+            KIND_SESSION_START => {
+                // Marks the session hook-aware (so consumers trust `session_status`
+                // over byte-flow) while leaving it Idle — a fresh, unprompted session
+                // no longer reads its startup/scroll/resize redraws as "working".
+                if let Some(ref act) = self.activity {
+                    act.on_session_start(&ev.session);
                 }
             },
             KIND_SESSION_END => {
                 if let Some(ref act) = self.activity {
-                    act.set_status(&ev.session, crate::activity::SessionStatus::Done, None);
+                    act.on_session_end(&ev.session);
                 }
             },
             _ => {},
@@ -485,7 +577,10 @@ fn maybe_notify(app: &tauri::AppHandle, config: &crate::config::ConfigStore, eve
     let title: Option<&str> = match event.kind.as_str() {
         KIND_NOTIFICATION
             if settings.notify_await_input
-                && event.notification_type.as_deref() == Some("permission_prompt") =>
+                && matches!(
+                    event.notification_type.as_deref(),
+                    Some("permission_prompt") | Some("idle_prompt")
+                ) =>
         {
             Some("Agent needs input")
         },
@@ -732,10 +827,74 @@ mod tests {
     }
 
     #[test]
-    fn idle_notification_does_not_set_pending() {
+    fn idle_prompt_is_not_awaiting() {
+        // idle_prompt ("Claude is waiting for your input") fires after every turn-end
+        // — it's ordinary idle, NOT "needs input". It must NOT set pending, and it
+        // clears any stale pending left by an interrupted permission prompt.
         let tracker = EventsTracker::new();
-        let line = mk_line("s1", "Notification", Some("idle_prompt"), None);
-        tracker.ingest(&line);
+        tracker.ingest(&mk_line(
+            "s1",
+            "Notification",
+            Some("permission_prompt"),
+            None,
+        ));
+        assert_eq!(tracker.pending_prompts().len(), 1);
+        tracker.ingest(&mk_line("s1", "Notification", Some("idle_prompt"), None));
+        assert!(tracker.pending_prompts().is_empty());
+    }
+
+    #[test]
+    fn ask_tool_pre_use_sets_awaiting_and_post_use_clears() {
+        // The structured ask tools block the turn on a user answer → awaiting.
+        let tracker = EventsTracker::new();
+        for tool in ["AskUserQuestion", "request_user_input"] {
+            let pre =
+                format!(r#"{{"session":"s1","kind":"PreToolUse","at":1000,"tool_name":"{tool}"}}"#);
+            tracker.ingest(&pre);
+            assert_eq!(
+                tracker.pending_prompts().len(),
+                1,
+                "{tool} should set awaiting"
+            );
+            tracker.ingest(r#"{"session":"s1","kind":"PostToolUse","at":1001}"#);
+            assert!(
+                tracker.pending_prompts().is_empty(),
+                "PostToolUse should clear awaiting after {tool}"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_tool_pre_use_is_not_awaiting() {
+        let tracker = EventsTracker::new();
+        tracker.ingest(r#"{"session":"s1","kind":"PreToolUse","at":1000,"tool_name":"Bash"}"#);
+        assert!(tracker.pending_prompts().is_empty());
+    }
+
+    #[test]
+    fn exact_duplicate_event_is_dropped_but_distinct_is_kept() {
+        use crate::activity::ActivityTracker;
+        let act = std::sync::Arc::new(ActivityTracker::new());
+        act.register("s1", "codex", "Codex 1", None, None, None);
+        let tracker = EventsTracker::with_activity(act.clone());
+        let line = r#"{"session":"s1","kind":"UserPromptSubmit","at":1000}"#;
+        assert!(tracker.ingest(line).is_some()); // first counts
+        assert!(tracker.ingest(line).is_none()); // Codex double-fire (identical) dropped
+        assert_eq!(
+            act.snapshot()[0].turns,
+            1,
+            "exact dup must not double-count"
+        );
+        // A genuinely distinct event (different `at`) is NOT collapsed.
+        tracker.ingest(r#"{"session":"s1","kind":"UserPromptSubmit","at":1001}"#);
+        assert_eq!(act.snapshot()[0].turns, 2);
+    }
+
+    #[test]
+    fn non_prompt_notification_does_not_set_pending() {
+        // Other notification subtypes (e.g. auth_success) are not awaiting.
+        let tracker = EventsTracker::new();
+        tracker.ingest(&mk_line("s1", "Notification", Some("auth_success"), None));
         assert!(tracker.pending_prompts().is_empty());
     }
 
@@ -813,5 +972,90 @@ mod tests {
         assert_eq!(deny_keystroke("claude"), Some("n\n"));
         assert_eq!(accept_keystroke("codex"), Some("y\n"));
         assert!(accept_keystroke("antigravity").is_none());
+    }
+
+    // ── events → activity integration ────────────────────────────────────────
+    // Proves the realistic-state pipeline end to end: a hook line ingested here
+    // drives the `ActivityTracker` snapshot the frontend/island actually read.
+
+    #[test]
+    fn ingest_drives_activity_turn_lifecycle() {
+        use crate::activity::{ActivityTracker, SessionStatus, TurnOutcome};
+        let act = std::sync::Arc::new(ActivityTracker::new());
+        act.register("s1", "claude", "Claude 1", None, None, None);
+        let tracker = EventsTracker::with_activity(act.clone());
+
+        // Turn starts.
+        tracker.ingest(&mk_line("s1", "UserPromptSubmit", None, None));
+        let snap = act.snapshot();
+        assert_eq!(snap[0].turns, 1);
+        assert_eq!(snap[0].session_status, SessionStatus::Running);
+        assert!(snap[0].seen_hooks);
+
+        // Running a tool → "running Bash".
+        tracker.ingest(r#"{"session":"s1","kind":"PreToolUse","at":1000,"tool_name":"Bash"}"#);
+        let snap = act.snapshot();
+        assert_eq!(snap[0].tool_calls, 1);
+        assert_eq!(snap[0].current_tool.as_deref(), Some("Bash"));
+
+        // Tool returned → thinking (no current tool, still Running).
+        tracker.ingest(&mk_line("s1", "PostToolUse", None, None));
+        let snap = act.snapshot();
+        assert_eq!(snap[0].current_tool, None);
+        assert_eq!(snap[0].session_status, SessionStatus::Running);
+
+        // Turn finished → idle + transient "completed" outcome.
+        tracker.ingest(&mk_line("s1", "Stop", None, None));
+        let snap = act.snapshot();
+        assert_eq!(snap[0].session_status, SessionStatus::Idle);
+        assert_eq!(snap[0].last_outcome, Some(TurnOutcome::Completed));
+        assert_eq!(snap[0].turns, 1);
+        assert_eq!(snap[0].tool_calls, 1);
+    }
+
+    #[test]
+    fn ingest_session_start_marks_hook_aware_idle() {
+        use crate::activity::{ActivityTracker, SessionStatus};
+        let act = std::sync::Arc::new(ActivityTracker::new());
+        act.register("s1", "claude", "Claude 1", None, None, None);
+        let tracker = EventsTracker::with_activity(act.clone());
+        // A fresh tab fires only SessionStart before the user prompts.
+        tracker.ingest(&mk_line("s1", "SessionStart", None, None));
+        let snap = act.snapshot();
+        assert!(
+            snap[0].seen_hooks,
+            "SessionStart must mark the session hook-aware so byte-flow redraws (scroll / \
+             resize from opening a panel) don't read as working"
+        );
+        assert_eq!(snap[0].session_status, SessionStatus::Idle);
+        assert_eq!(snap[0].turns, 0);
+    }
+
+    #[test]
+    fn ingest_permission_prompt_sets_awaiting_on_activity() {
+        use crate::activity::{ActivityTracker, SessionStatus};
+        let act = std::sync::Arc::new(ActivityTracker::new());
+        act.register("s1", "claude", "Claude 1", None, None, None);
+        let tracker = EventsTracker::with_activity(act.clone());
+        tracker.ingest(&mk_line(
+            "s1",
+            "Notification",
+            Some("permission_prompt"),
+            Some("Allow?"),
+        ));
+        assert_eq!(act.snapshot()[0].session_status, SessionStatus::Awaiting);
+    }
+
+    #[test]
+    fn ingest_stop_failure_marks_failed() {
+        use crate::activity::{ActivityTracker, SessionStatus, TurnOutcome};
+        let act = std::sync::Arc::new(ActivityTracker::new());
+        act.register("s1", "claude", "Claude 1", None, None, None);
+        let tracker = EventsTracker::with_activity(act.clone());
+        tracker.ingest(&mk_line("s1", "StopFailure", None, Some("boom")));
+        let snap = act.snapshot();
+        assert_eq!(snap[0].session_status, SessionStatus::Failed);
+        assert_eq!(snap[0].last_outcome, Some(TurnOutcome::Failed));
+        assert_eq!(snap[0].failure_reason.as_deref(), Some("boom"));
     }
 }

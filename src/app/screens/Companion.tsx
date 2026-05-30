@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CHARACTER_EXPRESSIONS,
   CHARACTER_KINDS,
@@ -8,13 +8,8 @@ import {
 import { CompanionAvatar, type CompanionStatus } from "../components/primitives/CompanionAvatar";
 import { Ico } from "../components/primitives/icons";
 import { fmtTokens, useSessionUsage } from "../hooks/useSessionUsage";
-import {
-  type AgentEvent,
-  type PendingPrompt,
-  type SessionActivity,
-  ipc,
-  onAgentEvent,
-} from "../lib/ipc";
+import { deriveLiveStatus, fmtCounters } from "../lib/activity";
+import { type PendingPrompt, type SessionActivity, ipc } from "../lib/ipc";
 import { type CompanionSize, useCompanionPrefs } from "../lib/overlay";
 
 // Content of the always-on-top companion window (P5) AND the design-system
@@ -22,16 +17,14 @@ import { type CompanionSize, useCompanionPrefs } from "../lib/overlay";
 // context from the main app), so it cannot read the main store — it polls
 // `session_activity` + `pending_prompts` directly and renders from those.
 //
-// What is REAL vs honest-empty:
-//  • working / idle ............ REAL, always (← session_activity output flow)
-//  • awaiting input ............ REAL when present (← pending_prompts / agent
-//                                hooks); the contract stub returns empty until
-//                                the BE track lands the hooks subsystem, so the
-//                                "wait" state simply never appears until then —
-//                                it is never faked.
-//  • done / failed ............. transient, driven by live agent events
-//                                (stop / stop_failure). Honest-empty until BE.
-//  • turn / token counts ....... Claude-only, from the session transcript (null
+// What is REAL (everything — nothing fabricated):
+//  • working / thinking / running-tool · idle · awaiting · finished · failed
+//    all come from `session_activity`, which folds the agent hook lifecycle
+//    (turns, tool calls, current tool, last-turn outcome) into one snapshot.
+//    `deriveLiveStatus` collapses it to the shown status; the transient
+//    finished/failed badge rides on the snapshot's `outcomeMsAgo` linger, so the
+//    puck needs no client-side event/timer plumbing.
+//  • token counts .............. Claude-only, from the session transcript (null
 //                                for non-Claude agents → omitted, never zeroed).
 //
 // The native window itself (frameless, always_on_top) is created by
@@ -40,11 +33,6 @@ import { type CompanionSize, useCompanionPrefs } from "../lib/overlay";
 // route renders standalone for visual inspection with real activity data.
 const ACTIVITY_POLL_MS = 1500;
 const PROMPT_POLL_MS = 2000;
-// How long a done/failed event lingers on the puck before it reverts to the
-// live activity signal (mirrors the design's "linger ~6s" note).
-const TRANSIENT_MS = 6000;
-
-type TransientKind = "done" | "err";
 
 function useWideCompanionPreview() {
   const [wide, setWide] = useState(() => window.innerWidth >= 900);
@@ -59,9 +47,6 @@ function useWideCompanionPreview() {
 export function Companion() {
   const [list, setList] = useState<SessionActivity[]>([]);
   const [prompts, setPrompts] = useState<PendingPrompt[]>([]);
-  // Per-session transient overlays (done/failed) raised by live agent events.
-  const [transient, setTransient] = useState<Record<string, TransientKind>>({});
-  const transientTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // Poll the real activity signal.
   useEffect(() => {
@@ -97,40 +82,12 @@ export function Companion() {
     };
   }, []);
 
-  // Live agent events → transient done/failed pucks (cleared after a linger).
-  useEffect(() => {
-    const timers = transientTimers.current;
-    const raise = (session: string, kind: TransientKind) => {
-      setTransient((t) => ({ ...t, [session]: kind }));
-      if (timers[session]) clearTimeout(timers[session]);
-      timers[session] = setTimeout(() => {
-        setTransient((t) => {
-          const next = { ...t };
-          delete next[session];
-          return next;
-        });
-      }, TRANSIENT_MS);
-    };
-    const handle = (e: AgentEvent) => {
-      if (e.kind === "stop") raise(e.session, "done");
-      else if (e.kind === "stop_failure") raise(e.session, "err");
-    };
-    const un = onAgentEvent(handle);
-    return () => {
-      void un.then((f) => f());
-      for (const id of Object.keys(timers)) clearTimeout(timers[id]);
-    };
-  }, []);
-
   const promptBySession = useMemo(() => {
     const m: Record<string, PendingPrompt> = {};
     for (const p of prompts) m[p.session] = p;
     return m;
   }, [prompts]);
 
-  const respond = useCallback((session: string, allow: boolean) => {
-    void ipc.respondPrompt(session, allow).catch(() => {});
-  }, []);
   const widePreview = useWideCompanionPreview();
 
   if (widePreview) return <CompanionWideShowcase />;
@@ -191,13 +148,7 @@ export function Companion() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {list.map((a) => (
-                <LiveRow
-                  key={a.session}
-                  act={a}
-                  prompt={promptBySession[a.session]}
-                  transient={transient[a.session]}
-                  onRespond={respond}
-                />
+                <LiveRow key={a.session} act={a} prompt={promptBySession[a.session]} />
               ))}
             </div>
           )}
@@ -513,48 +464,40 @@ function CompanionDock() {
   );
 }
 
-// One live agent row: a {@link CompanionAvatar} puck driven by the real status,
-// the agent identity, honest working / idle-duration, and (Claude only) a live
-// token/turn tally. Clicking jumps to the session in the main window.
+// One live agent row: a {@link CompanionAvatar} puck driven by the shared,
+// real status (deriveLiveStatus), the agent identity, the hook turn/tool
+// counters, and (Claude only) a live token tally. Clicking jumps to the session.
 function LiveRow({
   act,
   prompt,
-  transient,
-  onRespond,
 }: {
   act: SessionActivity;
   prompt: PendingPrompt | undefined;
-  transient: TransientKind | undefined;
-  onRespond: (session: string, allow: boolean) => void;
 }) {
-  const working = act.state === "working";
   const cli = act.cli ?? "unknown";
   const name = act.alias ?? act.session;
+  const view = deriveLiveStatus(act, !!prompt);
   // Live token tally from this Claude session's transcript (null for non-Claude
   // agents and before the first response) — real numbers only, never faked.
   const usage = useSessionUsage(act.claudeId);
+  const counters = fmtCounters(act);
+  const tokens = usage ? usage.tokensIn + usage.tokensOut : 0;
 
-  // Status precedence: a pending prompt (awaiting) beats a transient done/err,
-  // which beats the working/idle activity signal.
-  const status: CompanionStatus = prompt
-    ? "wait"
-    : transient === "err"
-      ? "err"
-      : transient === "done"
-        ? "done"
-        : working
-          ? "live"
-          : "idle";
+  const status: CompanionStatus = view.status;
+  const subColor =
+    status === "wait"
+      ? "var(--wait)"
+      : status === "err"
+        ? "var(--err)"
+        : status === "done"
+          ? "var(--done)"
+          : status === "live"
+            ? "var(--live)"
+            : "var(--fg-3)";
 
-  const sub = prompt
-    ? (prompt.message ?? "needs your approval")
-    : transient === "done"
-      ? "finished"
-      : transient === "err"
-        ? "failed"
-        : working
-          ? "working"
-          : `idle ${fmtIdle(act.idleMs)}`;
+  // Awaiting prefers the prompt's own message; otherwise the derived label
+  // ("running Bash" / "thinking" / "finished" / "idle 3s" / …).
+  const sub = prompt ? (prompt.message ?? "needs your approval") : view.label;
 
   return (
     <div
@@ -586,7 +529,7 @@ function LiveRow({
         <CompanionAvatar
           agent={cli}
           status={status}
-          thinking={working && !prompt && !transient}
+          thinking={view.thinking}
           size={44}
           style={{ pointerEvents: "none" }}
         />
@@ -604,47 +547,18 @@ function LiveRow({
         >
           {name}
         </span>
-        <span
-          className="mono"
-          style={{
-            display: "block",
-            fontSize: 10.5,
-            color:
-              status === "wait"
-                ? "var(--wait)"
-                : status === "err"
-                  ? "var(--err)"
-                  : working
-                    ? "var(--live)"
-                    : "var(--fg-3)",
-          }}
-        >
+        <span className="mono" style={{ display: "block", fontSize: 10.5, color: subColor }}>
           {sub}
-          {usage && (
-            <span style={{ color: "var(--fg-3)" }}>
-              {" · "}
-              {usage.turns} turn{usage.turns === 1 ? "" : "s"} ·{" "}
-              {fmtTokens(usage.tokensIn + usage.tokensOut)} tok
-            </span>
+          {counters && <span style={{ color: "var(--fg-3)" }}>{` · ${counters}`}</span>}
+          {tokens > 0 && (
+            <span style={{ color: "var(--fg-3)" }}>{` · ${fmtTokens(tokens)} tok`}</span>
           )}
         </span>
       </span>
-      {prompt ? (
-        <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={() => onRespond(act.session, false)}
-            style={pillBtn("ghost")}
-          >
-            Deny
-          </button>
-          <button type="button" onClick={() => onRespond(act.session, true)} style={pillBtn("ok")}>
-            Approve
-          </button>
-        </span>
-      ) : (
-        <span className={`dot ${working ? "live pulse" : "idle"}`} style={{ flexShrink: 0 }} />
-      )}
+      <span
+        className={`dot ${status}${status === "live" ? " pulse" : ""}`}
+        style={{ flexShrink: 0 }}
+      />
     </div>
   );
 }
@@ -1227,39 +1141,4 @@ function CharacterCard({
       )}
     </div>
   );
-}
-
-// Pill button styles for the inline approve/deny affordances (matches the
-// design's pillBtn helper).
-function pillBtn(kind: "ghost" | "ok"): React.CSSProperties {
-  const base: React.CSSProperties = {
-    border: "none",
-    cursor: "pointer",
-    fontFamily: "var(--sans)",
-    fontSize: 11,
-    fontWeight: 500,
-    padding: "5px 10px",
-    borderRadius: 999,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    lineHeight: 1,
-    whiteSpace: "nowrap",
-  };
-  if (kind === "ok")
-    return { ...base, background: "var(--live)", color: "#0a0a0a", fontWeight: 600 };
-  return {
-    ...base,
-    background: "var(--bg-3)",
-    color: "var(--fg-1)",
-    border: "1px solid var(--bd)",
-  };
-}
-
-// Compact quiet-duration: "3s" / "2m" / "1h".
-function fmtIdle(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  return `${Math.floor(s / 3600)}h`;
 }
