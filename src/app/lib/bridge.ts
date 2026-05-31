@@ -260,6 +260,16 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       return jget("/github-status") as Promise<T>;
     case "github_repos":
       return jget("/github-repos") as Promise<T>;
+    case "github_repo_dir":
+      return jsend("POST", "/github-repo-dir", {
+        nameWithOwner: args.nameWithOwner,
+      }) as Promise<T>;
+    case "github_clone_into":
+      return jsend("POST", "/github-clone-into", {
+        workspace: args.workspace,
+        nameWithOwner: args.nameWithOwner,
+        target: args.target,
+      }) as Promise<T>;
     case "check_update":
       return jget("/check-update") as Promise<T>;
     case "list_providers":

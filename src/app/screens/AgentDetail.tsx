@@ -5,7 +5,7 @@ import { Tab } from "../components/primitives/TabBar";
 import { Tip } from "../components/primitives/Tip";
 import { Ico } from "../components/primitives/icons";
 import { CLIS } from "../lib/catalog";
-import { type AgentCli, type AgentConfig, type ClaudeIntegrations, ipc } from "../lib/ipc";
+import { type AgentCli, type AgentConfig, ipc } from "../lib/ipc";
 import { useStore } from "../lib/store";
 import { Button } from "../ui/button";
 
@@ -15,7 +15,6 @@ import { Button } from "../ui/button";
  * The design mocks accounts/providers/sub-agents/skills/plugins with sample
  * data; CodeHub's hard rule is to never fabricate. So this reads the agent's
  * REAL on-disk config in the runtime container:
- *   - account + MCP servers  → claude_integrations  (oauthAccount + mcpServers)
  *   - model + permission mode + sub-agents + skills + plugins + marketplaces
  *                            → claude_agent_config   (.claude.json / settings.json
  *                              / .claude/agents / .claude/skills / plugins)
@@ -43,7 +42,6 @@ export function AgentDetail({
 
   const isClaude = agent === "claude";
   const [config, setConfig] = useState<AgentConfig | null>(null);
-  const [integ, setInteg] = useState<ClaudeIntegrations | null>(null);
   const [loading, setLoading] = useState(isClaude);
   const [err, setErr] = useState<string | null>(null);
 
@@ -54,11 +52,11 @@ export function AgentDetail({
     }
     let alive = true;
     setLoading(true);
-    Promise.all([ipc.claudeAgentConfig(), ipc.claudeIntegrations()])
-      .then(([c, i]) => {
+    ipc
+      .claudeAgentConfig()
+      .then((c) => {
         if (!alive) return;
         setConfig(c);
-        setInteg(i);
         setErr(null);
       })
       .catch((e) => alive && setErr(String(e)))
@@ -67,9 +65,6 @@ export function AgentDetail({
       alive = false;
     };
   }, [isClaude, running]);
-
-  const account = integ?.account ?? null;
-  const mcp = integ?.mcpServers ?? [];
 
   return (
     <div style={{ maxWidth: 820 }}>
@@ -197,43 +192,6 @@ export function AgentDetail({
         />
       ) : (
         <>
-          {/* Account */}
-          <Section label="Account">
-            {account ? (
-              <Card>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}
-                    >
-                      {account.name ?? account.email ?? "—"}
-                    </div>
-                    <div
-                      className="mono"
-                      style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}
-                    >
-                      {[account.email, account.plan, account.org].filter(Boolean).join(" · ") ||
-                        "—"}
-                    </div>
-                  </div>
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                      fontSize: "var(--fs-12)",
-                      color: "var(--live)",
-                    }}
-                  >
-                    <StatusDot status="live" /> Signed in
-                  </span>
-                </div>
-              </Card>
-            ) : (
-              <Empty note="No signed-in account found in the container's Claude config." />
-            )}
-          </Section>
-
           {/* Providers + active model — same visual structure as the design, but
               backed only by the model/provider facts the Claude CLI exposes. */}
           <Section label="Model providers · 1">
@@ -321,38 +279,6 @@ export function AgentDetail({
               agent's own config). allow=live / ask=wait / deny=err mirrors the
               design's color language. */}
           <PermissionRules config={config} />
-
-          {/* MCP servers */}
-          <Section label={`MCP servers · ${mcp.length}`}>
-            {mcp.length === 0 ? (
-              <Empty note="No MCP servers configured." />
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {mcp.map((m) => (
-                  <Card key={`${m.scope}:${m.name}`}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <Badge text="MCP" accent="var(--a-codex)" />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          className="mono"
-                          style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)" }}
-                        >
-                          {m.name}
-                        </div>
-                        <div
-                          className="mono"
-                          style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
-                        >
-                          {m.transport} · {m.scope}
-                          {m.target ? ` · ${m.target}` : ""}
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </Section>
 
           {/* Sub-agents */}
           <Section label={`Sub-agents · ${config?.subagents.length ?? 0}`}>

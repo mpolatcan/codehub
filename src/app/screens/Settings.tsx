@@ -72,7 +72,7 @@ const NAV_GROUPS: { label: string; items: { key: string; label: string; soon?: b
     items: [
       { key: "general", label: "General" },
       { key: "agents", label: "Coding Agents" },
-      { key: "integrations", label: "Integrations" },
+      { key: "integrations", label: "Source control" },
       { key: "platform", label: "Platform" },
     ],
   },
@@ -865,7 +865,6 @@ function AgentsPane({
             {AGENT_DESCRIPTIONS[selectedAgent]}
           </p>
         </div>
-        <RefreshVersionsButton />
       </div>
 
       {/* ── Three sections ───────────────────────────────────────────
@@ -3722,30 +3721,6 @@ function FontSizeInput() {
       </span>
       <StepBtn d={1} label="Increase font size" />
     </div>
-  );
-}
-
-// Re-probe each agent binary's reported version (`agent_versions`) on demand and
-// push the fresh map back into the store, so the agent cards + About pane reflect
-// it immediately. The bootstrap fetches this once at launch; this re-runs the
-// same real read (e.g. after upgrading a CLI inside the container) — no fabrication.
-function RefreshVersionsButton() {
-  const [busy, setBusy] = useState(false);
-  const refresh = async () => {
-    setBusy(true);
-    try {
-      const agentVersions = await ipc.agentVersions();
-      useStore.setState({ agentVersions });
-    } catch (e) {
-      console.warn("agent_versions refresh failed", e);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Button variant="outline" size="sm" disabled={busy} onClick={() => void refresh()}>
-      {Ico.search} {busy ? "Checking…" : "Check for update"}
-    </Button>
   );
 }
 

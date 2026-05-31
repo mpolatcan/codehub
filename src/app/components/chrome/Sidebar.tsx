@@ -37,7 +37,7 @@ const DEFAULT_GROUPS: SidebarNavGroup[] = [
   {
     items: [
       { key: "settings", label: "Settings" },
-      { key: "integrations", label: "Integrations" },
+      { key: "integrations", label: "Source control" },
     ],
   },
 ];

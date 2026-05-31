@@ -1822,18 +1822,23 @@ unset secret CODEHUB_EMAIL_SECRET payload tok"#,
     /// Returns the new PR's `html_url` on success. Errors when the container is
     /// down; every other failure (no token, push rejected, API error) is a
     /// descriptive `Command` error carrying GitHub's / git's own message.
-    pub async fn git_open_pr(&self, title: &str, body: &str) -> Result<String, DockerError> {
+    pub async fn git_open_pr(
+        &self,
+        title: &str,
+        body: &str,
+        token: &str,
+    ) -> Result<String, DockerError> {
         self.require_running().await?;
         const VAR: &str = "GITHUB_TOKEN";
-        // The token is read from the HOST env and forwarded into each exec via the
-        // structured `env` field (never argv/logs) — `exec_capture` does not
-        // otherwise propagate it into the container, so the in-shell
-        // `${GITHUB_TOKEN}` reference would be empty without this.
-        let Ok(token) = std::env::var(VAR) else {
+        // `token` is the resolved credential (vault or host env), passed by the
+        // caller. It's forwarded into each exec via the structured `env` field
+        // (never argv/logs) — `exec_capture` does not otherwise propagate it, so
+        // the in-shell `${GITHUB_TOKEN}` reference would be empty without this.
+        if token.is_empty() {
             return Err(DockerError::Command(
-                "no GITHUB_TOKEN — connect GitHub in Settings to open a PR".into(),
+                "no GitHub token — connect GitHub in Source control to open a PR".into(),
             ));
-        };
+        }
         let token_env = vec![format!("{VAR}={token}")];
 
         // Step 1 — preflight. Token referenced by name in-container only.
@@ -2238,93 +2243,9 @@ rm -f /tmp/codehub-pr.json"#,
     }
 
     // ── GitHub connector ────────────────────────────────────────────────────
-
-    /// GitHub connection status. Checks for GITHUB_TOKEN presence on the host
-    /// (presence-only — the value is NEVER read or returned). When present,
-    /// calls the GitHub API via `curl` inside the container (where the token is
-    /// already forwarded) to fetch the authenticated user identity + scopes.
-    pub async fn github_status(&self) -> Result<crate::types::GithubStatus, DockerError> {
-        const VAR: &str = "GITHUB_TOKEN";
-        let connected = std::env::var(VAR).is_ok();
-        if !connected {
-            return Ok(crate::types::GithubStatus {
-                connected: false,
-                var_name: VAR.to_string(),
-                login: None,
-                scopes: Vec::new(),
-                token_expiry: None,
-            });
-        }
-
-        // Token is forwarded into the container at create-time via lifecycle::auth_env_with.
-        // We run the API call inside the container using the already-forwarded token.
-        // The token is referenced by NAME inside the container shell — it never
-        // appears in the Rust argv or in a log. Response body only → no value returned.
-        if !self.is_running().await? {
-            // Container down but token present — report connected:true, no details.
-            return Ok(crate::types::GithubStatus {
-                connected: true,
-                var_name: VAR.to_string(),
-                login: None,
-                scopes: Vec::new(),
-                token_expiry: None,
-            });
-        }
-
-        // Use sh -c so the var expansion happens in-container (value never in argv here).
-        let out = self
-            .exec_capture(vec![
-                "sh",
-                "-c",
-                "curl -s -f -H \"Authorization: token ${GITHUB_TOKEN}\" -H \"Accept: application/vnd.github+json\" -H \"X-GitHub-Api-Version: 2022-11-28\" https://api.github.com/user 2>/dev/null || true",
-            ])
-            .await
-            .unwrap_or_default();
-
-        // Parse login from the JSON response. If the call failed, stay connected:true
-        // with no details (honest — token exists but call failed).
-        let (login, token_expiry) = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&out) {
-            let login = v.get("login").and_then(|l| l.as_str()).map(String::from);
-            // GitHub doesn't surface token expiry in /user; left as None (factual absence).
-            (login, None)
-        } else {
-            (None, None)
-        };
-
-        // Scopes: GitHub returns them in the X-GitHub-OAuth-Scopes header, not the body.
-        // Fetching headers adds complexity; leave as empty (honest — we don't have them).
-        Ok(crate::types::GithubStatus {
-            connected: true,
-            var_name: VAR.to_string(),
-            login,
-            scopes: Vec::new(),
-            token_expiry,
-        })
-    }
-
-    /// Repos visible to the connected GitHub account. Returns empty when the
-    /// token is absent or the container is down. Requests up to 30 repos
-    /// (GitHub's default page size) — enough for the Integrations card.
-    pub async fn github_repos(&self) -> Result<Vec<crate::types::GithubRepo>, DockerError> {
-        const VAR: &str = "GITHUB_TOKEN";
-        if std::env::var(VAR).is_err() {
-            return Ok(Vec::new());
-        }
-        if !self.is_running().await? {
-            return Ok(Vec::new());
-        }
-
-        let out = self
-            .exec_capture(vec![
-                "sh",
-                "-c",
-                "curl -s -f -H \"Authorization: token ${GITHUB_TOKEN}\" -H \"Accept: application/vnd.github+json\" -H \"X-GitHub-Api-Version: 2022-11-28\" \"https://api.github.com/user/repos?per_page=30&sort=pushed\" 2>/dev/null || true",
-            ])
-            .await
-            .unwrap_or_default();
-
-        Ok(parse_github_repos(&out))
-    }
+    // Status + repos moved HOST-side (vault::github_fetch_*) so they work with no
+    // workspace container running. `git_open_pr` below stays in-container (it
+    // needs the workspace's git tree); it takes the resolved token as an arg.
 
     /// Past Codex conversations from rollout files (Resume view), newest first.
     pub async fn codex_sessions(&self) -> Result<Vec<crate::types::CodexSession>, DockerError> {
@@ -2443,6 +2364,52 @@ rm -f /tmp/codehub-pr.json"#,
             });
         }
         Ok(repos)
+    }
+
+    /// Clone a GitHub repo (`owner/repo`) into `target` (an in-container path under
+    /// `/workspace`, which is host-bind-mounted so the files persist) using `gh`,
+    /// with the token passed via the exec env (`GH_TOKEN`) so it never appears in
+    /// argv or a log — the same structured-env channel `exec_capture_env` uses for
+    /// other secrets. The cloned `origin` keeps the clean `https://github.com/...`
+    /// URL (gh doesn't embed the token). Caller MUST pre-validate both args to
+    /// `[A-Za-z0-9._/-]` (they ride an `sh -c` string). Idempotent: an existing
+    /// `<target>/.git` short-circuits to Ok. Returns `target` on success; a non-OK
+    /// clone surfaces gh's combined output as the error.
+    pub async fn github_clone(
+        &self,
+        name_with_owner: &str,
+        token: &str,
+        target: &str,
+    ) -> Result<String, DockerError> {
+        self.require_running().await?;
+        let valid = |s: &str| {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '-'))
+        };
+        if !name_with_owner.contains('/') || !valid(name_with_owner) {
+            return Err(DockerError::Command(
+                "invalid repo: expected owner/repo".into(),
+            ));
+        }
+        if !target.starts_with("/workspace") || !valid(target) {
+            return Err(DockerError::Command("invalid clone target".into()));
+        }
+        // exec_capture_env returns combined output, not an exit code, so an explicit
+        // sentinel is the reliable success signal. A pre-existing checkout is reused.
+        let script = format!(
+            "if [ -d {target}/.git ]; then echo __CLONE_OK__; \
+             else gh repo clone {name_with_owner} {target} 2>&1 && echo __CLONE_OK__; fi"
+        );
+        let env = vec![format!("GH_TOKEN={token}")];
+        let output = self
+            .exec_capture_env(vec!["sh", "-c", &script], &env)
+            .await?;
+        if output.contains("__CLONE_OK__") {
+            Ok(target.to_string())
+        } else {
+            Err(DockerError::Command(output))
+        }
     }
 
     /// Clone a git repo by URL into `/workspace/<repo-name>`.
@@ -4155,8 +4122,9 @@ fn extract_codex_rate_limits(raw: &str) -> Option<crate::types::CodexRateLimits>
 }
 
 /// Parse the GitHub `/user/repos` JSON response into [`GithubRepo`] entries.
-/// Unknown / malformed responses → empty list (honest).
-fn parse_github_repos(raw: &str) -> Vec<crate::types::GithubRepo> {
+/// Unknown / malformed responses → empty list (honest). `pub(crate)` so the
+/// host-side fetch in `vault` reuses the same parser.
+pub(crate) fn parse_github_repos(raw: &str) -> Vec<crate::types::GithubRepo> {
     // SECURITY: this function must never include any token value in its output.
     // It only reads repo metadata (name, branch, visibility) — no credentials.
     let Ok(arr) = serde_json::from_str::<serde_json::Value>(raw) else {

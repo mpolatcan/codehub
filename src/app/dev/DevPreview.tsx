@@ -73,7 +73,7 @@ const SCREENS: { key: ScreenKey; label: string; title: string }[] = [
   { key: "workspaces", label: "Workspaces", title: "codehub · workspaces · runtime" },
   { key: "settings", label: "Settings", title: "codehub · settings" },
   { key: "settings-agents", label: "Agents", title: "codehub · settings · agents" },
-  { key: "settings-integrations", label: "Integrations", title: "codehub · integrations" },
+  { key: "settings-integrations", label: "Source control", title: "codehub · source control" },
   { key: "settings-platform", label: "Platform", title: "codehub · platform" },
   { key: "settings-notifications", label: "Notifications", title: "codehub · notifications" },
   { key: "live-activities", label: "Live activities", title: "codehub · live activities" },

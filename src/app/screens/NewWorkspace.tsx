@@ -30,7 +30,7 @@ import {
 import { CLIS, MODE_BY_ID, modesFor } from "@/app/lib/catalog";
 import { type Cli, type ImageInfo, type Mode, ipc } from "@/app/lib/ipc";
 import { useOverlay } from "@/app/lib/overlay";
-import { useStore } from "@/app/lib/store";
+import { containerKeyFor, useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
 import { Input } from "@/app/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/ui/select";
@@ -39,6 +39,14 @@ import { Textarea } from "@/app/ui/textarea";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 const STEPS = ["Repository", "Container", "Name & launch"] as const;
+
+// Match the agent-pane (SpawnPane) select styling so the wizard's pickers read as
+// the same control: bordered, rounded, hover-lit trigger; tinted popover;
+// focus-highlighted items. (SpawnPane's ROW/ITEM/POPOVER constants, inlined here.)
+const SELECT_TRIGGER =
+  "mono w-full h-9 px-3 text-sm bg-[var(--bg-1)] border border-[var(--bd)] rounded-lg text-[var(--fg-0)] hover:bg-[var(--bg-hover)] hover:border-[var(--bd-strong)]";
+const SELECT_CONTENT = "z-[70] bg-[var(--bg-2)] border-[var(--bd-strong)]";
+const SELECT_ITEM = "text-[var(--fg-1)] focus:bg-[var(--bg-hover)] focus:text-[var(--fg-0)]";
 
 // Trailing path segment of the mounted dir → a sensible default workspace name.
 function dirName(p: string | null | undefined): string {
@@ -57,6 +65,7 @@ export function NewWorkspace() {
   const keyStatus = useStore((s) => s.keyStatus);
   const accountProfiles = useStore((s) => s.accountProfiles);
   const loadAccountProfiles = useStore((s) => s.loadAccountProfiles);
+  const cloneRepoIntoWorkspace = useStore((s) => s.cloneRepoIntoWorkspace);
 
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
@@ -68,6 +77,10 @@ export function NewWorkspace() {
   const [saving, setSaving] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const savedWorkspaceIdRef = useRef<string | null>(null);
+  // GitHub repos picked in the wizard, keyed by their resolved host mount dir →
+  // nameWithOwner. After the workspace opens, each is cloned in the BACKGROUND
+  // into its container (see finish) — picking itself never clones.
+  const [githubClones, setGithubClones] = useState<Record<string, string>>({});
 
   const defaultDir = workspaceInfo?.effective ?? null;
   const [repoDir, setRepoDir] = useState<string | null>(null);
@@ -154,6 +167,19 @@ export function NewWorkspace() {
         dir,
         savedWorkspaceId: id,
       });
+      // Background-clone every picked GitHub repo into the now-open workspace
+      // container. Tracked via the store (repoClones → CloneBanner) so the user
+      // sees progress/errors; the wizard closes immediately and the repo fills in
+      // at /workspace as the clone lands (Files panel auto-reloads).
+      const wsKey = containerKeyFor({ title, savedWorkspaceId: id });
+      const allMounts = [dir, ...extraDirs.filter((d) => d !== dir)];
+      for (const p of allMounts) {
+        const nwo = githubClones[p];
+        if (!nwo) continue;
+        const base = p.split("/").filter(Boolean).pop() ?? p;
+        const target = allMounts.length > 1 ? `/workspace/${base}` : "/workspace";
+        void cloneRepoIntoWorkspace(wsKey, nwo, target);
+      }
       dismiss();
     } catch (e) {
       setLaunchError(String(e).replace(/^Error:\s*/, ""));
@@ -285,6 +311,9 @@ export function NewWorkspace() {
               setRepoDir={setRepoDir}
               extraDirs={extraDirs}
               setExtraDirs={setExtraDirs}
+              onPickGithub={(hostPath, nwo) =>
+                setGithubClones((prev) => ({ ...prev, [hostPath]: nwo }))
+              }
             />
           )}
 
@@ -333,12 +362,12 @@ export function NewWorkspace() {
                       Agent
                     </div>
                     <Select value={agent} onValueChange={(v) => setAgent(v as Cli)}>
-                      <SelectTrigger className="mono w-full">
+                      <SelectTrigger className={SELECT_TRIGGER}>
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="z-[70]">
+                      <SelectContent className={SELECT_CONTENT}>
                         {CLIS.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
+                          <SelectItem key={c.id} value={c.id} className={SELECT_ITEM}>
                             {c.label}
                           </SelectItem>
                         ))}
@@ -350,12 +379,12 @@ export function NewWorkspace() {
                       Mode
                     </div>
                     <Select value={mode} onValueChange={(v) => setMode(v as Mode)}>
-                      <SelectTrigger className="mono w-full">
+                      <SelectTrigger className={SELECT_TRIGGER}>
                         <SelectValue />
                       </SelectTrigger>
                       {/* Items show the label only; the longer description rides a
                           hover tooltip so the list stays compact. */}
-                      <SelectContent className="z-[70]">
+                      <SelectContent className={SELECT_CONTENT}>
                         {modes.map((m) => (
                           <Tip
                             key={m}
@@ -364,7 +393,9 @@ export function NewWorkspace() {
                             delay={200}
                             className="z-[80] max-w-56"
                           >
-                            <SelectItem value={m}>{MODE_BY_ID[m].label}</SelectItem>
+                            <SelectItem value={m} className={SELECT_ITEM}>
+                              {MODE_BY_ID[m].label}
+                            </SelectItem>
                           </Tip>
                         ))}
                       </SelectContent>
@@ -375,14 +406,15 @@ export function NewWorkspace() {
 
               <FormRow label="Account">
                 <Select value={effectiveAccountChoice} onValueChange={setAccountChoice}>
-                  <SelectTrigger className="mono w-full">
+                  <SelectTrigger className={SELECT_TRIGGER}>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="z-[70]">
+                  <SelectContent className={SELECT_CONTENT}>
                     {accountOptions.map((opt) => (
                       <SelectItem
                         key={opt.value}
                         value={opt.value}
+                        className={SELECT_ITEM}
                         disabled={opt.value !== HOST_ACCOUNT && !opt.present}
                       >
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -749,17 +781,24 @@ function RepoStep({
   setRepoDir,
   extraDirs,
   setExtraDirs,
+  onPickGithub,
 }: {
   dir: string | null;
   setRepoDir: (d: string | null) => void;
   extraDirs: string[];
   setExtraDirs: (d: string[]) => void;
+  onPickGithub: (hostPath: string, nameWithOwner: string) => void;
 }) {
   const githubStatus = useStore((s) => s.githubStatus);
   const githubRepos = useStore((s) => s.githubRepos);
   const loadGithubRepos = useStore((s) => s.loadGithubRepos);
   const connected = githubStatus?.connected ?? false;
   const [localPath, setLocalPath] = useState("");
+  // The repo (nameWithOwner) currently being resolved, and the last pick error.
+  // Clicking a GitHub repo resolves its host mount dir (~/CodeHub/<repo>) and adds
+  // it; the actual clone runs in the background after the workspace opens.
+  const [picking, setPicking] = useState<string | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
 
   useEffect(() => {
     if (connected) void loadGithubRepos();
@@ -783,6 +822,20 @@ function RepoStep({
   const browseLocal = async () => {
     const path = await ipc.pickDirectory().catch(() => null);
     if (path) addDir(path); // add straight away — no extra confirm step
+  };
+  const pickRepo = async (nameWithOwner: string) => {
+    if (picking) return;
+    setPicking(nameWithOwner);
+    setPickError(null);
+    try {
+      const hostPath = await ipc.githubRepoDir(nameWithOwner);
+      addDir(hostPath);
+      onPickGithub(hostPath, nameWithOwner);
+    } catch (e) {
+      setPickError(String(e).replace(/^Error:\s*/, ""));
+    } finally {
+      setPicking(null);
+    }
   };
   const submitLocal = () => {
     const p = localPath.trim();
@@ -932,7 +985,7 @@ function RepoStep({
               className="mono"
               style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "6px 0" }}
             >
-              Not connected. Set up GitHub in Settings → Integrations to browse repos here.
+              Not connected. Set up GitHub in Settings → Source control to browse repos here.
             </div>
           ) : githubRepos.length === 0 ? (
             <div
@@ -956,14 +1009,18 @@ function RepoStep({
                 const [owner, name] = repo.nameWithOwner.includes("/")
                   ? repo.nameWithOwner.split(/\/(.+)/)
                   : ["", repo.nameWithOwner];
-                const ghDir = `/tmp/codehub-gh-${name}`;
-                const already = allDirs.includes(ghDir);
+                // A repo is "added" once its cloned host dir (…/<owner>-<name>) is
+                // among the selected mounts; matched on the trailing path segment.
+                const slug = name;
+                const already = allDirs.some((d) => d.split("/").filter(Boolean).pop() === slug);
+                const busy = picking === repo.nameWithOwner;
+                const disabled = already || busy || picking !== null;
                 return (
                   <button
                     type="button"
                     key={repo.nameWithOwner}
-                    disabled={already}
-                    onClick={() => addDir(ghDir)}
+                    disabled={disabled}
+                    onClick={() => void pickRepo(repo.nameWithOwner)}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -972,8 +1029,8 @@ function RepoStep({
                       background: already ? "var(--bg-3)" : "var(--bg-2)",
                       border: `1px solid ${already ? "var(--bd)" : "var(--bd-soft)"}`,
                       borderRadius: 6,
-                      cursor: already ? "default" : "pointer",
-                      opacity: already ? 0.6 : 1,
+                      cursor: disabled ? "default" : "pointer",
+                      opacity: already || (picking !== null && !busy) ? 0.6 : 1,
                       color: "inherit",
                       font: "inherit",
                       textAlign: "left",
@@ -981,7 +1038,9 @@ function RepoStep({
                       flexShrink: 0,
                     }}
                   >
-                    {Ico.files}
+                    <span style={{ display: "inline-flex", lineHeight: 0 }}>
+                      {busy ? Ico.spinner : Ico.files}
+                    </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <span
                         className="mono"
@@ -995,16 +1054,32 @@ function RepoStep({
                       >
                         {name}
                       </span>
+                      {repo.private && (
+                        <span
+                          className="mono"
+                          style={{ fontSize: "var(--fs-9)", color: "var(--fg-3)", marginLeft: 6 }}
+                        >
+                          private
+                        </span>
+                      )}
                     </div>
                     <span
                       className="mono"
                       style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
                     >
-                      {already ? "added" : "add"}
+                      {already ? "added" : busy ? "adding…" : "add"}
                     </span>
                   </button>
                 );
               })}
+            </div>
+          )}
+          {pickError && (
+            <div
+              className="mono"
+              style={{ fontSize: "var(--fs-11)", color: "var(--err)", padding: "6px 0 0" }}
+            >
+              {pickError}
             </div>
           )}
         </FormRow>

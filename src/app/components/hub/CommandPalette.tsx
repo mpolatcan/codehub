@@ -28,7 +28,7 @@ const SCOPES: { id: Exclude<Scope, null>; label: string }[] = [
 const VIEWS: { id: HubView; label: string; icon: keyof typeof Ico; section?: string }[] = [
   { id: "hub", label: "Hub", icon: "hub" },
   { id: "dashboard", label: "Dashboard", icon: "grid" },
-  { id: "settings", label: "Integrations", icon: "branch", section: "integrations" },
+  { id: "settings", label: "Source control", icon: "branch", section: "integrations" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 

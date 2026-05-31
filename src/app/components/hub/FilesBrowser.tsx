@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileGlyph, FolderGlyph } from "../../components/primitives/FileGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Tip } from "../../components/primitives/Tip";
@@ -25,6 +25,9 @@ import { ResizeHandle } from "./ResizeHandle";
 const ROOT = "/workspace";
 const WIDTH = 256;
 const INDENT = 14;
+// Silent re-poll of the currently-expanded dirs so externally-created files (an
+// agent writing, a background clone landing) appear without a manual app reload.
+const FILES_POLL_MS = 4000;
 
 type DirState = FileEntry[] | "loading" | "error";
 
@@ -144,6 +147,25 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
     setExpanded(new Set([ROOT]));
     load(ROOT);
   }, [load]);
+
+  // Auto-reload: silently re-list every expanded dir on an interval so new files
+  // surface live (no "loading" flicker — only the data is swapped). A ref holds
+  // the live `expanded` set so the interval isn't torn down on every toggle.
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  useEffect(() => {
+    if (!containerKey) return;
+    const tick = () => {
+      for (const path of expandedRef.current) {
+        ipc
+          .containerListDir(path, containerKey)
+          .then((e) => setChildren((c) => ({ ...c, [path]: e })))
+          .catch(() => {});
+      }
+    };
+    const h = setInterval(tick, FILES_POLL_MS);
+    return () => clearInterval(h);
+  }, [containerKey]);
 
   const toggle = useCallback(
     (path: string) => {

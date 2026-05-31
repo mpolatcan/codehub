@@ -46,6 +46,29 @@ pub fn login_spec(provider: &str) -> Option<(Vec<&'static str>, &'static str)> {
             vec!["agy", "auth", "login"],
             "/root/.config/agy/credentials.json",
         )),
+        // gh's own device-flow OAuth (no CodeHub OAuth app to register). `--web`
+        // prints the one-time code + device URL into the terminal for the user to
+        // open. env -u clears any stray GH_TOKEN/GITHUB_TOKEN, which would make gh
+        // refuse an interactive login. The "__gh_token__" marker tells
+        // capture_credential to read the token back via `gh auth token`.
+        "github" => Some((
+            vec![
+                "env",
+                "-u",
+                "GH_TOKEN",
+                "-u",
+                "GITHUB_TOKEN",
+                "gh",
+                "auth",
+                "login",
+                "--hostname",
+                "github.com",
+                "--git-protocol",
+                "https",
+                "--web",
+            ],
+            "__gh_token__",
+        )),
         _ => None,
     }
 }
@@ -131,6 +154,26 @@ pub async fn capture_credential(
             .await
             .map_err(|e| e.to_string())?;
         return Ok(extract_claude_token(&content));
+    }
+    if cred_path == "__gh_token__" {
+        // gh wrote ~/.config/gh/hosts.yml during `gh auth login`; read the token
+        // back via `gh auth token` (env -u so a stray GH_TOKEN/GITHUB_TOKEN can't
+        // shadow the freshly-logged-in one). `|| true` keeps a cancelled login
+        // (no hosts.yml) returning empty → Ok(None), mirroring the file path.
+        let content = docker
+            .exec_capture_pub(vec![
+                "sh",
+                "-c",
+                "env -u GH_TOKEN -u GITHUB_TOKEN gh auth token 2>/dev/null || true",
+            ])
+            .await
+            .map_err(|e| e.to_string())?;
+        let trimmed = content.trim();
+        return Ok(if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        });
     }
     let read_script = format!("[ -s {cred_path} ] && cat {cred_path} || true");
     let content = docker

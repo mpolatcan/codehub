@@ -1014,8 +1014,9 @@ async fn container_git_open_pr(
     state: tauri::State<'_, AppState>,
     workspace: String,
 ) -> Result<String, String> {
+    let token = resolve_github_token(&state).unwrap_or_default();
     docker_container_for(&state, &workspace)
-        .git_open_pr(&title, &body)
+        .git_open_pr(&title, &body, &token)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1920,27 +1921,115 @@ async fn codex_rate_limits(
     docker.codex_rate_limits().await.map_err(|e| e.to_string())
 }
 
-/// GitHub connection status (Integrations). Reads GITHUB_TOKEN presence on the
-/// host — presence-only, the value is NEVER returned.
-#[tauri::command]
-async fn github_status(state: tauri::State<'_, AppState>) -> Result<GithubStatus, String> {
-    let docker = state
-        .manager
-        .any_running_docker()
-        .await
-        .ok_or_else(|| "no running workspace container".to_string())?;
-    docker.github_status().await.map_err(|e| e.to_string())
+/// Resolve the GitHub token, presence-only for the caller. Source order:
+///   1. a vault-backed `github` account profile (OAuth or pasted PAT) — the
+///      `gh auth login` / "Paste a PAT" flows both store here, keyed by profile id;
+///   2. the host `GITHUB_TOKEN` env var (shell-exported fallback).
+/// Returns the secret so the GitHub commands can forward it into the container
+/// exec (by name, never argv/logs). `None` when nothing is connected.
+fn resolve_github_token(state: &AppState) -> Option<String> {
+    for p in state.config.get().account_profiles {
+        if p.agent == "github" {
+            if let Ok(Some(secret)) = state.vault.read(&p.id) {
+                let t = secret.trim();
+                if !t.is_empty() {
+                    return Some(t.to_string());
+                }
+            }
+        }
+    }
+    std::env::var("GITHUB_TOKEN")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
-/// Repos visible to the connected GitHub account (up to 30, sorted by push date).
+/// GitHub connection status (Source control). The token is resolved from the
+/// vault (OAuth / PAT) or the host env — presence-only, the value is NEVER
+/// returned. The API call runs HOST-side (no workspace container needed), so
+/// login + scopes populate even with no workspace open. A failed call still
+/// reports connected:true (token present, details absent — honest).
+#[tauri::command]
+async fn github_status(state: tauri::State<'_, AppState>) -> Result<GithubStatus, String> {
+    let Some(token) = resolve_github_token(&state) else {
+        return Ok(GithubStatus {
+            connected: false,
+            var_name: "GITHUB_TOKEN".to_string(),
+            login: None,
+            scopes: Vec::new(),
+            token_expiry: None,
+        });
+    };
+    let (login, scopes) = vault::github_fetch_identity(&token)
+        .await
+        .unwrap_or((None, Vec::new()));
+    Ok(GithubStatus {
+        connected: true,
+        var_name: "GITHUB_TOKEN".to_string(),
+        login,
+        scopes,
+        token_expiry: None,
+    })
+}
+
+/// Repos visible to the connected GitHub account (ALL, paged, sorted by push
+/// date). Host-side call — empty only when no token is connected or the API fails.
 #[tauri::command]
 async fn github_repos(state: tauri::State<'_, AppState>) -> Result<Vec<GithubRepo>, String> {
-    let docker = state
-        .manager
-        .any_running_docker()
+    let Some(token) = resolve_github_token(&state) else {
+        return Ok(Vec::new());
+    };
+    Ok(vault::github_fetch_repos(&token).await.unwrap_or_default())
+}
+
+/// Resolve the persistent host folder a GitHub repo will live in
+/// (`~/CodeHub/<repo>` — repo name only, so the workspace reads cleanly). Pure +
+/// instant: NO clone, NO container, NO mkdir (the bind-mount's `ensure_container`
+/// creates it). The wizard records this as the workspace's mount, then fires the
+/// actual clone in the background AFTER the workspace container is up
+/// ([`github_clone_into`]).
+#[tauri::command]
+fn github_repo_dir(name_with_owner: String) -> Result<String, String> {
+    let (_owner, repo) = name_with_owner
+        .split_once('/')
+        .ok_or("expected owner/repo")?;
+    let ok = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+    if !ok(repo) {
+        return Err("invalid repo name".into());
+    }
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let dir = std::path::Path::new(&home).join("CodeHub").join(repo);
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// Clone a GitHub repo into an already-created workspace's container, at `target`
+/// (an in-container path under `/workspace`, which is host-bind-mounted so the
+/// files persist). Called in the BACKGROUND by the wizard right after the
+/// workspace opens — `gh` runs in the sandbox, the token rides the exec env (never
+/// argv/logs). Idempotent (an existing `<target>/.git` is reused).
+#[tauri::command]
+async fn github_clone_into(
+    workspace: String,
+    name_with_owner: String,
+    target: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let token = resolve_github_token(&state).ok_or("GitHub not connected — sign in first")?;
+    let lifecycle = state.manager.resolve(&workspace, None);
+    lifecycle
+        .ensure_runtime()
         .await
-        .ok_or_else(|| "no running workspace container".to_string())?;
-    docker.github_repos().await.map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    lifecycle
+        .docker_client()
+        .github_clone(&name_with_owner, &token, &target)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// App update check (Settings → About). Honest-thin: returns the current
@@ -1997,23 +2086,20 @@ fn vault_has_key(profile_id: String, state: tauri::State<'_, AppState>) -> Resul
     Ok(configured && state.vault.exists(&profile_id))
 }
 
-/// Start a container-mediated login for an agent. Creates a temporary
-/// container with a tmux session running the agent's login command. Returns
-/// the session name + workspace key so the frontend can open it as a visible
-/// pane. After the user completes login, the frontend calls
-/// `vault_complete_login` to capture the credential.
-///
-/// GitHub has no container step; it starts the device-code polling loop in the
-/// background and emits auth-progress events directly.
+/// Start a container-mediated login for an agent. Creates a temporary container
+/// with a tmux session running the agent's login command (claude auth login,
+/// codex login, agy auth login, or gh auth login). Returns the session name +
+/// workspace key so the frontend can open it as a visible pane. After the user
+/// completes login, the frontend calls `vault_complete_login` to capture the
+/// credential.
 #[tauri::command]
 async fn vault_initiate_oauth(
     provider: String,
     profile_id: String,
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     match provider.as_str() {
-        "claude" | "codex" | "antigravity" => {
+        "claude" | "codex" | "antigravity" | "github" => {
             let spec = auth::login_spec(&provider)
                 .ok_or_else(|| format!("unknown provider: {provider}"))?;
             let (login_cmd, _) = spec;
@@ -2077,17 +2163,6 @@ async fn vault_initiate_oauth(
                 "provider": provider,
                 "profileId": profile_id,
             }))
-        },
-        "github" => {
-            let vault = state.vault.clone();
-            let app2 = app.clone();
-            let pid = profile_id.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = auth::github_login(&vault, &pid, &app2).await {
-                    tracing::warn!("github login failed: {e}");
-                }
-            });
-            Ok(serde_json::json!({ "provider": "github", "profileId": profile_id }))
         },
         _ => Err(format!("unknown provider: {provider}")),
     }
@@ -2647,6 +2722,8 @@ pub fn run() {
             codex_session_usage,
             codex_rate_limits,
             github_status,
+            github_repo_dir,
+            github_clone_into,
             github_repos,
             check_update,
             search_transcripts,

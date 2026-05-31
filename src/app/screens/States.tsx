@@ -833,10 +833,10 @@ export default function StatesGallery() {
               cta="Start a session"
             />
           </StateCard>
-          <StateCard caption="No integrations" desc="Before connecting GitHub.">
+          <StateCard caption="Source control" desc="Before connecting GitHub.">
             <EmptyPanel
               icon={Ico.files}
-              title="No integrations connected"
+              title="Source control not connected"
               hint="Connect GitHub to let agents clone, branch, and open PRs."
               cta="Connect GitHub"
             />

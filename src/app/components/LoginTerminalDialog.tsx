@@ -52,6 +52,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   claude: "Claude",
   codex: "Codex",
   antigravity: "Antigravity",
+  github: "GitHub",
 };
 
 export function LoginTerminalDialog({

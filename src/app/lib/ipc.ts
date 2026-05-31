@@ -1023,6 +1023,13 @@ export const ipc = {
   // GitHub connection (Integrations). PAT presence-only; value never read.
   githubStatus: () => invoke<GithubStatus>("github_status"),
   githubRepos: () => invoke<GithubRepo[]>("github_repos"),
+  // Resolve the host folder a GitHub repo will mount at (~/CodeHub/<repo>) —
+  // instant, no clone. The wizard records it as the workspace's dir.
+  githubRepoDir: (nameWithOwner: string) => invoke<string>("github_repo_dir", { nameWithOwner }),
+  // Clone a GitHub repo into an already-open workspace container at `target` (an
+  // in-container path under /workspace). Fired in the background post-create.
+  githubCloneInto: (workspace: string, nameWithOwner: string, target: string) =>
+    invoke<void>("github_clone_into", { workspace, nameWithOwner, target }),
   // App update check (Settings → About).
   checkUpdate: () => invoke<UpdateStatus>("check_update"),
   searchTranscripts: (query: string, limit?: number, workspace?: string) =>
