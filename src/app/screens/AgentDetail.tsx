@@ -102,7 +102,7 @@ export function AgentDetail({
               borderRadius: 6,
               color: "var(--fg-2)",
               cursor: "pointer",
-              fontSize: 11.5,
+              fontSize: "var(--fs-12)",
             }}
           >
             <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>{Ico.arrowR}</span>
@@ -150,10 +150,12 @@ export function AgentDetail({
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 3 }}>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: "var(--fg-0)" }}>
+            <h1
+              style={{ margin: 0, fontSize: "var(--fs-20)", fontWeight: 600, color: "var(--fg-0)" }}
+            >
               {meta.name}
             </h1>
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
+            <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
               {version ?? "—"}
             </span>
             <span
@@ -161,7 +163,7 @@ export function AgentDetail({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 5,
-                fontSize: 11.5,
+                fontSize: "var(--fs-12)",
                 color: key?.present ? "var(--live)" : "var(--wait)",
               }}
             >
@@ -169,7 +171,7 @@ export function AgentDetail({
               {key?.present ? "Connected" : "Key needed"}
             </span>
           </div>
-          <div style={{ fontSize: 12.5, color: "var(--fg-2)" }}>
+          <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-2)" }}>
             {isClaude
               ? "Configuration read live from the runtime container's Claude config — all factual, nothing stored by CodeHub."
               : "CodeHub surfaces this agent's version and host-key presence. No additional on-disk config is read for it."}
@@ -201,10 +203,15 @@ export function AgentDetail({
               <Card>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+                    <div
+                      style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}
+                    >
                       {account.name ?? account.email ?? "—"}
                     </div>
-                    <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+                    <div
+                      className="mono"
+                      style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}
+                    >
                       {[account.email, account.plan, account.org].filter(Boolean).join(" · ") ||
                         "—"}
                     </div>
@@ -214,7 +221,7 @@ export function AgentDetail({
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 5,
-                      fontSize: 11.5,
+                      fontSize: "var(--fs-12)",
                       color: "var(--live)",
                     }}
                   >
@@ -262,10 +269,10 @@ export function AgentDetail({
                   flexWrap: "wrap",
                 }}
               >
-                <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+                <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
                   Active model
                 </span>
-                <span style={{ fontSize: 12, color: "var(--fg-2)" }}>
+                <span style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
                   used by new Claude agents; managed in Claude's own config
                 </span>
               </div>
@@ -281,10 +288,10 @@ export function AgentDetail({
                 }}
               >
                 <Badge text="CL" accent="var(--a-claude)" />
-                <span className="mono" style={{ fontSize: 13, color: "var(--fg-0)" }}>
+                <span className="mono" style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)" }}>
                   {config?.model ?? "Claude CLI default"}
                 </span>
-                <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                   permission {config?.permissionMode ?? "default"}
                 </span>
                 <span style={{ flex: 1 }} />
@@ -299,7 +306,7 @@ export function AgentDetail({
                   alignItems: "center",
                 }}
               >
-                <span className="lbl" style={{ fontSize: 11, marginRight: 4 }}>
+                <span className="lbl" style={{ fontSize: "var(--fs-11)", marginRight: 4 }}>
                   quick switch
                 </span>
                 <ModelChip text={config?.model ?? "CLI default"} active />
@@ -326,10 +333,16 @@ export function AgentDetail({
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <Badge text="MCP" accent="var(--a-codex)" />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="mono" style={{ fontSize: 12.5, color: "var(--fg-0)" }}>
+                        <div
+                          className="mono"
+                          style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)" }}
+                        >
                           {m.name}
                         </div>
-                        <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                        <div
+                          className="mono"
+                          style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+                        >
                           {m.transport} · {m.scope}
                           {m.target ? ` · ${m.target}` : ""}
                         </div>
@@ -351,16 +364,24 @@ export function AgentDetail({
                   <Card key={`${sa.scope}:${sa.name}`}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                       <Badge text="SA" accent="var(--a-claude)" />
-                      <span className="mono" style={{ fontSize: 12.5, color: "var(--fg-0)" }}>
+                      <span
+                        className="mono"
+                        style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)" }}
+                      >
                         {sa.name}
                       </span>
                       <span style={{ flex: 1 }} />
-                      <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                      <span
+                        className="mono"
+                        style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+                      >
                         {sa.scope}
                       </span>
                     </div>
                     {sa.description && (
-                      <div style={{ fontSize: 11.5, color: "var(--fg-2)", marginBottom: 6 }}>
+                      <div
+                        style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)", marginBottom: 6 }}
+                      >
                         {sa.description}
                       </div>
                     )}
@@ -368,7 +389,10 @@ export function AgentDetail({
                       style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}
                     >
                       {sa.model && (
-                        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                        <span
+                          className="mono"
+                          style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+                        >
                           {sa.model}
                         </span>
                       )}
@@ -390,10 +414,13 @@ export function AgentDetail({
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                 {config.skills.map((sk) => (
                   <Card key={`${sk.scope}:${sk.name}`}>
-                    <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-0)" }}>
+                    <div
+                      className="mono"
+                      style={{ fontSize: "var(--fs-12)", color: "var(--fg-0)" }}
+                    >
                       {sk.name}
                     </div>
-                    <div style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                    <div style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                       {sk.description ?? sk.scope}
                     </div>
                   </Card>
@@ -422,11 +449,17 @@ export function AgentDetail({
                   >
                     <Badge text="P" accent="var(--fg-1)" />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <span className="mono" style={{ fontSize: 12.5, color: "var(--fg-0)" }}>
+                      <span
+                        className="mono"
+                        style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)" }}
+                      >
                         {p.name}
                       </span>
                       {p.marketplace && (
-                        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                        <span
+                          className="mono"
+                          style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+                        >
                           {" "}
                           · {p.marketplace}
                         </span>
@@ -437,7 +470,7 @@ export function AgentDetail({
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 5,
-                        fontSize: 11.5,
+                        fontSize: "var(--fs-12)",
                         color: p.enabled ? "var(--live)" : "var(--fg-2)",
                       }}
                     >
@@ -449,7 +482,10 @@ export function AgentDetail({
               </div>
             )}
             {config && config.marketplaces.length > 0 && (
-              <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 8 }}>
+              <div
+                className="mono"
+                style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: 8 }}
+              >
                 marketplaces: {config.marketplaces.join(", ")}
               </div>
             )}
@@ -504,7 +540,7 @@ function AgentTab({
       {name}
       <span
         className="mono"
-        style={{ fontSize: 10.5, color: present ? "var(--live)" : "var(--fg-3)" }}
+        style={{ fontSize: "var(--fs-11)", color: present ? "var(--live)" : "var(--fg-3)" }}
       >
         · {present ? "connected" : "key needed"}
       </span>
@@ -518,7 +554,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       <div
         className="lbl"
         style={{
-          fontSize: 11,
+          fontSize: "var(--fs-11)",
           color: "var(--fg-2)",
           textTransform: "uppercase",
           letterSpacing: "0.05em",
@@ -557,16 +593,18 @@ function ProviderRow({
         <Badge text="CL" accent="var(--a-claude)" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{name}</span>
+            <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
+              {name}
+            </span>
             {active && <Chip text="default" />}
           </div>
-          <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+          <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
             {sub}
           </div>
         </div>
         <span
           className="mono"
-          style={{ fontSize: 11, color: model ? "var(--fg-1)" : "var(--fg-3)" }}
+          style={{ fontSize: "var(--fs-11)", color: model ? "var(--fg-1)" : "var(--fg-3)" }}
         >
           {model ?? "CLI default"}
         </span>
@@ -588,7 +626,7 @@ function ProviderTemplate({ label }: { label: string }) {
           background: "var(--bg-2)",
           border: "1px solid var(--bd)",
           color: "var(--fg-3)",
-          fontSize: 10.5,
+          fontSize: "var(--fs-11)",
         }}
       >
         {label}
@@ -610,7 +648,7 @@ function ModelChip({ text, active }: { text: string; active?: boolean }) {
         background: active ? "var(--bg-3)" : "transparent",
         border: `1px solid ${active ? "var(--pri)" : "var(--bd)"}`,
         color: active ? "var(--fg-0)" : "var(--fg-2)",
-        fontSize: 11,
+        fontSize: "var(--fs-11)",
       }}
     >
       {text}
@@ -640,10 +678,12 @@ function SettingLine({
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, color: "var(--fg-0)", marginBottom: 2 }}>{label}</div>
-        <div style={{ fontSize: 11.5, color: "var(--fg-2)" }}>{desc}</div>
+        <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", marginBottom: 2 }}>
+          {label}
+        </div>
+        <div style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>{desc}</div>
       </div>
-      <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+      <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
         {value}
       </span>
     </div>
@@ -684,7 +724,7 @@ function PermissionRules({ config }: { config: AgentConfig | null }) {
                 style={{
                   width: 42,
                   flexShrink: 0,
-                  fontSize: 9.5,
+                  fontSize: "var(--fs-10)",
                   fontWeight: 600,
                   textTransform: "uppercase",
                   letterSpacing: "0.04em",
@@ -695,7 +735,7 @@ function PermissionRules({ config }: { config: AgentConfig | null }) {
               </span>
               <span
                 className="mono"
-                style={{ fontSize: 12, color: "var(--fg-0)", wordBreak: "break-all" }}
+                style={{ fontSize: "var(--fs-12)", color: "var(--fg-0)", wordBreak: "break-all" }}
               >
                 {r.rule}
               </span>
@@ -714,7 +754,7 @@ function Empty({ note }: { note: string }) {
         padding: "16px 14px",
         border: "1px dashed var(--bd)",
         borderRadius: 8,
-        fontSize: 12,
+        fontSize: "var(--fs-12)",
         color: "var(--fg-2)",
         lineHeight: 1.5,
       }}
@@ -735,7 +775,7 @@ function Badge({ text, accent }: { text: string; accent: string }) {
         border: `1px solid color-mix(in oklab, ${accent} 35%, var(--bd))`,
         color: accent,
         fontFamily: "var(--font-mono)",
-        fontSize: 10,
+        fontSize: "var(--fs-10)",
         fontWeight: 600,
         display: "inline-flex",
         alignItems: "center",
@@ -753,7 +793,7 @@ function Chip({ text }: { text: string }) {
     <span
       className="mono"
       style={{
-        fontSize: 10,
+        fontSize: "var(--fs-10)",
         padding: "1px 5px",
         background: "var(--bg-1)",
         border: "1px solid var(--bd)",

@@ -64,6 +64,17 @@ Never inline raw hex colors. Use the design tokens from `src/app/tokens.css`:
 - Primary: `--pri`, `--pri-dim`
 - Agent accents: `--a-claude`, `--a-codex`, `--a-antigravity`, `--a-shell`
 
+## Typography
+
+**One typeface: JetBrains Mono, everywhere** (chrome + terminal). `--sans` and `--mono` (`tokens.css`) and `--font-sans`/`--font-mono`/`--font-pixel` (`theme.css`) all resolve to it. Geist and Silkscreen were dropped — don't reintroduce another family. Terminal panes stay on the self-hosted SemiBold face `"JetBrainsMono Terminal"` (a distinct family name, same typeface) — don't merge the two.
+
+**One size scale — numeric `--fs-*` tokens in `theme.css`** (token name == px value): `--fs-9 --fs-10 --fs-11 --fs-12 --fs-13 --fs-14 --fs-16 --fs-20 --fs-26` (`--fs-base` = `--fs-12`). The old semantic names (`--fs-xs`/`sm`/`md`/`lg`/`xl`/`2xl`/`2xs`/`micro`/`pixel`) are gone — don't reintroduce them.
+
+- **Every inline `fontSize` in `*.tsx` is `fontSize: "var(--fs-N)"`** — no raw px, no half-steps. Invariant: `grep -rnE 'fontSize:\s*[0-9]' --include='*.tsx' src/app` must stay empty.
+- **CSS `font-size` in `tokens.css`/`panes.css` uses `var(--fs-N)`** too; `font:` shorthand uses on-scale px (`11px`/`12px`). No half-pixels anywhere.
+- **Tailwind arbitrary sizes** use on-scale px (`text-[11px]`/`text-[12px]`), never half-pixels.
+- **Exempt (stay numbers, NOT tokens):** xterm `Terminal({ fontSize: 13 })` configs — must be a number, not a CSS var (`LoginTerminalDialog.tsx` + `src/terminal.ts`); and proportional glyph sizing in domain primitives — `FileGlyph` (`6.5`/`8.5`, below the 9px floor) and `AccountAvatar` (`size * 0.42`).
+
 ## CSS class conventions
 
 Reusable classes in `tokens.css` — use these instead of reinventing:
@@ -78,7 +89,7 @@ Reusable classes in `tokens.css` — use these instead of reinventing:
 | `session-close` | Session close button — revealed on parent `.side-item:hover` |
 | `mono` | Mono font + OpenType features (zero, ss01) |
 | `tnum` | Tabular numeric figures |
-| `lbl` | Uppercase mini-label (10.5px, tracked, fg-2) |
+| `lbl` | Uppercase mini-label (11px / `--fs-11`, tracked, fg-2) |
 | `kbd` | Keyboard shortcut chip |
 | `scroll` | Styled scrollbar container |
 

@@ -294,7 +294,7 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
           <h1
             style={{
               margin: 0,
-              fontSize: 28,
+              fontSize: "var(--fs-26)",
               fontWeight: 600,
               letterSpacing: "-0.02em",
               color: "var(--fg-0)",
@@ -307,7 +307,7 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
             style={{
               margin: "8px 0 0",
               color: "var(--fg-2)",
-              fontSize: 13,
+              fontSize: "var(--fs-13)",
               maxWidth: 512,
               lineHeight: 1.55,
             }}
@@ -362,7 +362,7 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             {selectMode ? (
               <>
-                <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+                <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
                   {selected.size} selected
                 </span>
                 <Tip text="Open the selected workspaces">
@@ -427,7 +427,7 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
             style={{
               padding: "32px 0",
               textAlign: "center",
-              fontSize: 12,
+              fontSize: "var(--fs-12)",
               color: "var(--fg-3)",
             }}
           >
@@ -448,7 +448,7 @@ function CardSection({
     <div style={{ marginBottom: 28 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <span className="lbl">{title}</span>
-        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
           {count}
         </span>
       </div>
@@ -766,7 +766,7 @@ function WorkspaceCard({
           )}
           <span
             style={{
-              fontSize: 15,
+              fontSize: "var(--fs-14)",
               fontWeight: 600,
               color: "var(--fg-0)",
               flex: 1,
@@ -800,7 +800,7 @@ function WorkspaceCard({
                 alignItems: "center",
                 gap: 4,
                 fontFamily: "var(--mono)",
-                fontSize: 10,
+                fontSize: "var(--fs-10)",
                 color: busy
                   ? "var(--wait)"
                   : isOpen
@@ -849,7 +849,7 @@ function WorkspaceCard({
                   background: "var(--bg-3)",
                   border: "1px solid var(--bd-soft)",
                   fontFamily: "var(--mono)",
-                  fontSize: 11,
+                  fontSize: "var(--fs-11)",
                   flex: "0 1 auto",
                   minWidth: 0,
                 }}
@@ -887,7 +887,7 @@ function WorkspaceCard({
                   background: "var(--bg-3)",
                   border: "1px solid var(--bd-soft)",
                   fontFamily: "var(--mono)",
-                  fontSize: 11,
+                  fontSize: "var(--fs-11)",
                   color: "var(--fg-3)",
                   flex: "0 0 auto",
                 }}
@@ -905,7 +905,7 @@ function WorkspaceCard({
             alignItems: "center",
             gap: 8,
             fontFamily: "var(--mono)",
-            fontSize: 11,
+            fontSize: "var(--fs-11)",
             color: "var(--fg-2)",
           }}
         >
@@ -928,7 +928,7 @@ function WorkspaceCard({
               alignItems: "center",
               gap: 6,
               fontFamily: "var(--mono)",
-              fontSize: 10,
+              fontSize: "var(--fs-10)",
               color: "var(--fg-3)",
             }}
           >

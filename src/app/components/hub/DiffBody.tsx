@@ -177,7 +177,7 @@ export function DiffBody({
         overflow: "auto",
         background: "var(--bg-0)",
         fontFamily: "var(--mono)",
-        fontSize: 11.5,
+        fontSize: "var(--fs-12)",
         lineHeight: 1.55,
         ...style,
       }}
@@ -237,7 +237,7 @@ function DiffToolbar({
         background: "var(--bg-1)",
         borderBottom: "1px solid var(--bd-soft)",
         color: "var(--fg-3)",
-        fontSize: 11,
+        fontSize: "var(--fs-11)",
       }}
     >
       <span className="tnum">
@@ -254,7 +254,7 @@ function DiffToolbar({
           color: "var(--fg-2)",
           cursor: "pointer",
           fontFamily: "var(--mono)",
-          fontSize: 11,
+          fontSize: "var(--fs-11)",
           padding: "1px 6px",
           borderRadius: 4,
         }}
@@ -332,7 +332,7 @@ function FileSection({
             {file}
           </span>
           {(added > 0 || removed > 0) && (
-            <span className="tnum" style={{ flexShrink: 0, fontSize: 11 }}>
+            <span className="tnum" style={{ flexShrink: 0, fontSize: "var(--fs-11)" }}>
               <span style={{ color: "var(--live)" }}>+{added}</span>{" "}
               <span style={{ color: "var(--err)" }}>−{removed}</span>
             </span>
@@ -434,7 +434,7 @@ function FoldStub({ count, onClick }: { count: number; onClick: () => void }) {
         color: "var(--fg-3)",
         cursor: "pointer",
         fontFamily: "var(--mono)",
-        fontSize: 10.5,
+        fontSize: "var(--fs-11)",
         padding: "3px 12px 3px 60px",
       }}
     >
@@ -587,7 +587,7 @@ export function SplitDiffBody({
         overflow: "auto",
         background: "var(--bg-0)",
         fontFamily: "var(--mono)",
-        fontSize: 11.5,
+        fontSize: "var(--fs-12)",
         lineHeight: 1.55,
         ...style,
       }}

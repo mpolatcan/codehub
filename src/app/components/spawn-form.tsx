@@ -45,7 +45,7 @@ export function FormRow({
           {label}
         </span>
         {optional && (
-          <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+          <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
             optional
           </span>
         )}
@@ -102,10 +102,12 @@ export function AgentCard({
         </span>
       )}
       <AgentGlyph agent={agent} size={18} color={meta.accent} />
-      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)", marginTop: 2 }}>
+      <div
+        style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)", marginTop: 2 }}
+      >
         {meta.name}
       </div>
-      <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
+      <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
         {agent in MODEL_HINT ? MODEL_HINT[agent as AgentCli] : ""}
       </div>
     </button>
@@ -158,9 +160,11 @@ export function AccountCard({
             flexShrink: 0,
           }}
         />
-        <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>{title}</span>
+        <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
+          {title}
+        </span>
       </div>
-      <div className="mono" style={{ fontSize: 10, color: "var(--fg-2)" }}>
+      <div className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-2)" }}>
         {sub}
       </div>
     </button>
@@ -201,7 +205,7 @@ export function RuntimeFact({
       </span>
       <span style={{ color: soon ? "var(--fg-3)" : "var(--fg-2)" }}>{children}</span>
       {soon && (
-        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
           Coming soon
         </span>
       )}
@@ -246,17 +250,19 @@ export function SharedRuntimePanel() {
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>
+            <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
               Workspace container
             </span>
-            <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+            <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
               {status?.name ?? "—"}
             </span>
             <StatusBadge status={live ? "live" : "idle"}>
               {live ? "Running" : "Stopped"}
             </StatusBadge>
           </div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--fg-2)" }}>
+          <div
+            style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-11)", color: "var(--fg-2)" }}
+          >
             workspace mounted at /workspace · panes reuse this container
           </div>
         </div>
@@ -272,7 +278,7 @@ export function SharedRuntimePanel() {
           display: "flex",
           flexWrap: "wrap",
           gap: "6px 16px",
-          fontSize: 11,
+          fontSize: "var(--fs-11)",
           color: "var(--fg-2)",
         }}
       >
@@ -383,7 +389,7 @@ export function RepositoryPicker({
           <span
             className="mono"
             style={{
-              fontSize: 12.5,
+              fontSize: "var(--fs-13)",
               color: "var(--fg-1)",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -394,7 +400,7 @@ export function RepositoryPicker({
           </span>
         </Tip>
         <span style={{ flex: 1 }} />
-        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
           /workspace
         </span>
         <Button variant="outline" size="xs" onClick={() => void chooseWithDialog()}>
@@ -412,7 +418,7 @@ export function RepositoryPicker({
           }}
         >
           <Input
-            className="mono h-auto flex-1 min-w-0 rounded-md px-2 py-1.5 text-[11.5px]"
+            className="mono h-auto flex-1 min-w-0 rounded-md px-2 py-1.5 text-[12px]"
             value={manualPath}
             onChange={(e) => setManualPath(e.target.value)}
             onKeyDown={(e) => {
@@ -433,7 +439,10 @@ export function RepositoryPicker({
       )}
 
       {!controlled && error?.startsWith("set workspace dir failed") && (
-        <div className="mono" style={{ marginTop: 6, fontSize: 10.5, color: "var(--err)" }}>
+        <div
+          className="mono"
+          style={{ marginTop: 6, fontSize: "var(--fs-11)", color: "var(--err)" }}
+        >
           {error}
         </div>
       )}
@@ -467,7 +476,7 @@ export function RepositoryPicker({
             borderRadius: 8,
           }}
         >
-          <span style={{ fontSize: 11.5, color: "var(--fg-1)", flex: 1 }}>
+          <span style={{ fontSize: "var(--fs-12)", color: "var(--fg-1)", flex: 1 }}>
             Workspace changed — restart the runtime to mount it. Affects every session.
           </span>
           <Button variant="outline" size="xs" disabled={!running} onClick={restart}>

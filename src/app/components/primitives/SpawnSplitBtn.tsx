@@ -130,7 +130,7 @@ function SpawnPlacementMenu({
         borderRadius: 6,
         boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
         padding: 5,
-        fontSize: 13,
+        fontSize: "var(--fs-13)",
         color: "var(--fg-1)",
       }}
     >
@@ -142,7 +142,7 @@ function SpawnPlacementMenu({
           marginBottom: 4,
         }}
       >
-        <span className="lbl" style={{ fontSize: 10 }}>
+        <span className="lbl" style={{ fontSize: "var(--fs-10)" }}>
           Placement
         </span>
       </div>
@@ -161,7 +161,10 @@ function SpawnPlacementMenu({
         onClick={() => onSplit("col")}
       />
       {groupFull && (
-        <div className="mono" style={{ padding: "5px 8px", fontSize: 10.5, color: "var(--fg-3)" }}>
+        <div
+          className="mono"
+          style={{ padding: "5px 8px", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+        >
           Active group is full ({MAX_GROUP_PANES}/{MAX_GROUP_PANES}).
         </div>
       )}

@@ -179,7 +179,7 @@ export function PaneHead({
                 className="mono ch-rename"
                 style={{
                   fontFamily: '"JetBrainsMono Terminal", Menlo, monospace',
-                  fontSize: 13,
+                  fontSize: "var(--fs-13)",
                   color: titleColor,
                   fontWeight: 600,
                 }}
@@ -197,7 +197,7 @@ export function PaneHead({
         {badge && <span className={`mode-badge badge-${meta.mode}`}>{badge}</span>}
         {awaiting && <StatusBadge status="wait">Awaiting</StatusBadge>}
         {liveLabel && (
-          <span className="mono" style={{ fontSize: 10.5, color: liveColor }}>
+          <span className="mono" style={{ fontSize: "var(--fs-11)", color: liveColor }}>
             {liveLabel}
           </span>
         )}

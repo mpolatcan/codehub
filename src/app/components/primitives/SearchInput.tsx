@@ -61,7 +61,7 @@ export function SearchInput({
           border: "none",
           outline: "none",
           color: "var(--fg-0)",
-          fontSize: 12,
+          fontSize: "var(--fs-12)",
         }}
       />
       {onClear && value && (

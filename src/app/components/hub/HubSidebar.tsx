@@ -167,7 +167,7 @@ function SidebarExpanded() {
             {n.icon}
             <span style={{ flex: 1 }}>{n.label}</span>
             {n.badge && (
-              <span className="mono" style={{ color: "var(--fg-2)", fontSize: 11 }}>
+              <span className="mono" style={{ color: "var(--fg-2)", fontSize: "var(--fs-11)" }}>
                 {n.badge}
               </span>
             )}
@@ -228,7 +228,7 @@ function WorkspacesSection() {
             textAlign: "center",
             border: "1px dashed var(--bd)",
             borderRadius: 8,
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
             color: "var(--fg-2)",
             lineHeight: 1.55,
           }}
@@ -349,7 +349,7 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
           <span
             className="mono"
             style={{
-              fontSize: 12.5,
+              fontSize: "var(--fs-13)",
               color: open ? "var(--fg-0)" : "var(--fg-1)",
               fontWeight: 600,
               flex: 1,
@@ -422,7 +422,7 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
             <span
               className="mono tnum"
               style={{
-                fontSize: 10,
+                fontSize: "var(--fs-10)",
                 fontWeight: 600,
                 color: open ? "var(--fg-1)" : "var(--fg-2)",
                 background: "var(--bg-3)",
@@ -443,7 +443,7 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
         <div
           style={{
             fontFamily: "var(--mono)",
-            fontSize: 11,
+            fontSize: "var(--fs-11)",
             color: "var(--fg-2)",
             padding: "0 6px 6px",
             borderBottom: open ? "1px solid var(--bd-soft)" : "none",
@@ -519,7 +519,7 @@ function GroupSessions({ group, showLabel }: { group: Group; showLabel: boolean 
           }}
         >
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color }} />
-          <span className="lbl" style={{ fontSize: 9 }}>
+          <span className="lbl" style={{ fontSize: "var(--fs-9)" }}>
             {group.name}
           </span>
         </div>
@@ -636,7 +636,7 @@ function SessionRow({
           <span
             className="mono"
             style={{
-              fontSize: 12,
+              fontSize: "var(--fs-12)",
               fontWeight: 600,
               color: "var(--fg-0)",
               overflow: "hidden",
@@ -652,7 +652,7 @@ function SessionRow({
             <span
               className="mono"
               style={{
-                fontSize: 9,
+                fontSize: "var(--fs-9)",
                 fontWeight: 600,
                 color: "var(--wait)",
                 background: "color-mix(in oklab, var(--wait) 15%, transparent)",
@@ -668,7 +668,7 @@ function SessionRow({
             <span
               className="mono"
               style={{
-                fontSize: 10,
+                fontSize: "var(--fs-10)",
                 color: statusColor,
                 fontWeight: working ? 600 : 400,
                 flexShrink: 0,
@@ -687,7 +687,7 @@ function SessionRow({
               display: "flex",
               alignItems: "center",
               gap: 4,
-              fontSize: 10.5,
+              fontSize: "var(--fs-11)",
               color: "var(--fg-2)",
             }}
           >
@@ -788,7 +788,7 @@ function SidebarFooter() {
           <div
             className="mono"
             style={{
-              fontSize: 12,
+              fontSize: "var(--fs-12)",
               color: "var(--fg-0)",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -797,7 +797,7 @@ function SidebarFooter() {
           >
             {status?.state ?? "—"}
           </div>
-          <div className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+          <div className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
             {dockerInfo?.version ? `docker ${dockerInfo.version}` : "docker daemon"}
           </div>
         </div>
@@ -927,7 +927,7 @@ function RailIcon({
               position: "absolute",
               top: -2,
               right: -2,
-              fontSize: 10,
+              fontSize: "var(--fs-10)",
               fontWeight: 600,
               background: "var(--fg-0)",
               color: "var(--bg-0)",

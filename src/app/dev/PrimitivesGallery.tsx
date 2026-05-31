@@ -109,7 +109,7 @@ export default function PrimitivesGallery() {
         color: "var(--fg-0)",
         fontFamily: "var(--mono)",
         padding: "32px 40px",
-        fontSize: 13,
+        fontSize: "var(--fs-13)",
       }}
     >
       {/* Header */}
@@ -122,13 +122,20 @@ export default function PrimitivesGallery() {
         }}
       >
         <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, fontFamily: "var(--sans)" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "var(--fs-20)",
+              fontWeight: 600,
+              fontFamily: "var(--sans)",
+            }}
+          >
             Primitives Gallery
           </h1>
           <p
             style={{
               margin: "4px 0 0",
-              fontSize: 12,
+              fontSize: "var(--fs-12)",
               color: "var(--fg-2)",
               fontFamily: "var(--sans)",
             }}
@@ -444,7 +451,9 @@ export default function PrimitivesGallery() {
           }}
         >
           <AppShell title="CodeHub — demo" rail={<SidebarRail />}>
-            <div style={{ padding: 24, color: "var(--fg-1)", fontSize: 12 }}>Main content area</div>
+            <div style={{ padding: 24, color: "var(--fg-1)", fontSize: "var(--fs-12)" }}>
+              Main content area
+            </div>
           </AppShell>
         </div>
       </Section>
@@ -682,7 +691,13 @@ export default function PrimitivesGallery() {
                   padding: "2px 4px",
                 }}
               >
-                <span style={{ fontSize: 9, color: "var(--fg-2)", fontFamily: "var(--mono)" }}>
+                <span
+                  style={{
+                    fontSize: "var(--fs-9)",
+                    color: "var(--fg-2)",
+                    fontFamily: "var(--mono)",
+                  }}
+                >
                   {t.replace("--", "")}
                 </span>
               </div>

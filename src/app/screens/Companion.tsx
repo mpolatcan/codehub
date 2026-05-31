@@ -209,7 +209,7 @@ function FauxCompanionDesktopHero() {
           display: "flex",
           alignItems: "center",
           padding: "0 14px",
-          fontSize: 12,
+          fontSize: "var(--fs-12)",
           color: "rgba(255,255,255,0.85)",
         }}
       >
@@ -218,10 +218,10 @@ function FauxCompanionDesktopHero() {
         <span style={{ marginRight: 14 }}>Edit</span>
         <span style={{ marginRight: 14 }}>View</span>
         <span style={{ flex: 1 }} />
-        <span className="mono" style={{ marginRight: 12, fontSize: 11 }}>
+        <span className="mono" style={{ marginRight: 12, fontSize: "var(--fs-11)" }}>
           21:36
         </span>
-        <span style={{ fontSize: 11 }}>Wed 22 May</span>
+        <span style={{ fontSize: "var(--fs-11)" }}>Wed 22 May</span>
       </div>
 
       <FauxEditorWindow />
@@ -261,7 +261,7 @@ function FauxCompanionDesktopHero() {
           background: "rgba(0,0,0,0.55)",
           backdropFilter: "blur(10px)",
           color: "rgba(255,255,255,0.9)",
-          fontSize: 12,
+          fontSize: "var(--fs-12)",
           whiteSpace: "nowrap",
         }}
       >
@@ -317,7 +317,7 @@ function FauxEditorWindow() {
           style={{
             flex: 1,
             textAlign: "center",
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
             color: "rgba(255,255,255,0.55)",
             fontFamily: "var(--mono)",
           }}
@@ -330,7 +330,7 @@ function FauxEditorWindow() {
           flex: 1,
           display: "flex",
           fontFamily: "var(--mono)",
-          fontSize: 11,
+          fontSize: "var(--fs-11)",
           padding: 12,
           gap: 10,
           color: "rgba(255,255,255,0.4)",
@@ -428,7 +428,7 @@ function CompanionDock() {
             justifyContent: "center",
             color: "#fff",
             fontFamily: "var(--mono)",
-            fontSize: 14,
+            fontSize: "var(--fs-14)",
             fontWeight: 600,
             boxShadow: "0 4px 8px rgba(0,0,0,0.3)",
             position: "relative",
@@ -530,7 +530,7 @@ function LiveRow({
         <span
           style={{
             display: "block",
-            fontSize: 12.5,
+            fontSize: "var(--fs-13)",
             color: "var(--fg-0)",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -539,7 +539,10 @@ function LiveRow({
         >
           {name}
         </span>
-        <span className="mono" style={{ display: "block", fontSize: 10.5, color: subColor }}>
+        <span
+          className="mono"
+          style={{ display: "block", fontSize: "var(--fs-11)", color: subColor }}
+        >
           {sub}
           {counters && <span style={{ color: "var(--fg-3)" }}>{` · ${counters}`}</span>}
           {tokens > 0 && (
@@ -569,10 +572,10 @@ function Empty() {
       }}
     >
       <span style={{ opacity: 0.5 }}>{Ico.bell}</span>
-      <p style={{ margin: 0, fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
+      <p style={{ margin: 0, fontSize: "var(--fs-12)", color: "var(--fg-2)", lineHeight: 1.5 }}>
         No agents running.
       </p>
-      <p style={{ margin: 0, fontSize: 10.5, color: "var(--fg-3)", lineHeight: 1.5 }}>
+      <p style={{ margin: 0, fontSize: "var(--fs-11)", color: "var(--fg-3)", lineHeight: 1.5 }}>
         Start one in CodeHub to watch it here.
       </p>
     </div>
@@ -694,8 +697,10 @@ function ShowcaseHeading({ title, note }: { title: string; note: string }) {
         flexWrap: "wrap",
       }}
     >
-      <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--fg-0)" }}>{title}</h2>
-      <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
+      <h2 style={{ margin: 0, fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}>
+        {title}
+      </h2>
+      <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
         {note}
       </span>
     </div>
@@ -750,9 +755,11 @@ function CompCard({
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 2 }}>
           <span style={{ width: 5, height: 5, borderRadius: "50%", background: toneColor }} />
-          <span style={{ fontSize: 12, color: "var(--fg-0)", fontWeight: 500 }}>{caption}</span>
+          <span style={{ fontSize: "var(--fs-12)", color: "var(--fg-0)", fontWeight: 500 }}>
+            {caption}
+          </span>
         </div>
-        <div style={{ fontSize: 10.5, color: "var(--fg-2)" }}>{desc}</div>
+        <div style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>{desc}</div>
       </div>
     </div>
   );
@@ -810,7 +817,7 @@ function CompanionRadial() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 14,
+                fontSize: "var(--fs-14)",
                 boxShadow: "0 6px 16px rgba(0,0,0,0.4)",
               }}
             >
@@ -818,7 +825,7 @@ function CompanionRadial() {
             </div>
             <span
               style={{
-                fontSize: 9.5,
+                fontSize: "var(--fs-10)",
                 color: "var(--fg-2)",
                 fontFamily: "var(--mono)",
                 textTransform: "uppercase",
@@ -860,7 +867,7 @@ function CompanionPrefsPanel() {
             padding: "1px 6px",
             borderRadius: 4,
             fontFamily: "var(--mono)",
-            fontSize: 9.5,
+            fontSize: "var(--fs-10)",
             letterSpacing: "0.06em",
             textTransform: "uppercase",
             fontWeight: 500,
@@ -966,8 +973,8 @@ function PrefRow({
       }}
     >
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 12.5, color: "var(--fg-0)" }}>{label}</div>
-        {sub && <div style={{ fontSize: 11, color: "var(--fg-2)" }}>{sub}</div>}
+        <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)" }}>{label}</div>
+        {sub && <div style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>{sub}</div>}
       </div>
       {control}
     </div>
@@ -1004,7 +1011,7 @@ function CharacterCard({
             position: "absolute",
             top: 12,
             right: 12,
-            fontSize: 9.5,
+            fontSize: "var(--fs-10)",
             padding: "2px 6px",
             borderRadius: 4,
             background: "var(--fg-0)",
@@ -1018,8 +1025,12 @@ function CharacterCard({
           active
         </span>
       )}
-      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-0)" }}>{name}</span>
-      <div style={{ fontSize: 11, color: "var(--fg-2)", minHeight: 30, lineHeight: 1.4 }}>
+      <span style={{ fontSize: "var(--fs-13)", fontWeight: 600, color: "var(--fg-0)" }}>
+        {name}
+      </span>
+      <div
+        style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)", minHeight: 30, lineHeight: 1.4 }}
+      >
         {desc}
       </div>
       <div
@@ -1041,7 +1052,7 @@ function CharacterCard({
             <Character kind={kind} expression={exp} />
             <span
               style={{
-                fontSize: 9,
+                fontSize: "var(--fs-9)",
                 fontFamily: "var(--mono)",
                 color: "var(--fg-3)",
                 textTransform: "uppercase",

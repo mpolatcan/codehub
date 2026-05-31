@@ -294,10 +294,13 @@ export function LoginTerminalDialog({
             flexShrink: 0,
           }}
         >
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-0)" }}>
+          <span style={{ fontSize: "var(--fs-13)", fontWeight: 600, color: "var(--fg-0)" }}>
             Sign in with {label}
           </span>
-          <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)", marginLeft: 4 }}>
+          <span
+            className="mono"
+            style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginLeft: 4 }}
+          >
             {status === "connecting"
               ? "connecting..."
               : status === "running"
@@ -352,17 +355,26 @@ export function LoginTerminalDialog({
           }}
         >
           {status === "error" && (
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--err)", flex: 1 }}>
+            <span
+              className="mono"
+              style={{ fontSize: "var(--fs-12)", color: "var(--err)", flex: 1 }}
+            >
               {statusMsg}
             </span>
           )}
           {status === "done" && statusMsg && (
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)", flex: 1 }}>
+            <span
+              className="mono"
+              style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)", flex: 1 }}
+            >
               {statusMsg}
             </span>
           )}
           {(status === "running" || status === "connecting") && (
-            <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)", flex: 1 }}>
+            <span
+              className="mono"
+              style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", flex: 1 }}
+            >
               {provider === "claude"
                 ? "Complete the Claude setup above. The credential is captured automatically when the session exits."
                 : `Complete the ${label} login above. The credential is captured automatically when the session exits.`}

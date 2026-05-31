@@ -232,7 +232,7 @@ export function AboutDialog() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                fontSize: 22,
+                fontSize: "var(--fs-20)",
                 fontWeight: 600,
                 letterSpacing: "-0.01em",
                 color: "var(--fg-0)",
@@ -243,7 +243,7 @@ export function AboutDialog() {
             <div
               className="mono"
               style={{
-                fontSize: 12,
+                fontSize: "var(--fs-12)",
                 color: "var(--fg-2)",
                 marginTop: 3,
                 display: "flex",
@@ -265,7 +265,7 @@ export function AboutDialog() {
                   background: "color-mix(in oklab, var(--live) 12%, transparent)",
                   border: "1px solid color-mix(in oklab, var(--live) 30%, transparent)",
                   color: "var(--live)",
-                  fontSize: 10.5,
+                  fontSize: "var(--fs-11)",
                 }}
               >
                 <span
@@ -289,10 +289,10 @@ export function AboutDialog() {
                 alignItems: "flex-end",
               }}
             >
-              <div className="mono" style={{ fontSize: 11 }}>
+              <div className="mono" style={{ fontSize: "var(--fs-11)" }}>
                 update available
               </div>
-              <div className="mono tnum" style={{ fontSize: 13, fontWeight: 600 }}>
+              <div className="mono tnum" style={{ fontSize: "var(--fs-13)", fontWeight: 600 }}>
                 v{update?.available}
               </div>
             </div>
@@ -304,7 +304,7 @@ export function AboutDialog() {
 
         {/* environment — every field is real */}
         <div style={{ padding: "16px 28px", borderBottom: "1px solid var(--bd-soft)" }}>
-          <div className="lbl" style={{ fontSize: 11, marginBottom: 10 }}>
+          <div className="lbl" style={{ fontSize: "var(--fs-11)", marginBottom: 10 }}>
             Environment
           </div>
           <div
@@ -313,7 +313,7 @@ export function AboutDialog() {
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
               gap: "6px 24px",
-              fontSize: 11.5,
+              fontSize: "var(--fs-12)",
             }}
           >
             <Kv k="Version" v={appInfo ? `v${appInfo.version}` : dash} />
@@ -327,7 +327,7 @@ export function AboutDialog() {
 
         {/* agents — real versions from the runtime probe */}
         <div style={{ padding: "16px 28px", borderBottom: "1px solid var(--bd-soft)" }}>
-          <div className="lbl" style={{ fontSize: 11, marginBottom: 10 }}>
+          <div className="lbl" style={{ fontSize: "var(--fs-11)", marginBottom: 10 }}>
             Agents
           </div>
           <div
@@ -336,7 +336,7 @@ export function AboutDialog() {
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
               gap: "6px 24px",
-              fontSize: 11.5,
+              fontSize: "var(--fs-12)",
             }}
           >
             {CLIS.map((c) => (
@@ -354,7 +354,7 @@ export function AboutDialog() {
             overflow: "auto",
           }}
         >
-          <div className="lbl" style={{ fontSize: 11, marginBottom: 10 }}>
+          <div className="lbl" style={{ fontSize: "var(--fs-11)", marginBottom: 10 }}>
             Changelog
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -362,7 +362,7 @@ export function AboutDialog() {
               <div key={rel.version}>
                 <div
                   className="mono tnum"
-                  style={{ fontSize: 11.5, color: "var(--fg-1)", marginBottom: 6 }}
+                  style={{ fontSize: "var(--fs-12)", color: "var(--fg-1)", marginBottom: 6 }}
                 >
                   v{rel.version}
                 </div>
@@ -374,7 +374,7 @@ export function AboutDialog() {
                     display: "flex",
                     flexDirection: "column",
                     gap: 5,
-                    fontSize: 12,
+                    fontSize: "var(--fs-12)",
                     color: "var(--fg-1)",
                   }}
                 >
@@ -396,19 +396,19 @@ export function AboutDialog() {
             display: "flex",
             alignItems: "center",
             gap: 10,
-            fontSize: 11.5,
+            fontSize: "var(--fs-12)",
             color: "var(--fg-2)",
             flexWrap: "wrap",
           }}
         >
           <span>MIT licensed</span>
           <span style={{ color: "var(--fg-3)" }}>·</span>
-          <span>built on Tauri, tmux, Docker, and Geist Mono</span>
+          <span>built on Tauri, tmux, Docker, and JetBrains Mono</span>
           <span style={{ flex: 1 }} />
           <Button
             variant="outline"
             size="xs"
-            onClick={() => copyAbout("Tauri, tmux, Docker, Geist Mono")}
+            onClick={() => copyAbout("Tauri, tmux, Docker, JetBrains Mono")}
           >
             Credits
           </Button>
@@ -433,7 +433,7 @@ export function AboutDialog() {
           <span
             className="mono"
             style={{
-              fontSize: 11,
+              fontSize: "var(--fs-11)",
               color: "var(--fg-3)",
               flexShrink: 0,
               whiteSpace: "nowrap",
@@ -453,7 +453,7 @@ export function AboutDialog() {
               style={{
                 flex: 1,
                 minWidth: 0,
-                fontSize: 11,
+                fontSize: "var(--fs-11)",
                 color: "var(--fg-1)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -507,7 +507,7 @@ function ChangelogLine({
       <span
         className="mono"
         style={{
-          fontSize: 10,
+          fontSize: "var(--fs-10)",
           color,
           minWidth: 34,
           textTransform: "uppercase",

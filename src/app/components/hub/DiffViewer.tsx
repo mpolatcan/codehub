@@ -86,7 +86,7 @@ export function DiffViewer({ path, onClose }: { path: string; onClose: () => voi
             <span
               className="mono"
               style={{
-                fontSize: 12,
+                fontSize: "var(--fs-12)",
                 fontWeight: 500,
                 color: "var(--fg-0)",
                 flex: 1,
@@ -102,7 +102,7 @@ export function DiffViewer({ path, onClose }: { path: string; onClose: () => voi
             </span>
           </Tip>
           {counts && (counts.added > 0 || counts.removed > 0) && (
-            <span className="mono tnum" style={{ fontSize: 11, flexShrink: 0 }}>
+            <span className="mono tnum" style={{ fontSize: "var(--fs-11)", flexShrink: 0 }}>
               <span style={{ color: "var(--live)" }}>+{counts.added}</span>{" "}
               <span style={{ color: "var(--err)" }}>−{counts.removed}</span>
             </span>

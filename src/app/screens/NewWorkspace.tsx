@@ -18,6 +18,7 @@
  * the spawn dialog.
  */
 import { IconBtn } from "@/app/components/primitives/IconBtn";
+import { Tip } from "@/app/components/primitives/Tip";
 import { Ico } from "@/app/components/primitives/icons";
 import { FormRow } from "@/app/components/spawn-form";
 import {
@@ -35,7 +36,6 @@ import { Input } from "@/app/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/ui/select";
 import { Slider } from "@/app/ui/slider";
 import { Textarea } from "@/app/ui/textarea";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/app/ui/tooltip";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 const STEPS = ["Repository", "Container", "Name & launch"] as const;
@@ -235,7 +235,9 @@ export function NewWorkspace() {
             flexShrink: 0,
           }}
         >
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: "var(--fg-0)" }}>
+          <h2
+            style={{ margin: 0, fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}
+          >
             New workspace
           </h2>
           <span style={{ flex: 1 }} />
@@ -354,18 +356,17 @@ export function NewWorkspace() {
                       {/* Items show the label only; the longer description rides a
                           hover tooltip so the list stays compact. */}
                       <SelectContent className="z-[70]">
-                        <TooltipProvider delayDuration={200}>
-                          {modes.map((m) => (
-                            <Tooltip key={m}>
-                              <TooltipTrigger asChild>
-                                <SelectItem value={m}>{MODE_BY_ID[m].label}</SelectItem>
-                              </TooltipTrigger>
-                              <TooltipContent side="right" className="z-[80] max-w-56">
-                                {MODE_BY_ID[m].hint}
-                              </TooltipContent>
-                            </Tooltip>
-                          ))}
-                        </TooltipProvider>
+                        {modes.map((m) => (
+                          <Tip
+                            key={m}
+                            text={MODE_BY_ID[m].hint}
+                            side="right"
+                            delay={200}
+                            className="z-[80] max-w-56"
+                          >
+                            <SelectItem value={m}>{MODE_BY_ID[m].label}</SelectItem>
+                          </Tip>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -395,7 +396,10 @@ export function NewWorkspace() {
                             }}
                           />
                           <span>{opt.label}</span>
-                          <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                          <span
+                            className="mono"
+                            style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+                          >
                             {opt.sub}
                           </span>
                         </span>
@@ -412,7 +416,7 @@ export function NewWorkspace() {
                   style={{ color: "var(--fg-1)", marginBottom: 8, display: "flex", gap: 8 }}
                 >
                   Initial prompt
-                  <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                  <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                     optional
                   </span>
                 </div>
@@ -443,7 +447,7 @@ export function NewWorkspace() {
         >
           <span
             className="mono"
-            style={{ fontSize: 11, color: launchError ? "var(--err)" : "var(--fg-2)" }}
+            style={{ fontSize: "var(--fs-11)", color: launchError ? "var(--err)" : "var(--fg-2)" }}
           >
             {launchError
               ? launchError
@@ -534,7 +538,7 @@ function BaseImagePanel() {
         <div
           className="mono"
           style={{
-            fontSize: 13,
+            fontSize: "var(--fs-13)",
             color: "var(--fg-0)",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -543,7 +547,10 @@ function BaseImagePanel() {
         >
           {image?.tag ?? dash}
         </div>
-        <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-2)", marginTop: 2 }}>
+        <div
+          className="mono"
+          style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)", marginTop: 2 }}
+        >
           bundles every agent's runtime · {platform}
         </div>
       </div>
@@ -554,7 +561,7 @@ function BaseImagePanel() {
             alignItems: "center",
             gap: 4,
             fontFamily: "var(--mono)",
-            fontSize: 10,
+            fontSize: "var(--fs-10)",
             color: "var(--live)",
             padding: "2px 8px",
             borderRadius: 999,
@@ -601,7 +608,7 @@ function Step({
             alignItems: "center",
             justifyContent: "center",
             fontFamily: "var(--mono)",
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
             fontWeight: 600,
             background: filled ? "var(--pri)" : "var(--bg-3)",
             color: filled ? "var(--bg-0)" : "var(--fg-2)",
@@ -612,7 +619,7 @@ function Step({
         </span>
         <span
           style={{
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
             fontWeight: current ? 600 : 400,
             color: current ? "var(--fg-0)" : done ? "var(--fg-1)" : "var(--fg-2)",
             whiteSpace: "nowrap",
@@ -664,12 +671,17 @@ function ResourceSlider({
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{label}</span>
+        <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
+          {label}
+        </span>
         <span style={{ flex: 1 }} />
-        <span className="mono tnum" style={{ fontSize: 20, fontWeight: 500, color: "var(--fg-0)" }}>
+        <span
+          className="mono tnum"
+          style={{ fontSize: "var(--fs-20)", fontWeight: 500, color: "var(--fg-0)" }}
+        >
           {value}
         </span>
-        <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
           {unit}
         </span>
       </div>
@@ -686,7 +698,7 @@ function ResourceSlider({
         style={{
           display: "flex",
           justifyContent: "space-between",
-          fontSize: 10,
+          fontSize: "var(--fs-10)",
           color: "var(--fg-3)",
           marginTop: 4,
         }}
@@ -711,7 +723,10 @@ function ContainerResourceStep({
 }) {
   return (
     <FormRow label="Container resources">
-      <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)", marginBottom: 12 }}>
+      <div
+        className="mono"
+        style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginBottom: 12 }}
+      >
         local Docker resources for this workspace
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -820,7 +835,7 @@ function RepoStep({
                 justifyContent: "center",
                 textAlign: "center",
                 color: "var(--fg-3)",
-                fontSize: 11.5,
+                fontSize: "var(--fs-12)",
                 padding: "0 12px",
               }}
             >
@@ -842,7 +857,7 @@ function RepoStep({
                     border: "1px solid var(--bd-soft)",
                     borderRadius: 6,
                     fontFamily: "var(--mono)",
-                    fontSize: 11,
+                    fontSize: "var(--fs-11)",
                     color: "var(--fg-1)",
                     flexShrink: 0,
                   }}
@@ -861,7 +876,7 @@ function RepoStep({
                   <span
                     className="mono"
                     style={{
-                      fontSize: 9,
+                      fontSize: "var(--fs-9)",
                       padding: "1px 5px",
                       borderRadius: 3,
                       background: "var(--bg-3)",
@@ -915,14 +930,14 @@ function RepoStep({
           {!connected ? (
             <div
               className="mono"
-              style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "6px 0" }}
+              style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "6px 0" }}
             >
               Not connected. Set up GitHub in Settings → Integrations to browse repos here.
             </div>
           ) : githubRepos.length === 0 ? (
             <div
               className="mono"
-              style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "6px 0" }}
+              style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "6px 0" }}
             >
               No repos found for this token.
             </div>
@@ -968,17 +983,23 @@ function RepoStep({
                   >
                     {Ico.files}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                      <span
+                        className="mono"
+                        style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+                      >
                         {owner ? `${owner}/` : ""}
                       </span>
                       <span
                         className="mono"
-                        style={{ fontSize: 12, color: "var(--fg-0)", fontWeight: 500 }}
+                        style={{ fontSize: "var(--fs-12)", color: "var(--fg-0)", fontWeight: 500 }}
                       >
                         {name}
                       </span>
                     </div>
-                    <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                    <span
+                      className="mono"
+                      style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+                    >
                       {already ? "added" : "add"}
                     </span>
                   </button>
@@ -990,7 +1011,7 @@ function RepoStep({
 
         <div
           className="mono"
-          style={{ fontSize: 10.5, color: "var(--fg-3)", padding: "8px 4px 0" }}
+          style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", padding: "8px 4px 0" }}
         >
           {allDirs.length > 1
             ? "Each repo mounts at /workspace/{repo-name}; /workspace is the shared parent."

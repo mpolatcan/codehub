@@ -73,7 +73,7 @@ const lineStyle: React.CSSProperties = {
   padding: "0 10px",
   gap: 10,
   fontFamily: "var(--mono)",
-  fontSize: 11,
+  fontSize: "var(--fs-11)",
   color: "var(--fg-2)",
   // Clip rather than spill/overlap when side panels narrow the main region.
   whiteSpace: "nowrap",
@@ -108,7 +108,7 @@ function MiniMetric({
   title: string;
 }) {
   return (
-    <Tip text={title ?? ""}>
+    <Tip text={title}>
       <span
         className="tnum"
         style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}
@@ -160,7 +160,7 @@ function RuntimeIndicator() {
   const title = `Runtime: ${STATE_LABEL[state]}${healthBits.length ? ` · ${healthBits.join(" · ")}` : ""}`;
 
   return (
-    <Tip text={title ?? ""}>
+    <Tip text={title}>
       <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexShrink: 1 }}>
         <StatusDot status={dotStatus} pulse={state === "running"} />
         <span style={{ color: stateColor }}>{STATE_LABEL[state]}</span>

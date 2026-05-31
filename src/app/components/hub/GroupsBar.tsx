@@ -53,7 +53,12 @@ export function GroupsBar({ ws }: { ws: Workspace }) {
       {groups.length > 1 && (
         <span
           className="mono"
-          style={{ alignSelf: "center", fontSize: 10, color: "var(--fg-3)", padding: "0 10px" }}
+          style={{
+            alignSelf: "center",
+            fontSize: "var(--fs-10)",
+            color: "var(--fg-3)",
+            padding: "0 10px",
+          }}
         >
           {groups.length} groups
         </span>
@@ -108,7 +113,7 @@ function GroupTab({
         color: fg,
         cursor: "pointer",
         position: "relative",
-        fontSize: 12,
+        fontSize: "var(--fs-12)",
       }}
     >
       <ColorDot
@@ -158,7 +163,7 @@ function GroupTab({
         <span
           className="mono"
           style={{
-            fontSize: 10,
+            fontSize: "var(--fs-10)",
             color: full ? "var(--wait)" : "var(--fg-3)",
             background: full ? "color-mix(in oklab, var(--wait) 14%, transparent)" : "transparent",
             border: full ? "1px solid color-mix(in oklab, var(--wait) 30%, transparent)" : "none",

@@ -288,7 +288,7 @@ export function SessionDetail({ session }: { session: string }) {
               borderRadius: 6,
               color: "var(--fg-2)",
               cursor: "pointer",
-              fontSize: 11.5,
+              fontSize: "var(--fs-12)",
             }}
           >
             <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>{Ico.arrowR}</span>
@@ -297,7 +297,7 @@ export function SessionDetail({ session }: { session: string }) {
         </Tip>
         <span
           className="lbl"
-          style={{ fontSize: 10, color: "var(--fg-3)", letterSpacing: "0.08em" }}
+          style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)", letterSpacing: "0.08em" }}
         >
           INSPECT · DIFF
         </span>
@@ -306,10 +306,13 @@ export function SessionDetail({ session }: { session: string }) {
 
         <StatusDot status={running ? "live" : "off"} pulse={running} />
         <AgentGlyph agent={meta.cli} size={14} color={accent} />
-        <span className="mono" style={{ fontSize: 13, color: "var(--fg-0)", fontWeight: 500 }}>
+        <span
+          className="mono"
+          style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", fontWeight: 500 }}
+        >
           {meta.alias}
         </span>
-        <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
           {spec.label}
           {version && ` · ${version}`}
         </span>
@@ -324,7 +327,7 @@ export function SessionDetail({ session }: { session: string }) {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 5,
-                fontSize: 11,
+                fontSize: "var(--fs-11)",
                 color: "var(--fg-2)",
               }}
             >
@@ -345,7 +348,12 @@ export function SessionDetail({ session }: { session: string }) {
         {usage && (
           <span
             className="mono tnum"
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11 }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: "var(--fs-11)",
+            }}
           >
             <Metric label="ctx" value={fmtTokens(usage.contextUsed)} />
             <Metric label="turn" value={String(usage.turns)} />
@@ -370,7 +378,7 @@ export function SessionDetail({ session }: { session: string }) {
               border: "1px solid color-mix(in oklab, var(--err) 42%, var(--bd))",
               background: "color-mix(in oklab, var(--err) 9%, transparent)",
               color: "var(--err)",
-              fontSize: 11.5,
+              fontSize: "var(--fs-12)",
               cursor: "pointer",
             }}
           >
@@ -403,7 +411,7 @@ export function SessionDetail({ session }: { session: string }) {
             gap: 8,
           }}
         >
-          <span className="mono tnum" style={{ fontSize: 12, fontWeight: 500 }}>
+          <span className="mono tnum" style={{ fontSize: "var(--fs-12)", fontWeight: 500 }}>
             <span style={{ color: "var(--live)" }}>+{counts.added}</span>{" "}
             <span style={{ color: "var(--err)" }}>−{counts.removed}</span>
             <span style={{ color: "var(--fg-3)" }}>
@@ -488,7 +496,7 @@ export function SessionDetail({ session }: { session: string }) {
               className="mono"
               style={{
                 padding: "5px 16px",
-                fontSize: 11,
+                fontSize: "var(--fs-11)",
                 color: note.kind === "ok" ? "var(--live)" : "var(--err)",
                 borderBottom: "1px solid var(--bd-soft)",
                 wordBreak: "break-word",
@@ -561,7 +569,7 @@ export function SessionDetail({ session }: { session: string }) {
                   Cancel
                 </FooterBtn>
               </div>
-              <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+              <span className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
                 Pushes the current branch to origin, then opens a PR via the GitHub API.
               </span>
             </div>
@@ -574,7 +582,7 @@ export function SessionDetail({ session }: { session: string }) {
               padding: "10px 16px",
             }}
           >
-            <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+            <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
               {filterLabel[filter]} · <span style={{ color: "var(--live)" }}>+{counts.added}</span>{" "}
               <span style={{ color: "var(--err)" }}>−{counts.removed}</span>
             </span>
@@ -617,7 +625,7 @@ export function SessionDetail({ session }: { session: string }) {
           alignItems: "center",
           padding: "0 12px",
           gap: 14,
-          fontSize: 11,
+          fontSize: "var(--fs-11)",
           color: "var(--fg-2)",
         }}
       >
@@ -658,7 +666,10 @@ function FileTree({
         overflow: "auto",
       }}
     >
-      <div className="lbl" style={{ padding: "10px 12px 6px", fontSize: 10, color: "var(--fg-3)" }}>
+      <div
+        className="lbl"
+        style={{ padding: "10px 12px 6px", fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+      >
         Files · {files.length}
       </div>
       {files.map((f) => {
@@ -690,7 +701,7 @@ function FileTree({
                 <div
                   className="mono"
                   style={{
-                    fontSize: 11.5,
+                    fontSize: "var(--fs-12)",
                     color: isActive ? "var(--fg-0)" : "var(--fg-1)",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -703,7 +714,7 @@ function FileTree({
                   <div
                     className="mono"
                     style={{
-                      fontSize: 10,
+                      fontSize: "var(--fs-10)",
                       color: "var(--fg-3)",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -716,7 +727,7 @@ function FileTree({
               </div>
               <span
                 className="mono tnum"
-                style={{ fontSize: 10, flexShrink: 0, display: "inline-flex", gap: 4 }}
+                style={{ fontSize: "var(--fs-10)", flexShrink: 0, display: "inline-flex", gap: 4 }}
               >
                 {f.added > 0 && <span style={{ color: "var(--live)" }}>+{f.added}</span>}
                 {f.removed > 0 && <span style={{ color: "var(--err)" }}>-{f.removed}</span>}
@@ -769,7 +780,7 @@ function Pill({
       className="mono"
       style={{
         padding: "3px 9px",
-        fontSize: 11,
+        fontSize: "var(--fs-11)",
         borderRadius: 5,
         border: "1px solid var(--bd-soft)",
         background: active ? "var(--bg-3)" : "transparent",
@@ -804,13 +815,13 @@ function FooterBtn({
       size="sm"
       onClick={onClick}
       disabled={disabled}
-      className="h-auto gap-1.5 px-2.5 py-[5px] font-mono text-[11.5px]"
+      className="h-auto gap-1.5 px-2.5 py-[5px] font-mono text-[12px]"
     >
       {children}
       {kbd && (
         <span
           style={{
-            fontSize: 9.5,
+            fontSize: "var(--fs-10)",
             padding: "1px 4px",
             borderRadius: 3,
             background: pri ? "color-mix(in oklab, var(--bg-0) 22%, transparent)" : "var(--bg-2)",

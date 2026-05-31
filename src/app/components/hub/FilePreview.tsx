@@ -77,7 +77,7 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
             <span
               className="mono"
               style={{
-                fontSize: 12,
+                fontSize: "var(--fs-12)",
                 fontWeight: 500,
                 color: "var(--fg-0)",
                 flex: 1,
@@ -96,7 +96,7 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
             <span
               className="mono"
               style={{
-                fontSize: 10,
+                fontSize: "var(--fs-10)",
                 color: "var(--fg-3)",
                 padding: "1px 5px",
                 borderRadius: 3,
@@ -119,7 +119,7 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
             minHeight: 0,
             overflow: "auto",
             fontFamily: "var(--mono)",
-            fontSize: 11.5,
+            fontSize: "var(--fs-12)",
             lineHeight: 1.55,
             background: "var(--bg-0)",
           }}
@@ -160,7 +160,7 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
             alignItems: "center",
             gap: 7,
             fontFamily: "var(--mono)",
-            fontSize: 10,
+            fontSize: "var(--fs-10)",
             color: "var(--fg-3)",
             minHeight: 28,
           }}
@@ -203,7 +203,7 @@ function LineNumbers({ count }: { count: number }) {
         textAlign: "right",
         color: "var(--fg-4, var(--fg-3))",
         opacity: 0.4,
-        fontSize: 10.5,
+        fontSize: "var(--fs-11)",
         lineHeight: 1.55,
         userSelect: "none",
         borderRight: "1px solid var(--bd-soft)",
@@ -221,7 +221,12 @@ function Note({ children }: { children: ReactNode }) {
   return (
     <div
       className="mono"
-      style={{ padding: "20px 14px", fontSize: 11, color: "var(--fg-3)", lineHeight: 1.5 }}
+      style={{
+        padding: "20px 14px",
+        fontSize: "var(--fs-11)",
+        color: "var(--fg-3)",
+        lineHeight: 1.5,
+      }}
     >
       {children}
     </div>

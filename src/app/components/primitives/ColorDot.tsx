@@ -164,7 +164,7 @@ export function ColorDot({
                     gridColumn: "1 / -1",
                     marginTop: 2,
                     padding: "4px 6px",
-                    fontSize: 11,
+                    fontSize: "var(--fs-11)",
                     borderRadius: 5,
                     border: !selected ? "1px solid var(--fg-2)" : "1px solid var(--bd)",
                     background: "var(--bg-1)",

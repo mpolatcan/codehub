@@ -48,7 +48,7 @@ export function PaneAddBtn({
       >
         {Ico[m.icon]}
         {showLabel && (
-          <span style={{ fontSize: 11, fontFamily: "var(--mono)", fontWeight: 500 }}>
+          <span style={{ fontSize: "var(--fs-11)", fontFamily: "var(--mono)", fontWeight: 500 }}>
             {m.label}
           </span>
         )}

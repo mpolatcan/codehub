@@ -34,7 +34,7 @@ export function WorkspaceBar() {
         borderTop: "1px solid var(--bd-soft)",
         background: "var(--bg-1)",
         fontFamily: "var(--mono)",
-        fontSize: 11,
+        fontSize: "var(--fs-11)",
         color: "var(--fg-2)",
       }}
     >

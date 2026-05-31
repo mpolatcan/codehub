@@ -83,7 +83,7 @@ export function IntegrationsPane() {
       <h1
         style={{
           margin: "0 0 4px",
-          fontSize: 22,
+          fontSize: "var(--fs-20)",
           fontWeight: 600,
           letterSpacing: "-0.01em",
           color: "var(--fg-0)",
@@ -91,7 +91,7 @@ export function IntegrationsPane() {
       >
         Integrations
       </h1>
-      <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: 13 }}>
+      <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: "var(--fs-13)" }}>
         Connect external services so agents can read context and act on your behalf. Connections are
         surfaced presence-only — no credential value is read or stored. GitHub uses a
         keychain-backed token; the Claude account + MCP config is read from the runtime container.
@@ -215,21 +215,23 @@ function GitHubCard({
             justifyContent: "center",
             color: "var(--fg-0)",
             fontWeight: 700,
-            fontSize: 17,
+            fontSize: "var(--fs-16)",
           }}
         >
           gh
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--fg-0)" }}>GitHub</span>
+            <span style={{ fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}>
+              GitHub
+            </span>
             {connected ? (
               <span
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 5,
-                  fontSize: 11.5,
+                  fontSize: "var(--fs-12)",
                   color: "var(--live)",
                 }}
               >
@@ -241,7 +243,7 @@ function GitHubCard({
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 5,
-                  fontSize: 11.5,
+                  fontSize: "var(--fs-12)",
                   color: "var(--wait)",
                 }}
               >
@@ -250,7 +252,7 @@ function GitHubCard({
             )}
             <Tag>${varName}</Tag>
           </div>
-          <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
+          <div className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
             {connected
               ? [
                   status?.login,
@@ -268,7 +270,7 @@ function GitHubCard({
         <>
           {/* scopes granted — only those the API reported; never fabricated */}
           <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--bd-soft)" }}>
-            <div className="lbl" style={{ marginBottom: 8, fontSize: 11 }}>
+            <div className="lbl" style={{ marginBottom: 8, fontSize: "var(--fs-11)" }}>
               Scopes granted
             </div>
             {status && status.scopes.length > 0 ? (
@@ -278,13 +280,16 @@ function GitHubCard({
                 ))}
               </div>
             ) : (
-              <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+              <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                 {status?.tokenExpiry === null && status?.login === null
                   ? "Token reachable, but the API didn't report scopes (fine-grained PATs don't list classic scopes)."
                   : "No scopes reported by the GitHub API for this token."}
               </div>
             )}
-            <div className="mono" style={{ marginTop: 8, fontSize: 11, color: "var(--fg-3)" }}>
+            <div
+              className="mono"
+              style={{ marginTop: 8, fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+            >
               Edit scopes on the token at github.com/settings/tokens — CodeHub never reads the
               value, only its presence.
             </div>
@@ -293,7 +298,7 @@ function GitHubCard({
           {/* repos visible to the connected account */}
           <div style={{ padding: "12px 18px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span className="lbl" style={{ fontSize: 11 }}>
+              <span className="lbl" style={{ fontSize: "var(--fs-11)" }}>
                 Available repositories · {repos.length}
               </span>
               <span style={{ flex: 1 }} />
@@ -314,7 +319,7 @@ function GitHubCard({
             {repos.length === 0 ? (
               <div
                 className="mono"
-                style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "4px 0" }}
+                style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "4px 0" }}
               >
                 No repositories returned for this token (it may lack repo scope, or the org has none
                 visible).
@@ -366,7 +371,14 @@ function GitHubNotConnected({ varName }: { varName: string }) {
 
   return (
     <div style={{ padding: "16px 18px" }}>
-      <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--fg-1)", lineHeight: 1.6 }}>
+      <p
+        style={{
+          margin: "0 0 14px",
+          fontSize: "var(--fs-13)",
+          color: "var(--fg-1)",
+          lineHeight: 1.6,
+        }}
+      >
         Connect GitHub so agents can clone, push, and open PRs. Choose one method:
       </p>
 
@@ -393,7 +405,7 @@ function GitHubNotConnected({ varName }: { varName: string }) {
             borderRadius: 6,
             background: "color-mix(in oklab, var(--err) 8%, var(--bg-2))",
             border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
-            fontSize: 11.5,
+            fontSize: "var(--fs-12)",
             color: "var(--err)",
           }}
         >
@@ -410,7 +422,7 @@ function GitHubNotConnected({ varName }: { varName: string }) {
           marginBottom: 8,
         }}
       >
-        <div className="lbl" style={{ marginBottom: 6, fontSize: 10 }}>
+        <div className="lbl" style={{ marginBottom: 6, fontSize: "var(--fs-10)" }}>
           or use an environment variable
         </div>
         <div
@@ -420,13 +432,16 @@ function GitHubNotConnected({ varName }: { varName: string }) {
             background: "var(--bg-0)",
             border: "1px solid var(--bd)",
             borderRadius: 5,
-            fontSize: 11,
+            fontSize: "var(--fs-11)",
             color: "var(--fg-1)",
           }}
         >
           export {varName}=ghp_your_token_here
         </div>
-        <p className="mono" style={{ margin: "8px 0 0", fontSize: 10, color: "var(--fg-3)" }}>
+        <p
+          className="mono"
+          style={{ margin: "8px 0 0", fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+        >
           Export it in your shell before launching CodeHub. Fine-grained PAT with repo + PR access.
         </p>
       </div>
@@ -459,13 +474,13 @@ function GitHubCapabilityStrip({ status }: { status: GithubStatus | null }) {
         display: "flex",
         alignItems: "center",
         gap: 14,
-        fontSize: 12,
+        fontSize: "var(--fs-12)",
         color: "var(--fg-2)",
         fontFamily: "var(--mono)",
         flexWrap: "wrap",
       }}
     >
-      <span className="lbl" style={{ fontSize: 11 }}>
+      <span className="lbl" style={{ fontSize: "var(--fs-11)" }}>
         agents can
       </span>
       <Capability label="clone" ok />
@@ -502,7 +517,7 @@ function ScopeChip({ label }: { label: string }) {
         gap: 5,
         padding: "3px 8px",
         borderRadius: 4,
-        fontSize: 10.5,
+        fontSize: "var(--fs-11)",
         color: "var(--live)",
         background: "color-mix(in oklab, var(--live) 10%, transparent)",
         border: "1px solid color-mix(in oklab, var(--live) 30%, transparent)",
@@ -546,14 +561,14 @@ function RepoRow({ repo, last }: { repo: GithubRepo; last: boolean }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
           {owner && (
-            <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+            <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
               {owner}/
             </span>
           )}
           <span
             className="mono"
             style={{
-              fontSize: 12.5,
+              fontSize: "var(--fs-13)",
               color: "var(--fg-0)",
               fontWeight: 500,
               overflow: "hidden",
@@ -566,14 +581,14 @@ function RepoRow({ repo, last }: { repo: GithubRepo; last: boolean }) {
           {repo.private && <Tag>private</Tag>}
         </div>
         {repo.defaultBranch && (
-          <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+          <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
             default: {repo.defaultBranch}
           </div>
         )}
       </div>
       <span
         className="mono tnum"
-        style={{ fontSize: 11, color: "var(--fg-2)", whiteSpace: "nowrap" }}
+        style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)", whiteSpace: "nowrap" }}
       >
         {repo.openPrs == null ? "— PRs" : `${repo.openPrs} PR${repo.openPrs === 1 ? "" : "s"} open`}
       </span>
@@ -599,7 +614,7 @@ function SoonRow({ name, desc }: { name: string; desc: string }) {
           border: "1px solid var(--bd)",
           color: "var(--fg-2)",
           fontWeight: 700,
-          fontSize: 13,
+          fontSize: "var(--fs-13)",
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
@@ -609,10 +624,15 @@ function SoonRow({ name, desc }: { name: string; desc: string }) {
         {name[0]}
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, color: "var(--fg-1)", fontWeight: 500 }}>{name}</div>
-        <div style={{ fontSize: 11, color: "var(--fg-2)" }}>{desc}</div>
+        <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-1)", fontWeight: 500 }}>
+          {name}
+        </div>
+        <div style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>{desc}</div>
       </div>
-      <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", whiteSpace: "nowrap" }}>
+      <span
+        className="mono"
+        style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", whiteSpace: "nowrap" }}
+      >
         Coming soon
       </span>
     </div>
@@ -638,10 +658,10 @@ function ClaudeBody({ data, empty }: { data?: ClaudeIntegrations; empty?: string
           <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px" }}>
             <AgentGlyph agent="claude" size={20} color="var(--a-claude)" />
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 500, color: "var(--fg-0)" }}>
+              <div style={{ fontSize: "var(--fs-14)", fontWeight: 500, color: "var(--fg-0)" }}>
                 {acct.name ?? acct.email ?? "Claude"}
               </div>
-              <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
+              <div className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
                 {acct.email ?? "—"}
               </div>
             </div>
@@ -672,7 +692,12 @@ function ClaudeBody({ data, empty }: { data?: ClaudeIntegrations; empty?: string
                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px" }}
               >
                 <span
-                  style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)", flexShrink: 0 }}
+                  style={{
+                    fontSize: "var(--fs-13)",
+                    fontWeight: 500,
+                    color: "var(--fg-0)",
+                    flexShrink: 0,
+                  }}
                 >
                   {s.name}
                 </span>
@@ -688,7 +713,7 @@ function ClaudeBody({ data, empty }: { data?: ClaudeIntegrations; empty?: string
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
-                      fontSize: 11,
+                      fontSize: "var(--fs-11)",
                       color: "var(--fg-3)",
                     }}
                   >
@@ -701,7 +726,10 @@ function ClaudeBody({ data, empty }: { data?: ClaudeIntegrations; empty?: string
         )}
       </Card>
 
-      <p className="mono" style={{ margin: "2px 4px", fontSize: 10.5, color: "var(--fg-3)" }}>
+      <p
+        className="mono"
+        style={{ margin: "2px 4px", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+      >
         Claude-only: Codex and Antigravity have no readable connection config, so they're not shown
         here rather than guessed.
       </p>
@@ -722,7 +750,7 @@ function fmtExpiry(s: string): string {
 function SectionHead({ label }: { label: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 12px" }}>
-      <span className="lbl" style={{ color: "var(--fg-1)", fontSize: 11 }}>
+      <span className="lbl" style={{ color: "var(--fg-1)", fontSize: "var(--fs-11)" }}>
         {label}
       </span>
       <span style={{ flex: 1, height: 1, background: "var(--bd-soft)" }} />
@@ -750,10 +778,12 @@ function Card({
           gap: 10,
         }}
       >
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>{title}</span>
+        <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
+          {title}
+        </span>
         <span style={{ flex: 1 }} />
         {count !== undefined && (
-          <span className="mono tnum" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+          <span className="mono tnum" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
             {count}
           </span>
         )}
@@ -767,7 +797,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, textAlign: "right" }}>
       <span className="lbl">{label}</span>
-      <span className="mono" style={{ fontSize: 12, color: "var(--fg-0)" }}>
+      <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-0)" }}>
         {value ?? "—"}
       </span>
     </div>
@@ -780,7 +810,7 @@ function Chip({ children, muted }: { children: React.ReactNode; muted?: boolean 
       className="mono"
       style={{
         flexShrink: 0,
-        fontSize: 9.5,
+        fontSize: "var(--fs-10)",
         padding: "1px 6px",
         borderRadius: 4,
         border: "1px solid var(--bd-soft)",
@@ -796,7 +826,12 @@ function Empty({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="mono"
-      style={{ padding: "20px 16px", fontSize: 11.5, color: "var(--fg-3)", lineHeight: 1.6 }}
+      style={{
+        padding: "20px 16px",
+        fontSize: "var(--fs-12)",
+        color: "var(--fg-3)",
+        lineHeight: 1.6,
+      }}
     >
       {children}
     </div>
@@ -807,7 +842,12 @@ function Note({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="mono"
-      style={{ padding: "28px 16px", textAlign: "center", fontSize: 12, color: "var(--fg-3)" }}
+      style={{
+        padding: "28px 16px",
+        textAlign: "center",
+        fontSize: "var(--fs-12)",
+        color: "var(--fg-3)",
+      }}
     >
       {children}
     </div>

@@ -213,8 +213,10 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
           }}
         >
           <span style={{ color: "var(--idle)", display: "inline-flex" }}>{Ico.files}</span>
-          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>Files</span>
-          <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+          <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
+            Files
+          </span>
+          <span className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
             {Array.isArray(root) ? rootRows.length : "…"}
           </span>
           <span style={{ flex: 1 }} />
@@ -225,7 +227,7 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
 
         <div style={{ padding: "8px 10px 6px" }}>
           <Input
-            className="mono h-auto rounded-[5px] px-2 py-1 text-[11.5px]"
+            className="mono h-auto rounded-[5px] px-2 py-1 text-[12px]"
             placeholder="filter by name…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -255,7 +257,7 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
             alignItems: "center",
             gap: 7,
             fontFamily: "var(--mono)",
-            fontSize: 10,
+            fontSize: "var(--fs-10)",
             color: "var(--fg-3)",
             minHeight: 28,
           }}
@@ -348,7 +350,7 @@ function TreeNode({
             cursor: "pointer",
             textAlign: "left",
             fontFamily: "var(--mono)",
-            fontSize: 11.5,
+            fontSize: "var(--fs-12)",
           }}
         >
           {/* chevron gutter — only for dirs (files get an equal spacer to align) */}
@@ -401,7 +403,10 @@ function TreeNode({
             </Tip>
           )}
           {!isDir && entry.size > 0 && (
-            <span className="tnum" style={{ flexShrink: 0, fontSize: 10, color: "var(--fg-3)" }}>
+            <span
+              className="tnum"
+              style={{ flexShrink: 0, fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+            >
               {fmtBytes(entry.size)}
             </span>
           )}
@@ -413,7 +418,7 @@ function TreeNode({
                   flexShrink: 0,
                   width: 12,
                   textAlign: "center",
-                  fontSize: 10.5,
+                  fontSize: "var(--fs-11)",
                   fontWeight: 600,
                   color: decor.color,
                 }}
@@ -495,7 +500,7 @@ function Leaf({ depth, children }: { depth: number; children: ReactNode }) {
       className="mono"
       style={{
         padding: `2px 6px 2px ${depth * INDENT + 24}px`,
-        fontSize: 10.5,
+        fontSize: "var(--fs-11)",
         color: "var(--fg-3)",
       }}
     >
@@ -508,7 +513,12 @@ function Note({ children }: { children: ReactNode }) {
   return (
     <div
       className="mono"
-      style={{ padding: "20px 14px", fontSize: 11, color: "var(--fg-3)", lineHeight: 1.5 }}
+      style={{
+        padding: "20px 14px",
+        fontSize: "var(--fs-11)",
+        color: "var(--fg-3)",
+        lineHeight: 1.5,
+      }}
     >
       {children}
     </div>

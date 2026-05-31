@@ -248,7 +248,7 @@ export function ShellPanel() {
             {tabs.length === 0 && !loading ? (
               <span
                 className="mono"
-                style={{ fontSize: 11, color: "var(--fg-3)", padding: "2px 8px" }}
+                style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", padding: "2px 8px" }}
               >
                 workspace shell
               </span>
@@ -339,7 +339,7 @@ function ShellTabBtn({
         height: 24,
         borderRadius: 6,
         fontFamily: "var(--mono)",
-        fontSize: 12,
+        fontSize: "var(--fs-12)",
         background: dropTarget
           ? "color-mix(in oklab, var(--pri) 20%, var(--bg-3))"
           : active
@@ -378,7 +378,7 @@ function ShellTabBtn({
             }
             e.stopPropagation();
           }}
-          style={{ width: 76, fontSize: 12 }}
+          style={{ width: 76, fontSize: "var(--fs-12)" }}
         />
       ) : (
         <>
@@ -444,7 +444,7 @@ function ShellEmpty({
         alignItems: "center",
         justifyContent: "center",
         color: err ? "var(--err)" : "var(--fg-3)",
-        fontSize: 12,
+        fontSize: "var(--fs-12)",
         padding: 18,
         textAlign: "center",
       }}

@@ -311,10 +311,17 @@ export function Dashboard() {
       {/* header */}
       <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--bd-soft)" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
-          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-0.01em" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "var(--fs-20)",
+              fontWeight: 600,
+              letterSpacing: "-0.01em",
+            }}
+          >
             Dashboard
           </h1>
-          <span className="mono" style={{ fontSize: 12.5, color: "var(--fg-2)" }}>
+          <span className="mono" style={{ fontSize: "var(--fs-13)", color: "var(--fg-2)" }}>
             {headerSub}
           </span>
           <span style={{ flex: 1 }} />
@@ -415,7 +422,9 @@ export function Dashboard() {
               gap: 12,
             }}
           >
-            <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg-0)" }}>Sessions</span>
+            <span style={{ fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}>
+              Sessions
+            </span>
             <div style={{ display: "flex", gap: 4 }}>
               <FilterBtn label="All" active={filter === "all"} onClick={() => setFilter("all")} />
               <FilterBtn
@@ -426,7 +435,7 @@ export function Dashboard() {
             </div>
             <span style={{ flex: 1 }} />
             {running && stats && (
-              <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+              <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
                 {status?.name ?? "runtime"}
                 <span style={{ color: "var(--fg-3)" }}>
                   {" · "}cpu {Math.min(100, stats.cpuPct).toFixed(0)}% · mem{" "}
@@ -434,7 +443,7 @@ export function Dashboard() {
                 </span>
               </span>
             )}
-            <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+            <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
               {running ? `updated ${fmtSince(updatedAt)}` : "runtime offline"}
             </span>
           </div>
@@ -447,7 +456,7 @@ export function Dashboard() {
                 alignItems: "center",
                 justifyContent: "center",
                 padding: "34px 24px",
-                fontSize: 12.5,
+                fontSize: "var(--fs-13)",
                 lineHeight: 1.5,
                 textAlign: "center",
                 color: "var(--fg-3)",
@@ -458,7 +467,7 @@ export function Dashboard() {
                 : "No sessions match this filter."}
             </div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-13)" }}>
               <thead>
                 <tr>
                   <Th>Session</Th>
@@ -532,7 +541,10 @@ export function Dashboard() {
                         </Tip>
                       </Td>
                       <Td>
-                        <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+                        <span
+                          className="mono"
+                          style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}
+                        >
                           {git?.isRepo ? (git.branch ?? "(detached)") : "—"}
                         </span>
                       </Td>
@@ -545,7 +557,10 @@ export function Dashboard() {
                             width={64}
                           />
                         ) : (
-                          <span className="mono" style={{ fontSize: 12, color: "var(--fg-3)" }}>
+                          <span
+                            className="mono"
+                            style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)" }}
+                          >
                             —
                           </span>
                         )}
@@ -590,8 +605,10 @@ export function Dashboard() {
             animationDelay: "210ms",
           }}
         >
-          <span style={{ fontSize: 16, fontWeight: 600, color: "var(--fg-0)" }}>Analytics</span>
-          <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+          <span style={{ fontSize: "var(--fs-16)", fontWeight: 600, color: "var(--fg-0)" }}>
+            Analytics
+          </span>
+          <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
             {running
               ? `${totalSessions} session${totalSessions === 1 ? "" : "s"} · ${totalTurns} turn${totalTurns === 1 ? "" : "s"} · ${fmtUsd(totalCost)} est · token counts factual, cost estimated`
               : `runtime ${state}`}
@@ -631,10 +648,10 @@ export function Dashboard() {
               flexWrap: "wrap",
             }}
           >
-            <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg-0)" }}>
+            <span style={{ fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}>
               Activity · last 24h
             </span>
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
+            <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
               turns / hour
             </span>
             <span style={{ flex: 1 }} />
@@ -716,11 +733,11 @@ export function Dashboard() {
                   }}
                 >
                   <AgentGlyph agent="antigravity" size={18} color="var(--a-antigravity)" />
-                  <span style={{ fontSize: 12.5, color: "var(--fg-1)" }}>
+                  <span style={{ fontSize: "var(--fs-13)", color: "var(--fg-1)" }}>
                     {AGENT_META.antigravity.name}
                   </span>
                   <span style={{ flex: 1 }} />
-                  <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                  <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                     not installed in runtime image · no usage data
                   </span>
                 </div>
@@ -812,7 +829,7 @@ function ActivityChart({
             width: GUTTER,
             height: PLOT,
             flexShrink: 0,
-            fontSize: 10.5,
+            fontSize: "var(--fs-11)",
             color: "var(--fg-3)",
           }}
         >
@@ -901,7 +918,7 @@ function ActivityChart({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 12,
+                fontSize: "var(--fs-12)",
                 color: "var(--fg-3)",
                 textAlign: "center",
               }}
@@ -922,7 +939,7 @@ function ActivityChart({
           marginTop: 8,
           paddingLeft: GUTTER + 8,
           fontFamily: "var(--mono)",
-          fontSize: 10.5,
+          fontSize: "var(--fs-11)",
           color: "var(--fg-3)",
         }}
       >
@@ -951,7 +968,7 @@ function Th({ children, align }: { children?: React.ReactNode; align?: "left" | 
         padding: "9px 14px",
         fontWeight: 500,
         color: "var(--fg-2)",
-        fontSize: 11,
+        fontSize: "var(--fs-11)",
         letterSpacing: "0.07em",
         textTransform: "uppercase",
         borderBottom: "1px solid var(--bd-soft)",
@@ -977,7 +994,7 @@ function Legend({ color, label }: { color: string; label: string }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 6,
-        fontSize: 11.5,
+        fontSize: "var(--fs-12)",
         color: "var(--fg-1)",
       }}
     >
@@ -1027,7 +1044,7 @@ function Metric({
           ? "var(--wait)"
           : "var(--live)";
   const subEl = sub ? (
-    <div className="mono" style={{ fontSize: 11.5, color: accentColor ?? "var(--fg-3)" }}>
+    <div className="mono" style={{ fontSize: "var(--fs-12)", color: accentColor ?? "var(--fg-3)" }}>
       {sub}
     </div>
   ) : null;
@@ -1042,14 +1059,14 @@ function Metric({
         animationDelay: `${delay}ms`,
       }}
     >
-      <div className="lbl" style={{ fontSize: 11 }}>
+      <div className="lbl" style={{ fontSize: "var(--fs-11)" }}>
         {label}
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span
           className="mono tnum"
           style={{
-            fontSize: 27,
+            fontSize: "var(--fs-26)",
             fontWeight: 500,
             letterSpacing: "-0.02em",
             color: value ? (accentColor ?? "var(--fg-0)") : "var(--fg-3)",
@@ -1142,7 +1159,7 @@ function Pips({ statuses }: { statuses: StatusKey[] }) {
         />
       ))}
       {statuses.length > shown.length && (
-        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
           +{statuses.length - shown.length}
         </span>
       )}
@@ -1285,10 +1302,10 @@ function AgentUsageCard({
       >
         <AgentGlyph agent={agent} size={24} color={accent} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg-0)" }}>
+          <div style={{ fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}>
             {AGENT_META[agent].name}
           </div>
-          <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+          <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
             {plan ? plan : agent === "claude" ? "subscription / API" : "—"}
           </div>
         </div>
@@ -1326,7 +1343,7 @@ function AgentUsageCard({
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div
               className="lbl-soft"
-              style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}
+              style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--fs-11)" }}
             >
               <span>tokens / day</span>
               <span style={{ color: "var(--fg-2)" }}>
@@ -1379,14 +1396,14 @@ function AgentUsageCard({
             alignItems: "center",
             gap: 10,
             flexWrap: "wrap",
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
             color: tone === "over" ? "var(--err)" : tone === "warn" ? "var(--wait)" : "var(--fg-2)",
           }}
         >
           <span
             style={{
               fontFamily: "var(--mono)",
-              fontSize: 10.5,
+              fontSize: "var(--fs-11)",
               color: "var(--fg-3)",
               textTransform: "uppercase",
               letterSpacing: "0.08em",
@@ -1396,11 +1413,11 @@ function AgentUsageCard({
           </span>
           <span>{forecastText(agent, rateMeters)}</span>
           <span style={{ flex: 1 }} />
-          <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+          <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
             ≈ {fmtUsd(usage.estCostUsd)} est · rates {usage.ratesAsOf}
           </span>
           {usage.unpricedTokens > 0 && (
-            <span className="mono" style={{ fontSize: 10.5, color: "var(--wait)" }}>
+            <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--wait)" }}>
               · {fmtNum(usage.unpricedTokens)} unpriced excluded
             </span>
           )}
@@ -1417,7 +1434,7 @@ function HeadStat({ label, value, accent }: { label: string; value: string; acce
       <span
         className="mono"
         style={{
-          fontSize: 10.5,
+          fontSize: "var(--fs-11)",
           color: "var(--fg-3)",
           textTransform: "uppercase",
           letterSpacing: "0.06em",
@@ -1427,7 +1444,11 @@ function HeadStat({ label, value, accent }: { label: string; value: string; acce
       </span>
       <span
         className="mono tnum"
-        style={{ fontSize: 14, fontWeight: 500, color: accent ? "var(--fg-0)" : "var(--fg-1)" }}
+        style={{
+          fontSize: "var(--fs-14)",
+          fontWeight: 500,
+          color: accent ? "var(--fg-0)" : "var(--fg-1)",
+        }}
       >
         {value}
       </span>
@@ -1454,7 +1475,7 @@ function DayChart({ days, color }: { days: { date: string; tokens: number }[]; c
           width: 34,
           height: PLOT,
           flexShrink: 0,
-          fontSize: 10,
+          fontSize: "var(--fs-10)",
           color: "var(--fg-3)",
         }}
       >
@@ -1515,7 +1536,7 @@ function DayChart({ days, color }: { days: { date: string; tokens: number }[]; c
             gap: 4,
             marginTop: 6,
             fontFamily: "var(--mono)",
-            fontSize: 10,
+            fontSize: "var(--fs-10)",
             color: "var(--fg-3)",
           }}
         >
@@ -1547,7 +1568,7 @@ function RateMeter({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span className="mono" style={{ fontSize: 11.5, color: "var(--fg-1)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-1)" }}>
           {label}
           {windowMinutes !== null && (
             <span style={{ color: "var(--fg-3)" }}> · {fmtWindow(windowMinutes)}</span>
@@ -1556,7 +1577,7 @@ function RateMeter({
         <span style={{ flex: 1 }} />
         <span
           className="mono tnum"
-          style={{ fontSize: 12.5, color: "var(--fg-0)", fontWeight: 500 }}
+          style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", fontWeight: 500 }}
         >
           {usedPct.toFixed(usedPct < 10 ? 1 : 0)}%
         </span>
@@ -1564,7 +1585,7 @@ function RateMeter({
       <div style={{ height: 5, background: "var(--bg-3)", borderRadius: 999, overflow: "hidden" }}>
         <div style={{ width: `${pct * 100}%`, height: "100%", background: color }} />
       </div>
-      <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+      <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
         {resetsAt ? `resets ${fmtResets(resetsAt)}` : "no reset time on disk"}
       </div>
     </div>
@@ -1629,12 +1650,14 @@ function ModelBar({
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
             color: "var(--fg-0)",
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
           }}
         >
           {model}
           {!priced && (
-            <span style={{ marginLeft: 6, fontSize: 9.5, color: "var(--fg-3)" }}>unpriced</span>
+            <span style={{ marginLeft: 6, fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
+              unpriced
+            </span>
           )}
         </span>
       </Tip>
@@ -1682,7 +1705,7 @@ function NumCell({
         width: wide ? 80 : 56,
         textAlign: "right",
         flexShrink: 0,
-        fontSize: head ? undefined : 12,
+        fontSize: head ? undefined : "var(--fs-12)",
         color: head ? undefined : "var(--fg-1)",
       }}
     >
@@ -1694,10 +1717,13 @@ function NumCell({
 function UsageStat({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span className="lbl-soft" style={{ fontSize: 11 }}>
+      <span className="lbl-soft" style={{ fontSize: "var(--fs-11)" }}>
         {label}
       </span>
-      <span className="mono tnum" style={{ fontSize: 17, color: "var(--fg-0)", fontWeight: 500 }}>
+      <span
+        className="mono tnum"
+        style={{ fontSize: "var(--fs-16)", color: "var(--fg-0)", fontWeight: 500 }}
+      >
         {value}
       </span>
     </div>
@@ -1729,10 +1755,10 @@ function EmptyAgentCard({
       >
         <AgentGlyph agent={agent} size={24} color={accent} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg-0)" }}>
+          <div style={{ fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}>
             {AGENT_META[agent].name}
           </div>
-          <div className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+          <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
             waiting for recorded usage · {source}
           </div>
         </div>
@@ -1753,7 +1779,10 @@ function EmptyAgentCard({
           <UsageStat label="Cache" value="—" />
           <UsageStat label={agent === "codex" ? "Reasoning" : "Tokens"} value="—" />
         </div>
-        <div className="mono" style={{ fontSize: 12, color: "var(--fg-2)", lineHeight: 1.5 }}>
+        <div
+          className="mono"
+          style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)", lineHeight: 1.5 }}
+        >
           {note}
           {rateNote ? ` · ${rateNote}` : ""}
         </div>
@@ -1766,7 +1795,12 @@ function UsageNote({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="mono ch-card"
-      style={{ padding: "40px 16px", textAlign: "center", fontSize: 12, color: "var(--fg-3)" }}
+      style={{
+        padding: "40px 16px",
+        textAlign: "center",
+        fontSize: "var(--fs-12)",
+        color: "var(--fg-3)",
+      }}
     >
       {children}
     </div>

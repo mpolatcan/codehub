@@ -74,7 +74,7 @@ export function PaneFoot({ session }: { session: string }) {
             minWidth: 0,
             maxWidth: 160,
             fontFamily: "var(--mono)",
-            fontSize: 11,
+            fontSize: "var(--fs-11)",
             color: "var(--fg-2)",
           }}
         >

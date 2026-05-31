@@ -211,7 +211,7 @@ export default function DevPreview() {
                 border: "1px solid var(--bd)",
                 background: screen === s.key ? "var(--bg-3)" : "transparent",
                 color: screen === s.key ? "var(--fg-0)" : "var(--fg-2)",
-                fontSize: 12,
+                fontSize: "var(--fs-12)",
                 cursor: "pointer",
               }}
             >
@@ -229,7 +229,7 @@ export default function DevPreview() {
             border: "1px solid var(--bd)",
             background: "var(--bg-3)",
             color: "var(--fg-0)",
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
             cursor: "pointer",
           }}
         >

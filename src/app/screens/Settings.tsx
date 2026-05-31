@@ -139,7 +139,14 @@ export function Settings({ initialAgentDetail }: SettingsProps) {
         }}
         className="scroll"
       >
-        <h2 style={{ margin: "0 6px 14px", fontSize: 17, fontWeight: 600, color: "var(--fg-0)" }}>
+        <h2
+          style={{
+            margin: "0 6px 14px",
+            fontSize: "var(--fs-16)",
+            fontWeight: 600,
+            color: "var(--fg-0)",
+          }}
+        >
           Settings
         </h2>
         {NAV_GROUPS.map((group) => (
@@ -162,7 +169,7 @@ export function Settings({ initialAgentDetail }: SettingsProps) {
                   padding: "7px 10px",
                   borderRadius: 6,
                   border: "none",
-                  fontSize: 12.5,
+                  fontSize: "var(--fs-13)",
                   fontFamily: "var(--sans)",
                   color: item.soon
                     ? "var(--fg-3)"
@@ -178,7 +185,7 @@ export function Settings({ initialAgentDetail }: SettingsProps) {
               >
                 <span style={{ flex: 1 }}>{item.label}</span>
                 {item.soon && (
-                  <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-3)" }}>
+                  <span className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
                     soon
                   </span>
                 )}
@@ -224,7 +231,7 @@ function PaneHead({ title, children }: { title: string; children: ReactNode }) {
       <h1
         style={{
           margin: "0 0 4px",
-          fontSize: 22,
+          fontSize: "var(--fs-20)",
           fontWeight: 600,
           letterSpacing: "-0.01em",
           color: "var(--fg-0)",
@@ -232,7 +239,9 @@ function PaneHead({ title, children }: { title: string; children: ReactNode }) {
       >
         {title}
       </h1>
-      <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: 13 }}>{children}</p>
+      <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: "var(--fs-13)" }}>
+        {children}
+      </p>
     </>
   );
 }
@@ -632,7 +641,7 @@ function AgentsPane({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 12,
+              fontSize: "var(--fs-12)",
               fontWeight: 600,
               color,
               flexShrink: 0,
@@ -642,13 +651,20 @@ function AgentsPane({
             {avatarInitials(p.label)}
           </div>
           <div style={{ flex: 1, minWidth: 0, opacity: off ? 0.6 : 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)", marginBottom: 2 }}>
+            <div
+              style={{
+                fontSize: "var(--fs-13)",
+                fontWeight: 500,
+                color: "var(--fg-0)",
+                marginBottom: 2,
+              }}
+            >
               {p.label}
             </div>
             <div
               className="mono"
               style={{
-                fontSize: 11,
+                fontSize: "var(--fs-11)",
                 color: "var(--fg-2)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -670,7 +686,7 @@ function AgentsPane({
               display: "inline-flex",
               alignItems: "center",
               gap: 5,
-              fontSize: 11.5,
+              fontSize: "var(--fs-12)",
               color: st.c,
               whiteSpace: "nowrap",
             }}
@@ -701,7 +717,7 @@ function AgentsPane({
             <label
               htmlFor={`rename-${p.id}`}
               className="lbl"
-              style={{ flexShrink: 0, fontSize: 10.5 }}
+              style={{ flexShrink: 0, fontSize: "var(--fs-11)" }}
             >
               Name
             </label>
@@ -723,7 +739,7 @@ function AgentsPane({
                 borderRadius: 6,
                 background: "var(--bg-0)",
                 color: "var(--fg-0)",
-                fontSize: 12.5,
+                fontSize: "var(--fs-13)",
                 fontFamily: "var(--sans)",
                 outline: "none",
               }}
@@ -807,7 +823,7 @@ function AgentsPane({
         </Tip>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 17, fontWeight: 600, color: "var(--fg-0)" }}>
+            <span style={{ fontSize: "var(--fs-16)", fontWeight: 600, color: "var(--fg-0)" }}>
               {cliSpec.label}
             </span>
             {ver?.version && <Tag>v{ver.version}</Tag>}
@@ -818,7 +834,7 @@ function AgentsPane({
                 gap: 5,
                 padding: "2px 9px",
                 borderRadius: 999,
-                fontSize: 10.5,
+                fontSize: "var(--fs-11)",
                 fontWeight: 600,
                 letterSpacing: "0.03em",
                 textTransform: "uppercase",
@@ -833,12 +849,19 @@ function AgentsPane({
               {connected ? "Connected" : "Not connected"}
             </span>
             {connected && connectionVia && (
-              <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+              <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                 via {connectionVia}
               </span>
             )}
           </div>
-          <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--fg-2)", lineHeight: 1.45 }}>
+          <p
+            style={{
+              margin: "3px 0 0",
+              fontSize: "var(--fs-12)",
+              color: "var(--fg-2)",
+              lineHeight: 1.45,
+            }}
+          >
             {AGENT_DESCRIPTIONS[selectedAgent]}
           </p>
         </div>
@@ -901,7 +924,7 @@ function AgentsPane({
               style={{
                 padding: "10px 14px",
                 margin: "0 14px 10px",
-                fontSize: 11.5,
+                fontSize: "var(--fs-12)",
                 color: loginProgress.stage === "error" ? "var(--err)" : "var(--fg-1)",
                 display: "flex",
                 flexDirection: "column",
@@ -931,7 +954,7 @@ function AgentsPane({
                     background: "var(--bg-0)",
                     border: "1px solid var(--bd)",
                     borderRadius: 6,
-                    fontSize: 18,
+                    fontSize: "var(--fs-20)",
                     fontWeight: 700,
                     letterSpacing: "0.15em",
                     color: "var(--fg-0)",
@@ -942,10 +965,14 @@ function AgentsPane({
                 </div>
               )}
               {loginProgress.url && loginProgress.stage !== "error" && (
-                <div style={{ fontSize: 10.5, color: "var(--fg-3)" }}>{loginProgress.url}</div>
+                <div style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
+                  {loginProgress.url}
+                </div>
               )}
               {loginProgress.message && loginProgress.stage !== "error" && (
-                <div style={{ fontSize: 10.5, color: "var(--fg-2)" }}>{loginProgress.message}</div>
+                <div style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
+                  {loginProgress.message}
+                </div>
               )}
             </div>
           )}
@@ -959,7 +986,7 @@ function AgentsPane({
                 borderRadius: 6,
                 background: "color-mix(in oklab, var(--live) 8%, var(--bg-2))",
                 border: "1px solid color-mix(in oklab, var(--live) 30%, var(--bd))",
-                fontSize: 11.5,
+                fontSize: "var(--fs-12)",
                 color: "var(--live)",
               }}
             >
@@ -976,7 +1003,7 @@ function AgentsPane({
                 borderRadius: 6,
                 background: "color-mix(in oklab, var(--err) 8%, var(--bg-2))",
                 border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
-                fontSize: 11.5,
+                fontSize: "var(--fs-12)",
                 color: "var(--err)",
               }}
             >
@@ -1144,7 +1171,7 @@ function AddRow({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 14,
+          fontSize: "var(--fs-14)",
           color: lit ? accent : "var(--fg-3)",
           flexShrink: 0,
           transition: "color 0.14s ease, border-color 0.14s ease, background 0.14s ease",
@@ -1154,7 +1181,7 @@ function AddRow({
       </span>
       <span
         style={{
-          fontSize: 12.5,
+          fontSize: "var(--fs-13)",
           color: lit ? "var(--fg-0)" : "var(--fg-1)",
           textAlign: "left",
           transition: "color 0.12s ease",
@@ -1273,11 +1300,13 @@ function SectionCard({
         }}
       >
         <StatusDot status={connected ? "live" : "idle"} />
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--fg-0)" }}>{title}</span>
+        <span style={{ fontSize: "var(--fs-13)", fontWeight: 600, color: "var(--fg-0)" }}>
+          {title}
+        </span>
         <span
           className="mono tnum"
           style={{
-            fontSize: 10,
+            fontSize: "var(--fs-10)",
             color: count ? "var(--fg-1)" : "var(--fg-3)",
             background: "var(--bg-3)",
             border: "1px solid var(--bd-soft)",
@@ -1290,7 +1319,7 @@ function SectionCard({
           {count}
         </span>
         <span style={{ flex: 1 }} />
-        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
           {hint}
         </span>
       </div>
@@ -1351,8 +1380,10 @@ function EmptyState({
       >
         <span style={{ display: "inline-flex", transform: "scale(1.1)" }}>{icon}</span>
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-0)" }}>{title}</div>
-      <div style={{ fontSize: 11, color: "var(--fg-2)", maxWidth: 280, lineHeight: 1.45 }}>
+      <div style={{ fontSize: "var(--fs-13)", fontWeight: 600, color: "var(--fg-0)" }}>{title}</div>
+      <div
+        style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)", maxWidth: 280, lineHeight: 1.45 }}
+      >
         {hint}
       </div>
       {cta && onCta && (
@@ -1438,7 +1469,7 @@ function ProviderRow({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 12,
+          fontSize: "var(--fs-12)",
           fontWeight: 600,
           color,
           flexShrink: 0,
@@ -1447,11 +1478,13 @@ function ProviderRow({
         {p.name[0]}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>{p.name}</div>
+        <div style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
+          {p.name}
+        </div>
         <div
           className="mono"
           style={{
-            fontSize: 10.5,
+            fontSize: "var(--fs-11)",
             color: "var(--fg-2)",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -1467,7 +1500,7 @@ function ProviderRow({
           display: "inline-flex",
           alignItems: "center",
           gap: 5,
-          fontSize: 11,
+          fontSize: "var(--fs-11)",
           color: status.c,
           whiteSpace: "nowrap",
         }}
@@ -1532,7 +1565,7 @@ function ProviderCatalogCard({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 11,
+            fontSize: "var(--fs-11)",
             fontWeight: 600,
             color: preset.custom ? "var(--fg-3)" : color,
             flexShrink: 0,
@@ -1542,7 +1575,7 @@ function ProviderCatalogCard({
         </div>
         <span
           style={{
-            fontSize: 12.5,
+            fontSize: "var(--fs-13)",
             fontWeight: 500,
             color: "var(--fg-0)",
             overflow: "hidden",
@@ -1557,7 +1590,7 @@ function ProviderCatalogCard({
           <span
             className="mono"
             style={{
-              fontSize: 9,
+              fontSize: "var(--fs-9)",
               fontWeight: 600,
               letterSpacing: "0.04em",
               textTransform: "uppercase",
@@ -1591,7 +1624,7 @@ function ProviderCatalogCard({
       <span
         className="mono"
         style={{
-          fontSize: 10,
+          fontSize: "var(--fs-10)",
           color: "var(--fg-2)",
           overflow: "hidden",
           textOverflow: "ellipsis",
@@ -1810,7 +1843,7 @@ function ProviderConfigDialog({
                 <div>
                   <div
                     style={{
-                      fontSize: 12.5,
+                      fontSize: "var(--fs-13)",
                       fontWeight: 600,
                       color: "var(--fg-0)",
                       marginBottom: 3,
@@ -1818,13 +1851,13 @@ function ProviderConfigDialog({
                   >
                     Not one-click yet
                   </div>
-                  <div style={{ fontSize: 11.5, color: "var(--fg-1)", lineHeight: 1.5 }}>
+                  <div style={{ fontSize: "var(--fs-12)", color: "var(--fg-1)", lineHeight: 1.5 }}>
                     {gatedReason}
                   </div>
                   {docsUrl && (
                     <div
                       className="mono"
-                      style={{ fontSize: 10.5, color: "var(--fg-3)", marginTop: 6 }}
+                      style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: 6 }}
                     >
                       {docsUrl}
                     </div>
@@ -1844,7 +1877,14 @@ function ProviderConfigDialog({
               }}
             >
               {note && (
-                <p style={{ margin: 0, fontSize: 12, color: "var(--fg-2)", lineHeight: 1.5 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "var(--fs-12)",
+                    color: "var(--fg-2)",
+                    lineHeight: 1.5,
+                  }}
+                >
                   {note}
                 </p>
               )}
@@ -1871,7 +1911,10 @@ function ProviderConfigDialog({
                 />
                 <span
                   className="mono"
-                  style={{ fontSize: 10.5, color: endpointMissing ? "var(--err)" : "var(--fg-3)" }}
+                  style={{
+                    fontSize: "var(--fs-11)",
+                    color: endpointMissing ? "var(--err)" : "var(--fg-3)",
+                  }}
                 >
                   {endpointMissing
                     ? "Base URL is required."
@@ -1895,7 +1938,10 @@ function ProviderConfigDialog({
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                   <span
                     className="mono"
-                    style={{ fontSize: 10.5, color: hasToken ? "var(--live)" : "var(--fg-3)" }}
+                    style={{
+                      fontSize: "var(--fs-11)",
+                      color: hasToken ? "var(--live)" : "var(--fg-3)",
+                    }}
                   >
                     {hasToken
                       ? "Stored in the OS keychain — type to replace."
@@ -1905,7 +1951,7 @@ function ProviderConfigDialog({
                     <Button
                       variant="link"
                       onClick={() => void clearToken()}
-                      className="h-auto p-0 text-[10.5px] text-[var(--err)]"
+                      className="h-auto p-0 text-[11px] text-[var(--err)]"
                     >
                       Remove token
                     </Button>
@@ -1936,7 +1982,7 @@ function ProviderConfigDialog({
                           background: model === m ? "var(--pri-dim)" : "var(--bg-1)",
                           color: "var(--fg-1)",
                           fontFamily: "var(--mono)",
-                          fontSize: 10.5,
+                          fontSize: "var(--fs-11)",
                           cursor: "pointer",
                         }}
                       >
@@ -1957,7 +2003,7 @@ function ProviderConfigDialog({
                     placeholder="fast model id"
                     spellCheck={false}
                   />
-                  <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                  <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                     ANTHROPIC_SMALL_FAST_MODEL — used for quick background tasks.
                   </span>
                 </div>
@@ -1973,8 +2019,8 @@ function ProviderConfigDialog({
                 }}
               >
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: "var(--fg-0)" }}>Enabled</div>
-                  <div style={{ fontSize: 11, color: "var(--fg-2)" }}>
+                  <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)" }}>Enabled</div>
+                  <div style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
                     Offer this provider as a credential in the spawn dialog.
                   </div>
                 </div>
@@ -1993,18 +2039,18 @@ function ProviderConfigDialog({
                   borderBottom: "1px solid var(--bd-soft)",
                 }}
               >
-                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg-0)" }}>
+                <span style={{ fontSize: "var(--fs-12)", fontWeight: 600, color: "var(--fg-0)" }}>
                   Harness injection
                 </span>
                 <span style={{ flex: 1 }} />
                 <StatusDot status={tokenReady && !gated ? "live" : "idle"} />
-                <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                   {gated ? "not wired" : tokenReady ? "ready" : "needs token"}
                 </span>
               </div>
               <div style={{ padding: "12px 14px" }}>
                 {env.length === 0 ? (
-                  <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                  <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                     Nothing — this kind isn't launch-wired.
                   </div>
                 ) : (
@@ -2014,7 +2060,7 @@ function ProviderConfigDialog({
                       display: "flex",
                       flexDirection: "column",
                       gap: 4,
-                      fontSize: 11,
+                      fontSize: "var(--fs-11)",
                       lineHeight: 1.5,
                       background: "var(--bg-0)",
                       border: "1px solid var(--bd-soft)",
@@ -2257,7 +2303,7 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
           <h1
             style={{
               margin: "0 0 6px",
-              fontSize: 22,
+              fontSize: "var(--fs-20)",
               fontWeight: 600,
               letterSpacing: "-0.01em",
               color: "var(--fg-0)",
@@ -2269,7 +2315,7 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
             style={{
               margin: 0,
               color: "var(--fg-2)",
-              fontSize: 13,
+              fontSize: "var(--fs-13)",
               maxWidth: 540,
               lineHeight: 1.5,
             }}
@@ -2297,7 +2343,7 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
           flexWrap: "wrap",
         }}
       >
-        <span className="lbl" style={{ fontSize: 11 }}>
+        <span className="lbl" style={{ fontSize: "var(--fs-11)" }}>
           legend
         </span>
         <Legend tone="full" label="full support" />
@@ -2318,7 +2364,7 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
             borderBottom: "1px solid var(--bd-soft)",
             padding: "10px 16px",
             gap: 12,
-            fontSize: 10.5,
+            fontSize: "var(--fs-11)",
             color: "var(--fg-2)",
             letterSpacing: "0.08em",
             textTransform: "uppercase",
@@ -2336,7 +2382,7 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
               className="mono"
               style={{
                 padding: "14px 16px 6px",
-                fontSize: 10.5,
+                fontSize: "var(--fs-11)",
                 color: "var(--fg-3)",
                 textTransform: "uppercase",
                 letterSpacing: "0.1em",
@@ -2356,7 +2402,7 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
                 padding: "10px 16px",
                 borderBottom: "1px solid var(--bd-soft)",
                 alignItems: "center",
-                fontSize: 12,
+                fontSize: "var(--fs-12)",
               }}
             >
               <span style={{ color: "var(--fg-0)" }}>{r.name}</span>
@@ -2366,7 +2412,7 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
               <span style={{ textAlign: "center" }}>
                 <SupportChip tone={r.w} />
               </span>
-              <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+              <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
                 {r.note ?? ""}
               </span>
             </div>
@@ -2402,7 +2448,7 @@ function PlatformPill({ version }: { version: string | null }) {
           style={{
             padding: "6px 14px",
             borderRadius: 999,
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
             background: c.on ? "var(--bg-0)" : "transparent",
             color: c.on ? "var(--fg-0)" : "var(--fg-2)",
             border: c.on ? "1px solid var(--bd)" : "1px solid transparent",
@@ -2435,7 +2481,7 @@ function Legend({ tone, label }: { tone: Support; label: string }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 6,
-        fontSize: 11.5,
+        fontSize: "var(--fs-12)",
         color: "var(--fg-1)",
       }}
     >
@@ -2464,7 +2510,7 @@ function SupportChip({ tone }: { tone: Support }) {
         gap: 5,
         padding: "3px 8px",
         borderRadius: 4,
-        fontSize: 11,
+        fontSize: "var(--fs-11)",
         fontWeight: 500,
         color: m.color,
         background: `color-mix(in oklab, ${m.color} 12%, transparent)`,
@@ -2501,7 +2547,14 @@ function NotificationsPane() {
       />
 
       <SectionHead label="Desktop notifications" />
-      <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
+      <p
+        style={{
+          margin: "0 0 8px",
+          fontSize: "var(--fs-12)",
+          color: "var(--fg-2)",
+          lineHeight: 1.5,
+        }}
+      >
         These fire a real OS notification (macOS / Windows / GNOME) when the desktop app is running.
         In the browser dev preview there's no system window, so the choice is saved but no toast
         appears.
@@ -2585,7 +2638,7 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
           display: "flex",
           alignItems: "center",
           padding: "0 14px",
-          fontSize: 12,
+          fontSize: "var(--fs-12)",
           color: "rgba(255,255,255,0.85)",
         }}
       >
@@ -2596,7 +2649,7 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
         {screen && <span style={{ marginRight: 14 }}>Help</span>}
         <span style={{ flex: 1 }} />
         <MenuBarActivity />
-        <span className="mono" style={{ fontSize: 11 }}>
+        <span className="mono" style={{ fontSize: "var(--fs-11)" }}>
           21:36
         </span>
       </div>
@@ -2651,11 +2704,11 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
             color: "rgba(255,255,255,0.62)",
           }}
         >
-          <span className="mono" style={{ fontSize: 10.5, letterSpacing: "0.08em" }}>
+          <span className="mono" style={{ fontSize: "var(--fs-11)", letterSpacing: "0.08em" }}>
             LIVE ACTIVITIES
           </span>
           <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 11 }}>3 active</span>
+          <span style={{ fontSize: "var(--fs-11)" }}>3 active</span>
         </div>
         <NotificationCenterCard
           agent="claude"
@@ -2681,7 +2734,7 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
               className="mono"
               style={{
                 padding: "6px 8px 5px",
-                fontSize: 10.5,
+                fontSize: "var(--fs-11)",
                 letterSpacing: "0.08em",
                 color: "rgba(255,255,255,0.48)",
               }}
@@ -2719,7 +2772,7 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
             backdropFilter: "blur(10px)",
             WebkitBackdropFilter: "blur(10px)",
             color: "rgba(255,255,255,0.85)",
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
             whiteSpace: "nowrap",
           }}
         >
@@ -2782,8 +2835,11 @@ function MenuBarActivity() {
             strokeLinecap="round"
           />
         </svg>
-        <span style={{ fontSize: 11, color: "#fff" }}>Refactor auth</span>
-        <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.65)" }}>
+        <span style={{ fontSize: "var(--fs-11)", color: "#fff" }}>Refactor auth</span>
+        <span
+          className="mono"
+          style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.65)" }}
+        >
           04:12
         </span>
       </span>
@@ -2795,8 +2851,10 @@ export function LiveActivityStateGrid() {
   return (
     <div style={{ marginTop: 10, marginBottom: 24 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-0)" }}>States</span>
-        <span className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>
+        <span style={{ fontSize: "var(--fs-13)", fontWeight: 600, color: "var(--fg-0)" }}>
+          States
+        </span>
+        <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)" }}>
           island, stack, and expanded variants
         </span>
         <span style={{ flex: 1, height: 1, background: "var(--bd-soft)" }} />
@@ -2883,9 +2941,11 @@ function IslandStateCard({
       <div style={{ padding: "10px 12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 2 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
-          <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--fg-0)" }}>{title}</span>
+          <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
+            {title}
+          </span>
         </div>
-        <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+        <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
           {detail}
         </div>
       </div>
@@ -2915,7 +2975,7 @@ function LiveIsland({
           padding: "0 14px",
           borderRadius: 999,
           gap: 9,
-          fontSize: 12,
+          fontSize: "var(--fs-12)",
         }}
       >
         <span
@@ -2966,10 +3026,10 @@ function LiveIsland({
             minWidth: 0,
           }}
         >
-          <span style={{ fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, whiteSpace: "nowrap" }}>
             Codex needs permission
           </span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.58)" }}>
+          <span style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.58)" }}>
             aurora-api · pnpm migrate:up
           </span>
         </span>
@@ -3002,8 +3062,10 @@ function LiveIsland({
         />
         <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
         <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, flex: 1 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 500 }}>Claude failed</span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.58)" }}>ENOENT /tmp/snap-3</span>
+          <span style={{ fontSize: "var(--fs-13)", fontWeight: 500 }}>Claude failed</span>
+          <span style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.58)" }}>
+            ENOENT /tmp/snap-3
+          </span>
         </span>
         <IslandButton tone="white">Open</IslandButton>
       </div>
@@ -3017,14 +3079,17 @@ function LiveIsland({
           height: 38,
           padding: 0,
           borderRadius: 19,
-          fontSize: 12,
+          fontSize: "var(--fs-12)",
           alignItems: "stretch",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px" }}>
           <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
           <span>refactor auth</span>
-          <span className="tnum" style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>
+          <span
+            className="tnum"
+            style={{ color: "rgba(255,255,255,0.55)", fontSize: "var(--fs-11)" }}
+          >
             04:12
           </span>
         </div>
@@ -3054,7 +3119,7 @@ function LiveIsland({
           padding: "0 14px",
           borderRadius: 17,
           gap: 9,
-          fontSize: 12,
+          fontSize: "var(--fs-12)",
         }}
       >
         <span style={{ display: "inline-flex", marginRight: -4 }}>
@@ -3071,7 +3136,7 @@ function LiveIsland({
             borderRadius: 999,
             background: "rgba(255,255,255,0.12)",
             color: "#fff",
-            fontSize: 11,
+            fontSize: "var(--fs-11)",
           }}
         >
           +3
@@ -3106,8 +3171,10 @@ function LiveIsland({
             minWidth: 0,
           }}
         >
-          <span style={{ fontSize: 12, fontWeight: 500 }}>Claude finished refactor</span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.58)" }}>
+          <span style={{ fontSize: "var(--fs-12)", fontWeight: 500 }}>
+            Claude finished refactor
+          </span>
+          <span style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.58)" }}>
             14 edits · 4:21 elapsed
           </span>
         </span>
@@ -3128,8 +3195,8 @@ function LiveIsland({
     >
       <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
       <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1, gap: 2 }}>
-        <span style={{ fontSize: 12 }}>Claude · refactor auth</span>
-        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>
+        <span style={{ fontSize: "var(--fs-12)" }}>Claude · refactor auth</span>
+        <span style={{ fontSize: "var(--fs-10)", color: "rgba(255,255,255,0.55)" }}>
           turn 04:12 · tests passing
         </span>
       </span>
@@ -3182,12 +3249,18 @@ function ExpandedIslandPreview() {
           }}
         />
         <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
-        <span style={{ fontSize: 13, fontWeight: 600 }}>Claude · aurora-api</span>
-        <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+        <span style={{ fontSize: "var(--fs-13)", fontWeight: 600 }}>Claude · aurora-api</span>
+        <span
+          className="mono"
+          style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.55)" }}
+        >
           opus · feat/auth
         </span>
         <span style={{ flex: 1 }} />
-        <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.65)" }}>
+        <span
+          className="mono"
+          style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.65)" }}
+        >
           04:12
         </span>
       </div>
@@ -3199,7 +3272,7 @@ function ExpandedIslandPreview() {
           background: "rgba(255,255,255,0.04)",
           border: "1px solid rgba(255,255,255,0.06)",
           borderRadius: 8,
-          fontSize: 11.5,
+          fontSize: "var(--fs-12)",
           lineHeight: 1.55,
           color: "rgba(255,255,255,0.84)",
         }}
@@ -3229,7 +3302,7 @@ function IslandButton({ children, tone }: { children: ReactNode; tone?: "ok" | "
       style={{
         border: "none",
         cursor: "default",
-        fontSize: 11.5,
+        fontSize: "var(--fs-12)",
         fontWeight: 600,
         padding: "7px 10px",
         borderRadius: 999,
@@ -3291,14 +3364,14 @@ function NotificationCenterCard({
           }}
         />
         <AgentGlyph agent={agent} size={11} color={color} />
-        <span style={{ fontSize: 12, fontWeight: 600 }}>CodeHub</span>
+        <span style={{ fontSize: "var(--fs-12)", fontWeight: 600 }}>CodeHub</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+        <span style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.45)" }}>
           {meta.split(" · ").at(-1)}
         </span>
       </div>
-      <div style={{ fontSize: 12, marginBottom: 2 }}>{title}</div>
-      <div className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.56)" }}>
+      <div style={{ fontSize: "var(--fs-12)", marginBottom: 2 }}>{title}</div>
+      <div className="mono" style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.56)" }}>
         {meta}
       </div>
     </div>
@@ -3331,11 +3404,11 @@ export function NotificationPreview({ os, children }: { os: string; children: Re
         {children}
       </div>
       <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
-        <span className="lbl" style={{ fontSize: 11 }}>
+        <span className="lbl" style={{ fontSize: "var(--fs-11)" }}>
           {os}
         </span>
         <span style={{ flex: 1, height: 1, background: "var(--bd-soft)" }} />
-        <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
           native APIs
         </span>
       </div>
@@ -3375,12 +3448,14 @@ export function MacNotificationPreview() {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 1 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>CodeHub</span>
+          <span style={{ fontSize: "var(--fs-13)", fontWeight: 600 }}>CodeHub</span>
           <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>now</span>
+          <span style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.5)" }}>now</span>
         </div>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 1 }}>Codex needs permission</div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.72)" }}>
+        <div style={{ fontSize: "var(--fs-12)", fontWeight: 600, marginBottom: 1 }}>
+          Codex needs permission
+        </div>
+        <div style={{ fontSize: "var(--fs-12)", color: "rgba(255,255,255,0.72)" }}>
           aurora-api · run pnpm migrate:up?
         </div>
       </div>
@@ -3416,12 +3491,14 @@ export function WindowsNotificationPreview() {
       />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <Logo size={13} withText={false} />
-        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.70)" }}>CodeHub</span>
+        <span style={{ fontSize: "var(--fs-12)", color: "rgba(255,255,255,0.70)" }}>CodeHub</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>1m ago</span>
+        <span style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.5)" }}>1m ago</span>
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Claude finished refactor</div>
-      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)" }}>
+      <div style={{ fontSize: "var(--fs-13)", fontWeight: 600, marginBottom: 2 }}>
+        Claude finished refactor
+      </div>
+      <div style={{ fontSize: "var(--fs-12)", color: "rgba(255,255,255,0.75)" }}>
         14 edits, 218 tests pass · 4:21 elapsed
       </div>
     </div>
@@ -3459,13 +3536,13 @@ export function LinuxNotificationPreview() {
         !
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 1 }}>
+        <div style={{ fontSize: "var(--fs-13)", fontWeight: 600, marginBottom: 1 }}>
           Claude failed · dash-web
         </div>
         <div
           className="mono"
           style={{
-            fontSize: 11,
+            fontSize: "var(--fs-11)",
             color: "rgba(255,255,255,0.70)",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -3493,8 +3570,10 @@ function AppearancePane() {
       <SectionHead label="Theme" />
       <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "14px 0" }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, color: "var(--fg-0)", marginBottom: 2 }}>Color theme</div>
-          <div style={{ fontSize: 11.5, color: "var(--fg-2)" }}>
+          <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", marginBottom: 2 }}>
+            Color theme
+          </div>
+          <div style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
             Switches the whole interface between dark, gray, and light.
           </div>
         </div>
@@ -3611,7 +3690,7 @@ function FontSizeInput() {
         border: "none",
         background: "transparent",
         color: "var(--fg-1)",
-        fontSize: 15,
+        fontSize: "var(--fs-14)",
         cursor: "pointer",
       }}
     >
@@ -3635,7 +3714,7 @@ function FontSizeInput() {
         style={{
           minWidth: 40,
           textAlign: "center",
-          fontSize: 12,
+          fontSize: "var(--fs-12)",
           color: "var(--fg-0)",
         }}
       >
@@ -3675,7 +3754,7 @@ function SectionHead({ label, tone }: { label: string; tone?: "err" }) {
     <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "24px 0 12px" }}>
       <span
         className="lbl"
-        style={{ color: tone === "err" ? "var(--err)" : "var(--fg-1)", fontSize: 11 }}
+        style={{ color: tone === "err" ? "var(--err)" : "var(--fg-1)", fontSize: "var(--fs-11)" }}
       >
         {label}
       </span>
@@ -3710,8 +3789,10 @@ function SettingRow({
       }}
     >
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, color: "var(--fg-0)", marginBottom: 2 }}>{label}</div>
-        <div style={{ fontSize: 11.5, color: "var(--fg-2)" }}>{desc}</div>
+        <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", marginBottom: 2 }}>
+          {label}
+        </div>
+        <div style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>{desc}</div>
       </div>
       {live ? (
         control

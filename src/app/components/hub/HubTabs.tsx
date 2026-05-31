@@ -145,7 +145,7 @@ export function HubTabs() {
               }}
             >
               <span style={{ color: "var(--pri)", display: "inline-flex" }}>{Ico.plus}</span>
-              <span style={{ fontSize: 12, fontWeight: 500 }}>New workspace</span>
+              <span style={{ fontSize: "var(--fs-12)", fontWeight: 500 }}>New workspace</span>
               <Tip text="Close (esc)">
                 <button
                   type="button"
@@ -277,11 +277,11 @@ export function HubTabs() {
                   marginBottom: 4,
                 }}
               >
-                <span className="lbl" style={{ fontSize: 10 }}>
+                <span className="lbl" style={{ fontSize: "var(--fs-10)" }}>
                   Workspaces · {workspaces.length}
                 </span>
                 <span style={{ flex: 1 }} />
-                <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                <span className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
                   ⌘P
                 </span>
               </div>
@@ -321,7 +321,7 @@ export function HubTabs() {
                       <span
                         className="mono"
                         style={{
-                          fontSize: 13,
+                          fontSize: "var(--fs-13)",
                           color: "var(--fg-0)",
                           fontWeight: 500,
                           overflow: "hidden",
@@ -331,14 +331,20 @@ export function HubTabs() {
                       >
                         {workspaceTitle(ws)}
                       </span>
-                      <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                      <span
+                        className="mono"
+                        style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+                      >
                         {ws.id === activeId && git?.isRepo
                           ? "1 repo"
                           : (dirName(ws.dir) ?? "workspace")}
                       </span>
                     </div>
                     {waits > 0 && (
-                      <span className="mono" style={{ fontSize: 10, color: "var(--wait)" }}>
+                      <span
+                        className="mono"
+                        style={{ fontSize: "var(--fs-10)", color: "var(--wait)" }}
+                      >
                         {waits} wait
                       </span>
                     )}
@@ -352,7 +358,12 @@ export function HubTabs() {
                     setOverflowOpen(false);
                     setPalette(true);
                   }}
-                  style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13 }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    fontSize: "var(--fs-13)",
+                  }}
                 >
                   {Ico.search}
                   Search workspaces…
@@ -506,7 +517,7 @@ function WorkspaceTab({
                 borderRadius: 4,
                 color: "var(--fg-0)",
                 font: "inherit",
-                fontSize: 12,
+                fontSize: "var(--fs-12)",
                 padding: "1px 4px",
               }}
             />
@@ -519,7 +530,7 @@ function WorkspaceTab({
                   setEditing(true);
                 }}
                 style={{
-                  fontSize: 12,
+                  fontSize: "var(--fs-12)",
                   fontWeight: 500,
                   color: tabFg,
                   overflow: "hidden",
@@ -531,14 +542,14 @@ function WorkspaceTab({
               </span>
             </Tip>
           )}
-          <span className="mono" style={{ fontSize: 10, color: subFg }}>
+          <span className="mono" style={{ fontSize: "var(--fs-10)", color: subFg }}>
             {repoLabel}
           </span>
         </div>
         <span
           className="mono"
           style={{
-            fontSize: 10,
+            fontSize: "var(--fs-10)",
             fontWeight: state === "wait" ? 600 : 500,
             color: chipFg,
             background: chipBg,

@@ -205,12 +205,14 @@ export function ResumeDrawer() {
         }}
       >
         <span style={{ display: "inline-flex", color: "var(--fg-1)" }}>{Ico.clock}</span>
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>Resume session</span>
+        <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
+          Resume session
+        </span>
         {!loading && all.length > 0 && (
           <span
             className="mono"
             style={{
-              fontSize: 10,
+              fontSize: "var(--fs-10)",
               color: "var(--fg-3)",
               background: "var(--bg-3)",
               padding: "1px 6px",
@@ -352,10 +354,13 @@ function AgentSection({
         }}
       >
         <AgentGlyph agent={agent} size={12} color={`var(--a-${agent})`} />
-        <span className="mono" style={{ fontSize: 12, color: "var(--fg-1)", fontWeight: 500 }}>
+        <span
+          className="mono"
+          style={{ fontSize: "var(--fs-12)", color: "var(--fg-1)", fontWeight: 500 }}
+        >
           {label}
         </span>
-        <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+        <span className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
           {showing === total ? `${total}` : `showing ${showing} / ${total}`}
         </span>
       </div>
@@ -401,7 +406,7 @@ function DrawerRow({
             <span
               className="mono"
               style={{
-                fontSize: 10.5,
+                fontSize: "var(--fs-11)",
                 color: "var(--fg-2)",
                 display: "inline-flex",
                 alignItems: "center",
@@ -421,14 +426,17 @@ function DrawerRow({
           <Tip text={row.id}>
             <span
               className="mono tnum"
-              style={{ fontSize: 10.5, color: "var(--fg-3)", flex: 1, minWidth: 0 }}
+              style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", flex: 1, minWidth: 0 }}
             >
               {row.id.slice(0, 8)}
             </span>
           </Tip>
         )}
         {age && (
-          <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", flexShrink: 0 }}>
+          <span
+            className="mono"
+            style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", flexShrink: 0 }}
+          >
             {age}
           </span>
         )}
@@ -438,7 +446,7 @@ function DrawerRow({
       <Tip text={row.title}>
         <div
           style={{
-            fontSize: 12,
+            fontSize: "var(--fs-12)",
             color: "var(--fg-1)",
             lineHeight: 1.4,
             overflow: "hidden",
@@ -459,7 +467,7 @@ function DrawerRow({
           alignItems: "center",
           gap: 8,
           fontFamily: "var(--mono)",
-          fontSize: 10.5,
+          fontSize: "var(--fs-11)",
           color: "var(--fg-3)",
         }}
       >
@@ -508,7 +516,7 @@ function Pill({
       style={{
         padding: "3px 9px",
         borderRadius: 5,
-        fontSize: 10.5,
+        fontSize: "var(--fs-11)",
         background: active ? "var(--bg-3)" : "transparent",
         border: `1px solid ${active ? "var(--bd-soft)" : "transparent"}`,
         color: active ? "var(--fg-0)" : "var(--fg-2)",
@@ -524,7 +532,12 @@ function Note({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="mono"
-      style={{ padding: "32px 16px", textAlign: "center", fontSize: 11.5, color: "var(--fg-3)" }}
+      style={{
+        padding: "32px 16px",
+        textAlign: "center",
+        fontSize: "var(--fs-12)",
+        color: "var(--fg-3)",
+      }}
     >
       {children}
     </div>
