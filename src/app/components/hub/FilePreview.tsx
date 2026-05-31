@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { IconBtn } from "../../components/primitives/IconBtn";
+import { Tip } from "../../components/primitives/Tip";
 import { Ico } from "../../components/primitives/icons";
 import { useResizableDock } from "../../hooks/useResizableDock";
 import { EASE } from "../../hooks/useSlideIn";
@@ -72,24 +73,25 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
           }}
         >
           <span style={{ color: "var(--idle)", display: "inline-flex" }}>{Ico.diff}</span>
-          <span
-            className="mono"
-            title={path}
-            style={{
-              fontSize: 12,
-              fontWeight: 500,
-              color: "var(--fg-0)",
-              flex: 1,
-              minWidth: 0,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              direction: "rtl",
-              textAlign: "left",
-            }}
-          >
-            {filename}
-          </span>
+          <Tip text={path}>
+            <span
+              className="mono"
+              style={{
+                fontSize: 12,
+                fontWeight: 500,
+                color: "var(--fg-0)",
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                direction: "rtl",
+                textAlign: "left",
+              }}
+            >
+              {filename}
+            </span>
+          </Tip>
           {ext && (
             <span
               className="mono"
@@ -176,12 +178,11 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
             </span>
           )}
           <span style={{ flex: 1 }} />
-          <span
-            title={dir}
-            style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          >
-            {dir}
-          </span>
+          <Tip text={dir}>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {dir}
+            </span>
+          </Tip>
         </div>
       </div>
       <ResizeHandle edge="left" onMouseDown={beginResize} onDoubleClick={reset} />

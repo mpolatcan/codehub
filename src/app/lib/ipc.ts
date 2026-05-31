@@ -256,6 +256,9 @@ export interface AccountProfile {
   // Whether the profile is offered at spawn (user-toggleable; disabled profiles
   // are kept but hidden from the account picker).
   enabled: boolean;
+  // The signed-in account's email (vault-backed sign-ins only), captured at
+  // login. Identity, not a secret; null until captured / for env-backed profiles.
+  email: string | null;
 }
 
 // An account profile plus whether its credential is available right now.
@@ -811,6 +814,9 @@ export const ipc = {
     invoke<AccountProfileStatus[]>("rename_account_profile", { id, label }),
   setAccountProfileEnabled: (id: string, enabled: boolean) =>
     invoke<AccountProfileStatus[]>("set_account_profile_enabled", { id, enabled }),
+  // Backfill emails for subscription profiles signed in before email capture.
+  // Returns the count updated; decodes from the stored credential (no re-login).
+  backfillAccountEmails: () => invoke<number>("backfill_account_emails"),
   // Vault: OS-keychain credential management for built-in agents + GitHub.
   // vaultStoreKey is the ONLY method that accepts a secret over IPC (paste flow).
   // No method ever returns a secret value.

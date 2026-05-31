@@ -13,7 +13,7 @@
 //! built only via `cargo run --bin codehub-devserver --features devserver`.
 
 use crate::config::{ConfigStore, Settings};
-use crate::docker::{Cli, DockerClient, LaunchMode, TmuxSessionRequest};
+use crate::docker::{Cli, DockerClient, ImageInfo, LaunchMode, TmuxSessionRequest};
 use crate::events::EventsTracker;
 use crate::manager::LifecycleManager;
 use crate::pty::{PaneEmitter, PtyRegistry};
@@ -269,6 +269,9 @@ pub async fn serve() {
             "/account-profiles/:id/enabled",
             post(set_account_profile_enabled),
         )
+        // Email backfill needs the vault, which the dev bridge doesn't have, so
+        // there's nothing to decode here — report 0 updated and stay a no-op.
+        .route("/account-profiles/backfill-emails", post(backfill_emails))
         .route("/agent-key-status", get(agent_key_status))
         .route("/agent-versions", get(agent_versions))
         .route("/container-stats", get(container_stats))
@@ -603,6 +606,12 @@ async fn add_account_profile(
     Ok(Json(crate::profile_statuses(next.account_profiles, None)))
 }
 
+// No vault in browser mode → nothing to decode; mirror the Tauri command's
+// "count updated" return as 0 so the frontend's mount-time call is harmless.
+async fn backfill_emails() -> impl IntoResponse {
+    Json(0u32)
+}
+
 async fn remove_account_profile(
     State(st): State<AppState>,
     Path(id): Path<String>,
@@ -729,8 +738,19 @@ async fn container_image(
     State(st): State<AppState>,
     Query(q): Query<WorkspaceQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let docker = docker_for_optional_workspace(&st, q.workspace).await?;
-    docker.image_info().await.map(Json).map_err(err)
+    // Mirror lib.rs: with no workspace AND no running container, fall back to the
+    // configured pinned image tag so the New Workspace wizard shows a base image.
+    let docker = match q.workspace {
+        Some(ws) => Some(docker_container_for(&st, &ws)),
+        None => st.manager.any_running_docker().await,
+    };
+    match docker {
+        Some(d) => d.image_info().await.map(Json).map_err(err),
+        None => Ok(Json(ImageInfo {
+            tag: Some(st.manager.image().to_string()),
+            ..Default::default()
+        })),
+    }
 }
 
 async fn container_health(

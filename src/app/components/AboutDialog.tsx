@@ -5,6 +5,7 @@ import { useOverlay } from "../lib/overlay";
 import { useStore } from "../lib/store";
 import { Button } from "../ui/button";
 import { Logo } from "./primitives/Logo";
+import { Tip } from "./primitives/Tip";
 
 // About CodeHub — a modal "about this app", ported from design/screens/about.jsx.
 // Opened from the sidebar wordmark. Every value shown is REAL: version/os/arch
@@ -446,22 +447,23 @@ export function AboutDialog() {
                   ? "up to date"
                   : "releases at"}
           </span>
-          <span
-            className="mono"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              fontSize: 11,
-              color: "var(--fg-1)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              userSelect: "all",
-            }}
-            title={REPO_RELEASES}
-          >
-            {REPO_RELEASES}
-          </span>
+          <Tip text={REPO_RELEASES}>
+            <span
+              className="mono"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                fontSize: 11,
+                color: "var(--fg-1)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                userSelect: "all",
+              }}
+            >
+              {REPO_RELEASES}
+            </span>
+          </Tip>
           <Button
             variant="outline"
             size="sm"

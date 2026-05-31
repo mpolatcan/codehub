@@ -29,6 +29,7 @@ import { Segmented } from "@/app/components/primitives/Segmented";
 import { StatusDot } from "@/app/components/primitives/StatusDot";
 import { Tab, TabBar } from "@/app/components/primitives/TabBar";
 import { Tag } from "@/app/components/primitives/Tag";
+import { Tip } from "@/app/components/primitives/Tip";
 import { Ico } from "@/app/components/primitives/icons";
 import { CLIS } from "@/app/lib/catalog";
 import {
@@ -465,6 +466,15 @@ function AgentsPane({
   useEffect(() => {
     void loadAccountProfiles();
     void loadProviders();
+    // Backfill emails for subscriptions signed in before email capture, then
+    // refresh so they show. Best-effort: failures (e.g. browser mode, no vault)
+    // are silent and just leave the generic "Signed in with …" subtitle.
+    void ipc
+      .backfillAccountEmails()
+      .then((n) => {
+        if (n > 0) void loadAccountProfiles();
+      })
+      .catch(() => {});
   }, [loadAccountProfiles, loadProviders]);
 
   const defaultLoginLabel = (provider: string) =>
@@ -601,6 +611,7 @@ function AgentsPane({
     return (
       <div key={p.id}>
         <div
+          className="hov-row"
           style={{
             display: "flex",
             alignItems: "center",
@@ -610,13 +621,6 @@ function AgentsPane({
               i === list.length - 1 && !isManaging ? "none" : "1px solid var(--bd-soft)",
             borderLeft: `3px solid color-mix(in oklab, ${color} ${off ? 22 : 50}%, var(--bd))`,
             background: restBg,
-            transition: "background 0.12s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--bg-hover)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = restBg;
           }}
         >
           <div
@@ -653,7 +657,10 @@ function AgentsPane({
             >
               {p.source === "vault"
                 ? p.present
-                  ? `Signed in with ${cliSpec.alias}`
+                  ? // Show the account email when we captured it at sign-in, so
+                    // multiple subscriptions on one agent are distinguishable;
+                    // fall back to a generic line for older sign-ins.
+                    (p.email ?? `Signed in with ${cliSpec.alias}`)
                   : "Sign-in expired — reconnect"
                 : (p.varName ?? "API key")}
             </div>
@@ -698,10 +705,10 @@ function AgentsPane({
             >
               Name
             </label>
-            <input
+            <Input
               id={`rename-${p.id}`}
               type="text"
-              // biome-ignore lint/a11y/noAutofocus: focus the field the edit button just opened
+              className="h-auto"
               autoFocus
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
@@ -776,27 +783,28 @@ function AgentsPane({
           flexShrink: 0,
         }}
       >
-        <button
-          type="button"
-          onClick={() => setDetail(selectedAgent)}
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            background: `color-mix(in oklab, ${meta.accent} 14%, var(--bg-1))`,
-            border: `1px solid color-mix(in oklab, ${meta.accent} 30%, var(--bd))`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-          title="View agent details"
-        >
-          <span style={{ transform: "scale(1.8)" }}>
-            <AgentGlyph agent={selectedAgent} size={14} color={meta.accent} />
-          </span>
-        </button>
+        <Tip text="View agent details">
+          <button
+            type="button"
+            onClick={() => setDetail(selectedAgent)}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: `color-mix(in oklab, ${meta.accent} 14%, var(--bg-1))`,
+              border: `1px solid color-mix(in oklab, ${meta.accent} 30%, var(--bd))`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ transform: "scale(1.8)" }}>
+              <AgentGlyph agent={selectedAgent} size={14} color={meta.accent} />
+            </span>
+          </button>
+        </Tip>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 17, fontWeight: 600, color: "var(--fg-0)" }}>
@@ -1188,15 +1196,16 @@ function RowActions({
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
       {showToggle && (
-        <span
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          role="presentation"
-          title={toggleTitle}
-          style={{ display: "inline-flex", marginRight: 5 }}
-        >
-          <Switch checked={enabled} disabled={toggleDisabled} onCheckedChange={onToggle} />
-        </span>
+        <Tip text={toggleTitle ?? ""}>
+          <span
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            role="presentation"
+            style={{ display: "inline-flex", marginRight: 5 }}
+          >
+            <Switch checked={enabled} disabled={toggleDisabled} onCheckedChange={onToggle} />
+          </span>
+        </Tip>
       )}
       <IconBtn
         title={editTitle}
@@ -1893,20 +1902,13 @@ function ProviderConfigDialog({
                       : "Stored in the OS keychain, never written to disk."}
                   </span>
                   {hasToken && editing && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="link"
                       onClick={() => void clearToken()}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer",
-                        fontSize: 10.5,
-                        color: "var(--err)",
-                      }}
+                      className="h-auto p-0 text-[10.5px] text-[var(--err)]"
                     >
                       Remove token
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -2745,39 +2747,47 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
 function MenuBarActivity() {
   const r = 5.5;
   return (
-    <span
-      title="Claude · turn 04:12"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 7,
-        height: 22,
-        padding: "2px 10px",
-        marginRight: 14,
-        borderRadius: 999,
-        background: "rgba(255,255,255,0.10)",
-        border: "0.5px solid rgba(255,255,255,0.08)",
-      }}
-    >
-      <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
-        <circle cx="7" cy="7" r={r} stroke="rgba(255,255,255,0.18)" strokeWidth="1.4" fill="none" />
-        <circle
-          cx="7"
-          cy="7"
-          r={r}
-          stroke="oklch(0.80 0.17 145)"
-          strokeWidth="1.4"
-          fill="none"
-          strokeDasharray={`${0.62 * 2 * Math.PI * r} ${2 * Math.PI * r}`}
-          transform="rotate(-90 7 7)"
-          strokeLinecap="round"
-        />
-      </svg>
-      <span style={{ fontSize: 11, color: "#fff" }}>Refactor auth</span>
-      <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.65)" }}>
-        04:12
+    <Tip text="Claude · turn 04:12">
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          height: 22,
+          padding: "2px 10px",
+          marginRight: 14,
+          borderRadius: 999,
+          background: "rgba(255,255,255,0.10)",
+          border: "0.5px solid rgba(255,255,255,0.08)",
+        }}
+      >
+        <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+          <circle
+            cx="7"
+            cy="7"
+            r={r}
+            stroke="rgba(255,255,255,0.18)"
+            strokeWidth="1.4"
+            fill="none"
+          />
+          <circle
+            cx="7"
+            cy="7"
+            r={r}
+            stroke="oklch(0.80 0.17 145)"
+            strokeWidth="1.4"
+            fill="none"
+            strokeDasharray={`${0.62 * 2 * Math.PI * r} ${2 * Math.PI * r}`}
+            transform="rotate(-90 7 7)"
+            strokeLinecap="round"
+          />
+        </svg>
+        <span style={{ fontSize: 11, color: "#fff" }}>Refactor auth</span>
+        <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.65)" }}>
+          04:12
+        </span>
       </span>
-    </span>
+    </Tip>
   );
 }
 

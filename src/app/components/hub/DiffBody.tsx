@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { EASE } from "../../hooks/useSlideIn";
 import { type Lang, highlight, langFromExt } from "../../lib/highlight";
+import { Tip } from "../primitives/Tip";
 import { Ico } from "../primitives/icons";
 
 // Runs of more than this many consecutive unchanged (context) lines fold into a
@@ -283,60 +284,61 @@ function FileSection({
 }) {
   return (
     <>
-      <button
-        type="button"
-        data-file={file}
-        title={file}
-        onClick={onToggle}
-        className="mono"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          width: "100%",
-          textAlign: "left",
-          padding: "7px 12px",
-          fontWeight: 500,
-          color: "var(--fg-1)",
-          background: "var(--bg-1)",
-          border: "none",
-          borderTop: "1px solid var(--bd)",
-          borderBottom: "1px solid var(--bd-soft)",
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-          cursor: "pointer",
-        }}
-      >
-        <span
+      <Tip text={file}>
+        <button
+          type="button"
+          data-file={file}
+          onClick={onToggle}
+          className="mono"
           style={{
-            flexShrink: 0,
-            display: "inline-flex",
-            color: "var(--fg-3)",
-            transform: collapsed ? "rotate(0deg)" : "rotate(90deg)",
-            transition: "transform .15s ease",
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            width: "100%",
+            textAlign: "left",
+            padding: "7px 12px",
+            fontWeight: 500,
+            color: "var(--fg-1)",
+            background: "var(--bg-1)",
+            border: "none",
+            borderTop: "1px solid var(--bd)",
+            borderBottom: "1px solid var(--bd-soft)",
+            position: "sticky",
+            top: 0,
+            zIndex: 1,
+            cursor: "pointer",
           }}
         >
-          {Ico.chevR}
-        </span>
-        <span
-          style={{
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {file}
-        </span>
-        {(added > 0 || removed > 0) && (
-          <span className="tnum" style={{ flexShrink: 0, fontSize: 11 }}>
-            <span style={{ color: "var(--live)" }}>+{added}</span>{" "}
-            <span style={{ color: "var(--err)" }}>−{removed}</span>
+          <span
+            style={{
+              flexShrink: 0,
+              display: "inline-flex",
+              color: "var(--fg-3)",
+              transform: collapsed ? "rotate(0deg)" : "rotate(90deg)",
+              transition: "transform .15s ease",
+            }}
+          >
+            {Ico.chevR}
           </span>
-        )}
-      </button>
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {file}
+          </span>
+          {(added > 0 || removed > 0) && (
+            <span className="tnum" style={{ flexShrink: 0, fontSize: 11 }}>
+              <span style={{ color: "var(--live)" }}>+{added}</span>{" "}
+              <span style={{ color: "var(--err)" }}>−{removed}</span>
+            </span>
+          )}
+        </button>
+      </Tip>
       <AnimatePresence initial={false}>
         {!collapsed && (
           <motion.div

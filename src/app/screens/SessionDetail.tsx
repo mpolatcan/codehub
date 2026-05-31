@@ -24,12 +24,15 @@ import { DiffBody, SplitDiffBody, diffCounts, parseDiff } from "../components/hu
 import { HubTabs } from "../components/hub/HubTabs";
 import { AgentGlyph } from "../components/primitives/AgentGlyph";
 import { IconBtn } from "../components/primitives/IconBtn";
+import { Segmented } from "../components/primitives/Segmented";
 import { StatusDot } from "../components/primitives/StatusDot";
+import { Tip } from "../components/primitives/Tip";
 import { Ico } from "../components/primitives/icons";
 import { fmtTokens, useSessionUsage } from "../hooks/useSessionUsage";
 import { MODE_BY_ID, SPEC_BY_CLI } from "../lib/catalog";
 import { ipc } from "../lib/ipc";
 import { useStore } from "../lib/store";
+import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
 type Filter = "all" | "staged" | "unstaged";
@@ -270,27 +273,28 @@ export function SessionDetail({ session }: { session: string }) {
           background: "var(--bg-1)",
         }}
       >
-        <button
-          type="button"
-          onClick={closeDetail}
-          className="mono"
-          title="Back to Hub (Esc)"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "4px 8px",
-            background: "transparent",
-            border: "1px solid var(--bd-soft)",
-            borderRadius: 6,
-            color: "var(--fg-2)",
-            cursor: "pointer",
-            fontSize: 11.5,
-          }}
-        >
-          <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>{Ico.arrowR}</span>
-          Hub
-        </button>
+        <Tip text="Back to Hub (Esc)">
+          <button
+            type="button"
+            onClick={closeDetail}
+            className="mono"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "4px 8px",
+              background: "transparent",
+              border: "1px solid var(--bd-soft)",
+              borderRadius: 6,
+              color: "var(--fg-2)",
+              cursor: "pointer",
+              fontSize: 11.5,
+            }}
+          >
+            <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>{Ico.arrowR}</span>
+            Hub
+          </button>
+        </Tip>
         <span
           className="lbl"
           style={{ fontSize: 10, color: "var(--fg-3)", letterSpacing: "0.08em" }}
@@ -327,9 +331,9 @@ export function SessionDetail({ session }: { session: string }) {
               <span style={{ display: "inline-flex", color: "var(--fg-3)" }}>{Ico.branch}</span>
               {branch}
               {ahead > 0 && (
-                <span style={{ color: "var(--wait)" }} title={`${ahead} ahead of upstream`}>
-                  ·{ahead}
-                </span>
+                <Tip text={`${ahead} ahead of upstream`}>
+                  <span style={{ color: "var(--wait)" }}>·{ahead}</span>
+                </Tip>
               )}
             </span>
           </>
@@ -350,29 +354,30 @@ export function SessionDetail({ session }: { session: string }) {
           </span>
         )}
 
-        <button
-          type="button"
-          title="Stop this agent"
-          onClick={() => {
-            void closeSession(session);
-          }}
-          className="mono"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "5px 9px",
-            borderRadius: 6,
-            border: "1px solid color-mix(in oklab, var(--err) 42%, var(--bd))",
-            background: "color-mix(in oklab, var(--err) 9%, transparent)",
-            color: "var(--err)",
-            fontSize: 11.5,
-            cursor: "pointer",
-          }}
-        >
-          {Ico.close}
-          Stop
-        </button>
+        <Tip text="Stop this agent">
+          <button
+            type="button"
+            onClick={() => {
+              void closeSession(session);
+            }}
+            className="mono"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "5px 9px",
+              borderRadius: 6,
+              border: "1px solid color-mix(in oklab, var(--err) 42%, var(--bd))",
+              background: "color-mix(in oklab, var(--err) 9%, transparent)",
+              color: "var(--err)",
+              fontSize: 11.5,
+              cursor: "pointer",
+            }}
+          >
+            {Ico.close}
+            Stop
+          </button>
+        </Tip>
       </div>
 
       {/* diff body — full-width single column */}
@@ -417,21 +422,14 @@ export function SessionDetail({ session }: { session: string }) {
             Unstaged · {fileCount(diffs.unstaged)}
           </Pill>
           <span style={{ flex: 1 }} />
-          <div
-            style={{
-              display: "inline-flex",
-              border: "1px solid var(--bd-soft)",
-              borderRadius: 4,
-              overflow: "hidden",
-            }}
-          >
-            <Seg active={layout === "unified"} onClick={() => setLayout("unified")}>
-              Unified
-            </Seg>
-            <Seg active={layout === "split"} onClick={() => setLayout("split")}>
-              Split
-            </Seg>
-          </div>
+          <Segmented
+            value={layout}
+            onChange={setLayout}
+            options={[
+              { key: "unified", label: "Unified" },
+              { key: "split", label: "Split" },
+            ]}
+          />
           <IconBtn
             title={showTree ? "Hide file tree" : "Show file tree"}
             onClick={() => setShowTree((v) => !v)}
@@ -668,63 +666,63 @@ function FileTree({
         const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
         const isActive = selected === f.path;
         return (
-          <button
-            key={f.path}
-            type="button"
-            onClick={() => onSelect(f.path)}
-            title={f.path}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              width: "100%",
-              padding: "6px 12px",
-              background: isActive ? "var(--bg-3)" : "transparent",
-              border: "none",
-              borderLeft: isActive ? "2px solid var(--fg-0)" : "2px solid transparent",
-              cursor: "pointer",
-              textAlign: "left",
-            }}
-          >
-            <span style={{ display: "inline-flex", color: "var(--fg-3)", flexShrink: 0 }}>
-              {Ico.diff}
-            </span>
-            <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-              <div
-                className="mono"
-                style={{
-                  fontSize: 11.5,
-                  color: isActive ? "var(--fg-0)" : "var(--fg-1)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {name}
-              </div>
-              {dir && (
+          <Tip key={f.path} text={f.path}>
+            <button
+              type="button"
+              onClick={() => onSelect(f.path)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                width: "100%",
+                padding: "6px 12px",
+                background: isActive ? "var(--bg-3)" : "transparent",
+                border: "none",
+                borderLeft: isActive ? "2px solid var(--fg-0)" : "2px solid transparent",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <span style={{ display: "inline-flex", color: "var(--fg-3)", flexShrink: 0 }}>
+                {Ico.diff}
+              </span>
+              <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
                 <div
                   className="mono"
                   style={{
-                    fontSize: 10,
-                    color: "var(--fg-3)",
+                    fontSize: 11.5,
+                    color: isActive ? "var(--fg-0)" : "var(--fg-1)",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {dir}
+                  {name}
                 </div>
-              )}
-            </div>
-            <span
-              className="mono tnum"
-              style={{ fontSize: 10, flexShrink: 0, display: "inline-flex", gap: 4 }}
-            >
-              {f.added > 0 && <span style={{ color: "var(--live)" }}>+{f.added}</span>}
-              {f.removed > 0 && <span style={{ color: "var(--err)" }}>-{f.removed}</span>}
-            </span>
-          </button>
+                {dir && (
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      color: "var(--fg-3)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {dir}
+                  </div>
+                )}
+              </div>
+              <span
+                className="mono tnum"
+                style={{ fontSize: 10, flexShrink: 0, display: "inline-flex", gap: 4 }}
+              >
+                {f.added > 0 && <span style={{ color: "var(--live)" }}>+{f.added}</span>}
+                {f.removed > 0 && <span style={{ color: "var(--err)" }}>-{f.removed}</span>}
+              </span>
+            </button>
+          </Tip>
         );
       })}
     </div>
@@ -784,37 +782,9 @@ function Pill({
   );
 }
 
-// One half of the Unified/Split segmented toggle.
-function Seg({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="mono"
-      style={{
-        padding: "3px 10px",
-        fontSize: 11,
-        border: "none",
-        borderRadius: 0,
-        background: active ? "var(--bg-3)" : "var(--bg-1)",
-        color: active ? "var(--fg-0)" : "var(--fg-2)",
-        cursor: "pointer",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-// Commit-footer button: optional accent (pri) + a keyboard-hint chip.
+// Commit-footer button: optional accent (pri) + a keyboard-hint chip. Renders
+// the shadcn <Button> (default=accent / outline=neutral); the kbd chip stays a
+// decorative inline span.
 function FooterBtn({
   onClick,
   disabled,
@@ -829,24 +799,12 @@ function FooterBtn({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant={pri ? "default" : "outline"}
+      size="sm"
       onClick={onClick}
       disabled={disabled}
-      className="mono"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "5px 10px",
-        fontSize: 11.5,
-        borderRadius: 6,
-        border: pri ? "1px solid var(--pri)" : "1px solid var(--bd-soft)",
-        background: pri ? "var(--pri)" : "transparent",
-        color: pri ? "var(--bg-0)" : "var(--fg-1)",
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-      }}
+      className="h-auto gap-1.5 px-2.5 py-[5px] font-mono text-[11.5px]"
     >
       {children}
       {kbd && (
@@ -862,6 +820,6 @@ function FooterBtn({
           {kbd}
         </span>
       )}
-    </button>
+    </Button>
   );
 }

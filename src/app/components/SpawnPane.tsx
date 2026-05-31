@@ -29,6 +29,7 @@ import { Button } from "@/app/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/app/ui/select";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { Tip } from "./primitives/Tip";
 import { Ico } from "./primitives/icons";
 
 const WORKSPACE_ROOT = "/workspace";
@@ -641,21 +642,22 @@ function WorkdirBrowser({
             borderTop: "1px solid var(--bd)",
           }}
         >
-          <span
-            className="mono"
-            title={nav}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              fontSize: 10.5,
-              color: "var(--fg-2)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {nav}
-          </span>
+          <Tip text={nav}>
+            <span
+              className="mono"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                fontSize: 10.5,
+                color: "var(--fg-2)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {nav}
+            </span>
+          </Tip>
           <Button variant="outline" size="xs" onClick={useFolder}>
             Use this folder
           </Button>

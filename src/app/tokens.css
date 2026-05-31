@@ -588,6 +588,27 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
+/* Dashboard mount reveal — staggered fade + rise. Callers set animation-delay
+   inline to stagger tiles/sections. Honors reduced-motion. */
+.dash-rise {
+  animation: dash-rise 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes dash-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-rise {
+    animation: none;
+  }
+}
+
 /* Smooth scrollbar for custom panels */
 .scroll {
   scrollbar-width: thin;
@@ -626,6 +647,18 @@
 }
 .ws-side-row:hover {
   border-color: var(--bd);
+}
+
+/* Generic list-row hover — the reusable replacement for ad-hoc JS hover
+   (onMouseEnter/Leave background mutation) on non-button list rows (account
+   rows, sidebar session rows, etc.). The rest background stays whatever the row
+   sets inline (incl. zebra stripes); :hover overrides it to --bg-hover and
+   reverts on leave with no JS. */
+.hov-row {
+  transition: background 0.12s ease;
+}
+.hov-row:hover {
+  background: var(--bg-hover) !important;
 }
 
 /* ---- Global focus-visible ring ------------------------------------------- */

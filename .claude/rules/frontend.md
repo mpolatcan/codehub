@@ -7,7 +7,40 @@
 Any frontend task — new screens, component changes, layout fixes, design polish, UX improvements — MUST use these skills:
 
 1. **`/frontend-design:frontend-design`** — invoke for all visual/design/UX work. Covers component design, layout composition, styling, motion, theming, and design-system alignment.
-2. **shadcn primitives** — use the existing shadcn/Radix components in `src/app/ui/` (Button, Dialog, Popover, etc.) before building custom ones. Check `src/app/ui/` for available primitives.
+2. **shadcn primitives** — use the existing shadcn/Radix components in `src/app/ui/`. See the rule below.
+
+## ALWAYS use shadcn for controls — never hand-roll (rule)
+
+**Every interactive control that has a shadcn/ui equivalent MUST use the shadcn component from `src/app/ui/`. Never hand-roll an inline-styled version of something shadcn already provides.** This is non-negotiable and applies to every screen.
+
+Mandatory mapping (control → component):
+
+| Control | Use | Not |
+|---|---|---|
+| button (text or icon) | `<Button>` (`ui/button`); icon buttons → `IconBtn` (renders `<Button variant="ghostIcon">`) | raw `<button style=…>`, `.btn` CSS class |
+| toggle / switch | `<Switch>` (`ui/switch`); pressable icon/filter toggle → `<Toggle>` (`ui/toggle`) | hand-rolled `role="switch"`/`aria-pressed` button |
+| checkbox | `<Checkbox>` (`ui/checkbox`) | `role="checkbox"` button, `<input type="checkbox">` |
+| range / slider | `<Slider>` (`ui/slider`) | `<input type="range">` |
+| native dropdown select | `<Select>` (`ui/select`) | `<select>` / hidden-native-select tricks |
+| action menu (trigger) | `<DropdownMenu>` (`ui/dropdown-menu`) | bespoke absolute-positioned menus |
+| inline single-select (segmented) | `<Segmented>` → `ToggleGroup` (`ui/toggle-group`) | hand-rolled pill row |
+| chip / label pill | `<Badge>` (`ui/badge`) (via `Tag`) | inline-styled span pill |
+| text input / textarea | `<Input>` / `<Textarea>` | raw `<input>` / `<textarea>` |
+| dialog / popover / tabs / tooltip / separator / card | `ui/dialog`, `ui/popover`, `ui/tabs`, `Tip`(`ui/tooltip`), `ui/separator`, `ui/card` | custom equivalents |
+
+If a needed shadcn primitive isn't in `ui/` yet, **add it** (radix-ui is already a dep) rather than hand-rolling.
+
+**Migration status:** every native form control (`<input>`/`<select>`/`<textarea>`/checkbox/range) and every hand-rolled duplicate of a shadcn primitive has been migrated. `grep -rn "<input\|<select\|<textarea" src/app/screens src/app/components` must stay empty. **Hover tooltips are 100% `Tip` (Radix), zero native `title=` on DOM elements** — never add `title=` to a `<button>`/`<span>`/`<div>`/`<a>` for a tooltip; wrap it in `<Tip text=…>`. (Disabled control → wrap in a `<span>` so Radix fires. Section-label component props like `PaneHead title=`/`HubBanner title=` and the `CommandDialog title=` a11y label are NOT tooltips — those stay.)
+
+**Two patterns worth copying:**
+- **Inline-look on a shadcn control:** override the box via className/inline-style — e.g. an inline search field is `<Input className="h-auto border-0 bg-transparent shadow-none focus-visible:ring-0">`; the rename-in-place fields are `<Input className="pane-name-input h-auto">` (keep the `pane-name-input` class — the global keyboard guard keys off it; `h-auto` kills shadcn's `h-9`).
+- **Presentational checkbox on a clickable card:** when the whole card toggles selection, make the `<Checkbox>` `pointer-events-none aria-hidden tabIndex={-1}` so the click falls through to the card (Radix's hidden form-input bubbles a 2nd click that `stopPropagation` can't catch → would double-toggle).
+
+**Inline styles are still fine** for: layout/positioning (flex, grid, padding, gap, absolute), and **domain primitives that have no shadcn equivalent** — `StatusDot`, `Spark`, `AgentGlyph`, `ContextGauge`, `MetricStat`, `ColorDot`, `TermBlock`, `Logo`. Those build directly on `tokens.css`. **`<button>` is also still correct for bespoke composite surfaces with no shadcn drop-in** — workspace tab strips (drag/color/close), the pane color-swatch (`ColorDot`), the `SpawnSplitBtn` split-button halves, file/session list rows, the settings sidebar nav, and quick-pick model chips. Those are app components, not controls to migrate. But any plain action/toggle/select/input inside them uses shadcn.
+
+Tooltip nuance: Radix tooltips don't fire on `disabled` elements (native `title` does) — keep native `title` on disabled controls and on truncated/overflow full-text (paths).
+
+Showcase + reference for the canonical set: `PrimitivesGallery` (`src/app/dev/PrimitivesGallery.tsx`, dev route `#/__primitives`).
 
 ## Component hierarchy
 
@@ -76,6 +109,6 @@ If the backend work is out of scope or deferred, say so explicitly — don't shi
 ## Frontend-specific behavioral notes
 
 - **Don't refactor adjacent components** while fixing one screen. If you're fixing Dashboard, don't "also clean up" HubSidebar.
-- **Match existing inline-style patterns.** This codebase uses inline styles extensively (not Tailwind classes) for component-level layout. Don't convert existing inline styles to Tailwind unless asked.
-- **No speculative abstractions.** Three similar `<div>` blocks are fine. Don't extract a `<Card variant={...}>` wrapper unless it's used 5+ times.
+- **Inline styles for LAYOUT only.** Inline styles are fine for layout/positioning (flex, padding, gap, absolute). They are NOT a substitute for a shadcn control — see the ALWAYS rule above. A hand-rolled inline-styled button/toggle/select/menu is a bug to fix, not a pattern to match.
+- **No speculative abstractions.** Three similar `<div>` blocks are fine. Don't extract a `<Card variant={...}>` wrapper unless it's used 5+ times. (This does not excuse hand-rolling controls — those go through shadcn regardless of count.)
 - **Verify before and after.** Screenshot the screen before your change, make the change, screenshot after. Compare both.

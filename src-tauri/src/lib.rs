@@ -580,6 +580,7 @@ pub fn build_account_profile(
         agent: cli.binary().to_string(),
         label,
         enabled: true,
+        email: None,
         credential: config::CredentialSource::Env { var_name },
     })
 }
@@ -597,6 +598,7 @@ pub fn build_vault_profile(agent: &str, label: &str) -> Result<AccountProfile, S
             agent: "github".to_string(),
             label,
             enabled: true,
+            email: None,
             credential: config::CredentialSource::Vault,
         });
     }
@@ -610,6 +612,7 @@ pub fn build_vault_profile(agent: &str, label: &str) -> Result<AccountProfile, S
         agent: cli.binary().to_string(),
         label,
         enabled: true,
+        email: None,
         credential: config::CredentialSource::Vault,
     })
 }
@@ -714,6 +717,63 @@ fn set_account_profile_enabled(
     Ok(profile_statuses(next.account_profiles, Some(&state.vault)))
 }
 
+/// Backfill the email for vault-backed Claude/Codex profiles signed in before
+/// the email was captured at login. Decodes the address straight from each
+/// stored credential (no re-login) inside one short-lived container, then
+/// persists it on the profile. Returns the number of profiles updated.
+///
+/// Cheap when there's nothing to do: it reads the config first and returns
+/// early (no container) when every profile already has an email — so the
+/// frontend can call it on the Coding-Agents pane mount without churn.
+#[tauri::command]
+async fn backfill_account_emails(state: tauri::State<'_, AppState>) -> Result<u32, String> {
+    // Vault Claude/Codex profiles with no email yet AND a present credential.
+    let targets: Vec<(String, String)> = state
+        .config
+        .get()
+        .account_profiles
+        .into_iter()
+        .filter(|p| {
+            p.is_vault()
+                && p.email.is_none()
+                && matches!(p.agent.as_str(), "claude" | "codex")
+                && state.vault.exists(&p.id)
+        })
+        .map(|p| (p.id, p.agent))
+        .collect();
+    if targets.is_empty() {
+        return Ok(0);
+    }
+
+    // One throwaway container decodes every missing email, then is torn down.
+    let ws_key = format!("codehub-backfill-{}", uuid::Uuid::new_v4());
+    let lifecycle = state.manager.resolve(&ws_key, None);
+    lifecycle
+        .ensure_runtime()
+        .await
+        .map_err(|e| e.to_string())?;
+    let docker = lifecycle.docker_client();
+
+    let mut updated = 0u32;
+    for (id, agent) in targets {
+        let Ok(Some(secret)) = state.vault.read(&id) else {
+            continue;
+        };
+        if let Some(email) = docker.read_account_email_from_secret(&agent, &secret).await {
+            if state
+                .config
+                .set_account_profile_email(&id, Some(email))
+                .is_ok()
+            {
+                updated += 1;
+            }
+        }
+    }
+
+    let _ = state.manager.remove_workspace(&ws_key).await;
+    Ok(updated)
+}
+
 /// `<cli> --version` for each agent inside a running workspace container.
 #[tauri::command]
 async fn agent_versions(
@@ -780,21 +840,25 @@ async fn container_mounts(
 }
 
 /// Identity of a workspace container's image (Containers view Image card).
-/// When workspace is omitted (Settings/About), uses any running container.
+/// When workspace is omitted (Settings/About/New-workspace wizard), uses any
+/// running container; with none running it falls back to the configured pinned
+/// image tag so the wizard can show the base image before a container exists.
 #[tauri::command]
 async fn container_image(
     state: tauri::State<'_, AppState>,
     workspace: Option<String>,
 ) -> Result<ImageInfo, String> {
     let docker = match workspace {
-        Some(ref key) => Arc::new(state.manager.workspace_container(key).docker_client()),
-        None => state
-            .manager
-            .any_running_docker()
-            .await
-            .ok_or_else(|| "no running workspace container".to_string())?,
+        Some(ref key) => Some(Arc::new(state.manager.workspace_container(key).docker_client())),
+        None => state.manager.any_running_docker().await,
     };
-    docker.image_info().await.map_err(|e| e.to_string())
+    match docker {
+        Some(d) => d.image_info().await.map_err(|e| e.to_string()),
+        None => Ok(ImageInfo {
+            tag: Some(state.manager.image().to_string()),
+            ..Default::default()
+        }),
+    }
 }
 
 /// Liveness of a workspace container (Containers view hero).
@@ -1360,6 +1424,7 @@ async fn create_session(
                         agent: cli.binary().to_string(),
                         label: label.to_string(),
                         enabled: true,
+                        email: None,
                         credential: config::CredentialSource::Vault,
                     });
                     let env_name = config::vault_env_name(&id);
@@ -1396,13 +1461,15 @@ async fn create_session(
         launch_account_env.clear();
     }
     if let Some(env_name) = restore_codex_auth_env {
-        // Write $CODEX_HOME/auth.json from the vault secret before launch, then run
-        // Codex plainly (account_var stays None). CODEX_HOME is pinned by the base
-        // pane env, so the bare `codex` finds the credential we just materialized.
-        docker
+        // Materialize auth.json into a PER-PROFILE CODEX_HOME, then point this
+        // pane at it (overriding the base CODEX_HOME=/config/codex). Mirrors the
+        // Claude bundle path above — two Codex accounts in one workspace stay
+        // isolated instead of sharing one auth.json. account_var stays None.
+        let dir = docker
             .restore_codex_auth_from_env(&env_name, &launch_account_env)
             .await
             .map_err(|e| e.to_string())?;
+        session_env.push(format!("CODEX_HOME={dir}"));
         launch_account_env.clear();
     }
     docker
@@ -2050,6 +2117,14 @@ async fn vault_complete_login(
 
         if let Some(cred) = credential {
             auth::store_credential(&state.vault, &profile_id, &provider, &cred, &app)?;
+            // Read the account email off the still-alive login container and
+            // persist it on the profile so the UI can show which account this is.
+            // Best-effort: a miss leaves email None, never failing the sign-in.
+            let email =
+                auth::capture_account_email(&docker, &provider, session_name.as_deref()).await;
+            if email.is_some() {
+                let _ = state.config.set_account_profile_email(&profile_id, email);
+            }
         } else {
             let message = auth::login_failure_message(&docker, &provider, session_name.as_deref())
                 .await
@@ -2512,6 +2587,7 @@ pub fn run() {
             remove_account_profile,
             rename_account_profile,
             set_account_profile_enabled,
+            backfill_account_emails,
             agent_key_status,
             agent_versions,
             container_stats,

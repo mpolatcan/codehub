@@ -3,11 +3,13 @@ import type { DragEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PaneMount } from "../../components/PaneMount";
 import { IconBtn } from "../../components/primitives/IconBtn";
+import { Tip } from "../../components/primitives/Tip";
 import { Ico } from "../../components/primitives/icons";
 import { useResizableDock } from "../../hooks/useResizableDock";
 import { EASE } from "../../hooks/useSlideIn";
 import { useOverlay } from "../../lib/overlay";
 import { activeWorkspace, useStore } from "../../lib/store";
+import { Input } from "../../ui/input";
 import { ResizeHandle } from "./ResizeHandle";
 
 interface ShellTab {
@@ -208,7 +210,8 @@ export function ShellPanel() {
             <IconBtn
               title="Scroll tabs left"
               onClick={() => scrollTabs(-1)}
-              style={{ width: 22, height: 22, flexShrink: 0 }}
+              size={22}
+              style={{ flexShrink: 0 }}
             >
               {Ico.chevL}
             </IconBtn>
@@ -252,7 +255,8 @@ export function ShellPanel() {
             ) : (
               <IconBtn
                 title="New shell tab"
-                style={{ width: 22, height: 22, flexShrink: 0, marginLeft: 2 }}
+                size={22}
+                style={{ flexShrink: 0, marginLeft: 2 }}
                 onClick={addTab}
                 disabled={!running || loading}
               >
@@ -264,7 +268,8 @@ export function ShellPanel() {
             <IconBtn
               title="Scroll tabs right"
               onClick={() => scrollTabs(1)}
-              style={{ width: 22, height: 22, flexShrink: 0 }}
+              size={22}
+              style={{ flexShrink: 0 }}
             >
               {Ico.chevR}
             </IconBtn>
@@ -354,10 +359,9 @@ function ShellTabBtn({
       }}
     >
       {editing ? (
-        <input
-          className="pane-name-input"
+        <Input
+          className="pane-name-input h-auto"
           defaultValue={label}
-          // biome-ignore lint/a11y/noAutofocus: rename input is opened by an explicit double-click
           autoFocus
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
@@ -378,34 +382,36 @@ function ShellTabBtn({
         />
       ) : (
         <>
-          <button
-            type="button"
-            onClick={onClick}
-            onDoubleClick={() => setEditing(true)}
-            title="Double-click to rename"
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: 0,
-              cursor: "inherit",
-              color: "inherit",
-              fontFamily: "inherit",
-              fontSize: "inherit",
-            }}
-          >
-            {label}
-          </button>
-          <button
-            type="button"
-            className="tab-close"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
-            title="Close shell tab"
-          >
-            {Ico.close}
-          </button>
+          <Tip text="Double-click to rename">
+            <button
+              type="button"
+              onClick={onClick}
+              onDoubleClick={() => setEditing(true)}
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "inherit",
+                color: "inherit",
+                fontFamily: "inherit",
+                fontSize: "inherit",
+              }}
+            >
+              {label}
+            </button>
+          </Tip>
+          <Tip text="Close shell tab">
+            <button
+              type="button"
+              className="tab-close"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+            >
+              {Ico.close}
+            </button>
+          </Tip>
         </>
       )}
     </span>

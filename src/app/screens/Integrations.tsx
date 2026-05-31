@@ -24,6 +24,7 @@ import { ApiKeyDialog } from "@/app/components/ApiKeyDialog";
 import { AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { StatusDot } from "@/app/components/primitives/StatusDot";
 import { Tag } from "@/app/components/primitives/Tag";
+import { Tip } from "@/app/components/primitives/Tip";
 import { Ico } from "@/app/components/primitives/icons";
 import { type ClaudeIntegrations, type GithubRepo, type GithubStatus, ipc } from "@/app/lib/ipc";
 import { useStore } from "@/app/lib/store";
@@ -296,27 +297,19 @@ function GitHubCard({
                 Available repositories · {repos.length}
               </span>
               <span style={{ flex: 1 }} />
-              <button
-                type="button"
-                onClick={sync}
-                disabled={syncing}
-                className="mono"
-                title="Re-fetch repositories visible to this token"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                  padding: "3px 9px",
-                  background: "transparent",
-                  border: "1px solid var(--bd-soft)",
-                  borderRadius: 5,
-                  color: syncing ? "var(--fg-3)" : "var(--fg-2)",
-                  fontSize: 11,
-                  cursor: syncing ? "default" : "pointer",
-                }}
-              >
-                {syncing ? "Syncing…" : "Sync"}
-              </button>
+              <Tip text="Re-fetch repositories visible to this token">
+                <span style={{ display: "inline-flex" }}>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={sync}
+                    disabled={syncing}
+                    className="font-mono"
+                  >
+                    {syncing ? "Syncing…" : "Sync"}
+                  </Button>
+                </span>
+              </Tip>
             </div>
             {repos.length === 0 ? (
               <div
@@ -685,22 +678,23 @@ function ClaudeBody({ data, empty }: { data?: ClaudeIntegrations; empty?: string
                 </span>
                 <Chip>{s.transport}</Chip>
                 <Chip muted>{s.scope}</Chip>
-                <span
-                  className="mono"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    textAlign: "right",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    fontSize: 11,
-                    color: "var(--fg-3)",
-                  }}
-                  title={s.target ?? undefined}
-                >
-                  {s.target ?? "—"}
-                </span>
+                <Tip text={s.target ?? ""}>
+                  <span
+                    className="mono"
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      textAlign: "right",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      fontSize: 11,
+                      color: "var(--fg-3)",
+                    }}
+                  >
+                    {s.target ?? "—"}
+                  </span>
+                </Tip>
               </div>
             ))}
           </div>

@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { AGENT_META, AgentGlyph } from "../components/primitives/AgentGlyph";
 import { StatusDot } from "../components/primitives/StatusDot";
 import { Tab } from "../components/primitives/TabBar";
+import { Tip } from "../components/primitives/Tip";
 import { Ico } from "../components/primitives/icons";
 import { CLIS } from "../lib/catalog";
 import { type AgentCli, type AgentConfig, type ClaudeIntegrations, ipc } from "../lib/ipc";
 import { useStore } from "../lib/store";
+import { Button } from "../ui/button";
 
 /**
  * Agent settings detail — design/screens/agent-settings.jsx, made FACTUAL.
@@ -83,29 +85,30 @@ export function AgentDetail({
           borderBottom: "1px solid var(--bd-soft)",
         }}
       >
-        <button
-          type="button"
-          onClick={onBack}
-          title="Back to Agents"
-          className="mono"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            alignSelf: "center",
-            padding: "5px 9px",
-            marginRight: 6,
-            background: "transparent",
-            border: "1px solid var(--bd-soft)",
-            borderRadius: 6,
-            color: "var(--fg-2)",
-            cursor: "pointer",
-            fontSize: 11.5,
-          }}
-        >
-          <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>{Ico.arrowR}</span>
-          Agents
-        </button>
+        <Tip text="Back to Agents">
+          <button
+            type="button"
+            onClick={onBack}
+            className="mono"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              alignSelf: "center",
+              padding: "5px 9px",
+              marginRight: 6,
+              background: "transparent",
+              border: "1px solid var(--bd-soft)",
+              borderRadius: 6,
+              color: "var(--fg-2)",
+              cursor: "pointer",
+              fontSize: 11.5,
+            }}
+          >
+            <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>{Ico.arrowR}</span>
+            Agents
+          </button>
+        </Tip>
         {CLIS.map((c) => (
           <AgentTab
             key={c.id}
@@ -118,28 +121,13 @@ export function AgentDetail({
         ))}
         <span style={{ flex: 1 }} />
         {/* No custom-agent backend yet — inert, mirrors the Settings stub. */}
-        <button
-          type="button"
-          disabled
-          className="mono"
-          title="Custom agents aren't supported yet"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            alignSelf: "center",
-            padding: "5px 9px",
-            background: "transparent",
-            border: "1px solid var(--bd-soft)",
-            borderRadius: 6,
-            color: "var(--fg-3)",
-            fontSize: 11.5,
-            opacity: 0.55,
-            cursor: "default",
-          }}
-        >
-          {Ico.plus}Custom agent
-        </button>
+        <Tip text="Custom agents aren't supported yet">
+          <span style={{ display: "inline-flex" }} className="self-center">
+            <Button variant="outline" size="xs" disabled className="mono">
+              {Ico.plus}Custom agent
+            </Button>
+          </span>
+        </Tip>
       </div>
 
       {/* hero */}
@@ -249,14 +237,13 @@ export function AgentDetail({
               active
             />
             <div style={{ display: "flex", gap: 8, margin: "10px 0 28px", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                className="btn sm"
-                disabled
-                title="Provider writes need backend support"
-              >
-                {Ico.plus}Add provider
-              </button>
+              <Tip text="Provider writes need backend support">
+                <span style={{ display: "inline-flex" }}>
+                  <Button variant="outline" size="sm" disabled>
+                    {Ico.plus}Add provider
+                  </Button>
+                </span>
+              </Tip>
               <ProviderTemplate label="OpenAI-compatible" />
               <ProviderTemplate label="AWS Bedrock" />
               <ProviderTemplate label="Vertex AI" />
@@ -590,22 +577,23 @@ function ProviderRow({
 
 function ProviderTemplate({ label }: { label: string }) {
   return (
-    <span
-      className="mono"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: "5px 8px",
-        borderRadius: 6,
-        background: "var(--bg-2)",
-        border: "1px solid var(--bd)",
-        color: "var(--fg-3)",
-        fontSize: 10.5,
-      }}
-      title="Provider template needs backend support before it can be configured"
-    >
-      {label}
-    </span>
+    <Tip text="Provider template needs backend support before it can be configured">
+      <span
+        className="mono"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          padding: "5px 8px",
+          borderRadius: 6,
+          background: "var(--bg-2)",
+          border: "1px solid var(--bd)",
+          color: "var(--fg-3)",
+          fontSize: 10.5,
+        }}
+      >
+        {label}
+      </span>
+    </Tip>
   );
 }
 

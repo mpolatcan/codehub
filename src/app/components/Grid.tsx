@@ -5,6 +5,7 @@ import * as registry from "../lib/panes";
 import { confirmCloseRunningSession, isSpawnPlaceholder, useStore } from "../lib/store";
 import type { Group, LayoutNode, SplitNode, Workspace } from "../lib/tree";
 import { activeGroup, leavesList, leavesOf } from "../lib/tree";
+import { Button } from "../ui/button";
 import { PaneFoot } from "./PaneFoot";
 import { PaneHead } from "./PaneHead";
 import { PaneMount } from "./PaneMount";
@@ -111,31 +112,31 @@ function EmptyGroup({ ws, group }: { ws: Workspace; group: Group }) {
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-        <button type="button" className="btn sm pri" onClick={() => spawn("claude")}>
+        <Button size="sm" onClick={() => spawn("claude")}>
           <span
             style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--a-claude)" }}
           />
           Claude
           <span className="kbd">⌘1</span>
-        </button>
-        <button type="button" className="btn sm pri" onClick={() => spawn("codex")}>
+        </Button>
+        <Button size="sm" onClick={() => spawn("codex")}>
           <span
             style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--a-codex)" }}
           />
           Codex
           <span className="kbd">⌘2</span>
-        </button>
-        <button type="button" className="btn sm pri" onClick={() => spawn("antigravity")}>
+        </Button>
+        <Button size="sm" onClick={() => spawn("antigravity")}>
           <span
             style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--a-antigravity)" }}
           />
           Antigravity
           <span className="kbd">⌘3</span>
-        </button>
+        </Button>
       </div>
-      <button type="button" onClick={openMore} className="btn ghost sm">
+      <Button variant="ghost" size="sm" onClick={openMore}>
         More agents
-      </button>
+      </Button>
       {menu && (
         <PaneContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} />
       )}
@@ -226,7 +227,7 @@ function ConfiguringLeaf({ id, group }: { id: string; group: Group }) {
           · configuring
         </span>
         <span style={{ flex: 1 }} />
-        <IconBtn title="Cancel (Esc)" style={{ width: 22, height: 22 }} onClick={() => cancel(id)}>
+        <IconBtn title="Cancel (Esc)" size={22} onClick={() => cancel(id)}>
           {Ico.close}
         </IconBtn>
       </div>

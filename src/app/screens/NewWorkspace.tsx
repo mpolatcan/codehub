@@ -17,9 +17,15 @@
  * the first agent tab. Reuses the shared spawn-form pieces so it can't drift from
  * the spawn dialog.
  */
+import { IconBtn } from "@/app/components/primitives/IconBtn";
 import { Ico } from "@/app/components/primitives/icons";
 import { FormRow } from "@/app/components/spawn-form";
-import { AUTO_ACCOUNT, agentAccountState } from "@/app/lib/accounts";
+import {
+  AUTO_ACCOUNT,
+  HOST_ACCOUNT,
+  accountProfileSubtitle,
+  agentAccountState,
+} from "@/app/lib/accounts";
 import { CLIS, MODE_BY_ID, modesFor } from "@/app/lib/catalog";
 import { type Cli, type ImageInfo, type Mode, ipc } from "@/app/lib/ipc";
 import { useOverlay } from "@/app/lib/overlay";
@@ -27,6 +33,9 @@ import { useStore } from "@/app/lib/store";
 import { Button } from "@/app/ui/button";
 import { Input } from "@/app/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/ui/select";
+import { Slider } from "@/app/ui/slider";
+import { Textarea } from "@/app/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/app/ui/tooltip";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 const STEPS = ["Repository", "Container", "Name & launch"] as const;
@@ -55,6 +64,7 @@ export function NewWorkspace() {
   const [agent, setAgentRaw] = useState<Cli>(defaultAgent);
   const [mode, setMode] = useState<Mode>("standard");
   const [accountChoice, setAccountChoice] = useState<string>(AUTO_ACCOUNT);
+  const [prompt, setPrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const savedWorkspaceIdRef = useRef<string | null>(null);
@@ -81,7 +91,26 @@ export function NewWorkspace() {
     setAccountChoice(AUTO_ACCOUNT);
   };
   const modes = modesFor(agent);
-  const { selectedAccount } = agentAccountState(agent, accountProfiles, keyStatus, accountChoice);
+  const { agentAccounts, defaultKey, effectiveAccountChoice, selectedAccount } = agentAccountState(
+    agent,
+    accountProfiles,
+    keyStatus,
+    accountChoice,
+  );
+  const accountOptions: { value: string; label: string; sub: string; present: boolean }[] = [
+    {
+      value: HOST_ACCOUNT,
+      label: "Default",
+      sub: defaultKey?.present ? "credential active" : defaultKey ? "no credential" : "auto-select",
+      present: defaultKey?.present ?? true,
+    },
+    ...agentAccounts.map((p) => ({
+      value: p.id,
+      label: p.label,
+      sub: accountProfileSubtitle(p),
+      present: p.present,
+    })),
+  ];
 
   useEffect(() => {
     void loadAccountProfiles();
@@ -120,7 +149,7 @@ export function NewWorkspace() {
         ));
       savedWorkspaceIdRef.current = id;
       await openSavedWorkspace(id); // marks lastOpened + ensures the mount points here
-      await newPlate(agent, mode, undefined, undefined, selectedAccount, {
+      await newPlate(agent, mode, undefined, prompt.trim() || undefined, selectedAccount, {
         title,
         dir,
         savedWorkspaceId: id,
@@ -235,8 +264,19 @@ export function NewWorkspace() {
           })}
         </div>
 
-        {/* body */}
-        <div style={{ padding: "18px", overflow: "auto", flex: 1 }}>
+        {/* body — fixed height so the card never resizes between steps. Each step
+            is a full-height flex column: list/scroll regions take fixed heights and
+            the primary controls anchor to the bottom, so nothing reflows. */}
+        <div
+          style={{
+            padding: "18px",
+            height: 440,
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
           {step === 1 && (
             <RepoStep
               dir={dir}
@@ -247,7 +287,14 @@ export function NewWorkspace() {
           )}
 
           {step === 2 && (
-            <>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                height: "100%",
+                justifyContent: "space-between",
+              }}
+            >
               <ContainerResourceStep
                 cpus={cpus}
                 setCpus={setCpus}
@@ -257,11 +304,11 @@ export function NewWorkspace() {
               <FormRow label="Base image">
                 <BaseImagePanel />
               </FormRow>
-            </>
+            </div>
           )}
 
           {step === 3 && (
-            <>
+            <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
               <FormRow label="Workspace name">
                 <Input
                   value={name}
@@ -276,6 +323,7 @@ export function NewWorkspace() {
                 />
               </FormRow>
 
+              {/* agent + mode share one row; both selects fill their half-width */}
               <FormRow label="First agent">
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div>
@@ -303,18 +351,81 @@ export function NewWorkspace() {
                       <SelectTrigger className="mono w-full">
                         <SelectValue />
                       </SelectTrigger>
+                      {/* Items show the label only; the longer description rides a
+                          hover tooltip so the list stays compact. */}
                       <SelectContent className="z-[70]">
-                        {modes.map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {MODE_BY_ID[m].label} — {MODE_BY_ID[m].hint}
-                          </SelectItem>
-                        ))}
+                        <TooltipProvider delayDuration={200}>
+                          {modes.map((m) => (
+                            <Tooltip key={m}>
+                              <TooltipTrigger asChild>
+                                <SelectItem value={m}>{MODE_BY_ID[m].label}</SelectItem>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="z-[80] max-w-56">
+                                {MODE_BY_ID[m].hint}
+                              </TooltipContent>
+                            </Tooltip>
+                          ))}
+                        </TooltipProvider>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
               </FormRow>
-            </>
+
+              <FormRow label="Account">
+                <Select value={effectiveAccountChoice} onValueChange={setAccountChoice}>
+                  <SelectTrigger className="mono w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="z-[70]">
+                    {accountOptions.map((opt) => (
+                      <SelectItem
+                        key={opt.value}
+                        value={opt.value}
+                        disabled={opt.value !== HOST_ACCOUNT && !opt.present}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: "50%",
+                              background: opt.present ? "var(--live)" : "var(--err)",
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span>{opt.label}</span>
+                          <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                            {opt.sub}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormRow>
+
+              {/* initial prompt — grows to fill the rest of the step's height */}
+              <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                <div
+                  className="lbl"
+                  style={{ color: "var(--fg-1)", marginBottom: 8, display: "flex", gap: 8 }}
+                >
+                  Initial prompt
+                  <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                    optional
+                  </span>
+                </div>
+                <Textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="First message handed to the agent once it launches…"
+                  spellCheck={false}
+                  className="mono resize-none text-sm"
+                  style={{ flex: 1, minHeight: 64 }}
+                />
+              </div>
+            </div>
           )}
         </div>
 
@@ -562,15 +673,13 @@ function ResourceSlider({
           {unit}
         </span>
       </div>
-      <input
-        type="range"
+      <Slider
         min={min}
         max={max}
         step={1}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="ch-slider"
-        style={{ width: "100%" }}
+        value={[value]}
+        onValueChange={([v]) => onChange(v)}
+        className="w-full"
       />
       <div
         className="mono"
@@ -605,7 +714,7 @@ function ContainerResourceStep({
       <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)", marginBottom: 12 }}>
         local Docker resources for this workspace
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <ResourceSlider label="CPU" unit="vCPU" value={cpus} min={1} max={8} onChange={setCpus} />
         <ResourceSlider
           label="Memory"
@@ -658,10 +767,7 @@ function RepoStep({
   };
   const browseLocal = async () => {
     const path = await ipc.pickDirectory().catch(() => null);
-    if (path) {
-      setLocalPath(path);
-      addDir(path);
-    }
+    if (path) addDir(path); // add straight away — no extra confirm step
   };
   const submitLocal = () => {
     const p = localPath.trim();
@@ -670,21 +776,58 @@ function RepoStep({
   };
 
   return (
-    <>
-      {/* selected repos — fixed header, scrollable list */}
-      {allDirs.length > 0 && (
-        <FormRow label={`Selected · ${allDirs.length}`}>
-          <div
-            className="scroll"
-            style={{
-              maxHeight: 140,
-              overflow: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
-          >
-            {allDirs.map((d) => {
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+      {/* selected repos — fills the remaining space and scrolls; the add controls
+          stay pinned below. Always rendered (empty state when none) so the section
+          height never jumps between an empty and a populated list. */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          marginBottom: 14,
+        }}
+      >
+        <div className="lbl" style={{ color: "var(--fg-1)", marginBottom: 8 }}>
+          Selected · {allDirs.length}
+        </div>
+        {/* bordered drop-area so the selected region reads as a defined panel even
+            when it holds one repo or none — fills the available height, scrolls. */}
+        <div
+          className="scroll"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflow: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            border: "1px solid var(--bd-soft)",
+            background: "var(--bg-1)",
+            borderRadius: 8,
+            padding: 8,
+          }}
+        >
+          {allDirs.length === 0 ? (
+            <div
+              className="mono"
+              style={{
+                flex: 1,
+                minHeight: 56,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                color: "var(--fg-3)",
+                fontSize: 11.5,
+                padding: "0 12px",
+              }}
+            >
+              No repositories yet — add one below.
+            </div>
+          ) : (
+            allDirs.map((d) => {
               const basename = d.split("/").filter(Boolean).pop() ?? d;
               const isGh = d.startsWith("/tmp/codehub-gh-");
               return (
@@ -733,131 +876,127 @@ function RepoStep({
                         (the first included) nests under /workspace. */}
                     {allDirs.length > 1 ? `→ /workspace/${basename}` : "→ /workspace"}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => removeDir(d)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--fg-3)",
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      padding: 2,
-                    }}
-                  >
+                  <IconBtn title="Remove repository" onClick={() => removeDir(d)} size={22}>
                     {Ico.close}
-                  </button>
+                  </IconBtn>
                 </div>
               );
-            })}
-          </div>
-        </FormRow>
-      )}
-
-      {/* local folder — input + browse button */}
-      <FormRow label="Local folder">
-        <div style={{ display: "flex", gap: 8 }}>
-          <Input
-            className="mono flex-1 text-xs"
-            value={localPath}
-            onChange={(e) => setLocalPath(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                submitLocal();
-              }
-            }}
-            placeholder="/path/to/project"
-            spellCheck={false}
-          />
-          <Button variant="outline" size="sm" onClick={() => void browseLocal()}>
-            {Ico.files} Browse…
-          </Button>
-          {localPath.trim() && (
-            <Button size="sm" onClick={submitLocal}>
-              Add
-            </Button>
+            })
           )}
         </div>
-      </FormRow>
-
-      {/* GitHub repos */}
-      <FormRow label="GitHub">
-        {!connected ? (
-          <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "6px 0" }}>
-            Not connected. Set up GitHub in Settings → Integrations to browse repos here.
-          </div>
-        ) : githubRepos.length === 0 ? (
-          <div className="mono" style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "6px 0" }}>
-            No repos found for this token.
-          </div>
-        ) : (
-          <div
-            className="scroll"
-            style={{
-              maxHeight: 160,
-              overflow: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
-          >
-            {githubRepos.map((repo) => {
-              const [owner, name] = repo.nameWithOwner.includes("/")
-                ? repo.nameWithOwner.split(/\/(.+)/)
-                : ["", repo.nameWithOwner];
-              const ghDir = `/tmp/codehub-gh-${name}`;
-              const already = allDirs.includes(ghDir);
-              return (
-                <button
-                  type="button"
-                  key={repo.nameWithOwner}
-                  disabled={already}
-                  onClick={() => addDir(ghDir)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "8px 12px",
-                    background: already ? "var(--bg-3)" : "var(--bg-2)",
-                    border: `1px solid ${already ? "var(--bd)" : "var(--bd-soft)"}`,
-                    borderRadius: 6,
-                    cursor: already ? "default" : "pointer",
-                    opacity: already ? 0.6 : 1,
-                    color: "inherit",
-                    font: "inherit",
-                    textAlign: "left",
-                    width: "100%",
-                    flexShrink: 0,
-                  }}
-                >
-                  {Ico.files}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
-                      {owner ? `${owner}/` : ""}
-                    </span>
-                    <span
-                      className="mono"
-                      style={{ fontSize: 12, color: "var(--fg-0)", fontWeight: 500 }}
-                    >
-                      {name}
-                    </span>
-                  </div>
-                  <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
-                    {already ? "added" : "add"}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </FormRow>
-
-      <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)", padding: "0 4px" }}>
-        {allDirs.length > 1
-          ? "Each repo mounts at /workspace/{repo-name}; /workspace is the shared parent."
-          : "A single repo mounts directly at /workspace."}
       </div>
-    </>
+
+      {/* add controls — pinned to the bottom of the step */}
+      <div style={{ flexShrink: 0 }}>
+        {/* local folder — input + browse button */}
+        <FormRow label="Local folder">
+          <div style={{ display: "flex", gap: 8 }}>
+            <Input
+              className="mono flex-1 text-xs"
+              value={localPath}
+              onChange={(e) => setLocalPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitLocal();
+                }
+              }}
+              placeholder="/path/to/project"
+              spellCheck={false}
+            />
+            <Button variant="outline" size="sm" onClick={() => void browseLocal()}>
+              {Ico.files} Browse…
+            </Button>
+          </div>
+        </FormRow>
+
+        {/* GitHub repos */}
+        <FormRow label="GitHub">
+          {!connected ? (
+            <div
+              className="mono"
+              style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "6px 0" }}
+            >
+              Not connected. Set up GitHub in Settings → Integrations to browse repos here.
+            </div>
+          ) : githubRepos.length === 0 ? (
+            <div
+              className="mono"
+              style={{ fontSize: 11.5, color: "var(--fg-3)", padding: "6px 0" }}
+            >
+              No repos found for this token.
+            </div>
+          ) : (
+            <div
+              className="scroll"
+              style={{
+                maxHeight: 120,
+                overflow: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              {githubRepos.map((repo) => {
+                const [owner, name] = repo.nameWithOwner.includes("/")
+                  ? repo.nameWithOwner.split(/\/(.+)/)
+                  : ["", repo.nameWithOwner];
+                const ghDir = `/tmp/codehub-gh-${name}`;
+                const already = allDirs.includes(ghDir);
+                return (
+                  <button
+                    type="button"
+                    key={repo.nameWithOwner}
+                    disabled={already}
+                    onClick={() => addDir(ghDir)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 12px",
+                      background: already ? "var(--bg-3)" : "var(--bg-2)",
+                      border: `1px solid ${already ? "var(--bd)" : "var(--bd-soft)"}`,
+                      borderRadius: 6,
+                      cursor: already ? "default" : "pointer",
+                      opacity: already ? 0.6 : 1,
+                      color: "inherit",
+                      font: "inherit",
+                      textAlign: "left",
+                      width: "100%",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {Ico.files}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+                        {owner ? `${owner}/` : ""}
+                      </span>
+                      <span
+                        className="mono"
+                        style={{ fontSize: 12, color: "var(--fg-0)", fontWeight: 500 }}
+                      >
+                        {name}
+                      </span>
+                    </div>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--fg-3)" }}>
+                      {already ? "added" : "add"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </FormRow>
+
+        <div
+          className="mono"
+          style={{ fontSize: 10.5, color: "var(--fg-3)", padding: "8px 4px 0" }}
+        >
+          {allDirs.length > 1
+            ? "Each repo mounts at /workspace/{repo-name}; /workspace is the shared parent."
+            : "A single repo mounts directly at /workspace."}
+        </div>
+      </div>
+    </div>
   );
 }

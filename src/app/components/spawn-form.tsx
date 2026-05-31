@@ -7,6 +7,7 @@
 import { AGENT_META, AgentGlyph, type AgentId } from "@/app/components/primitives/AgentGlyph";
 import { StatusBadge } from "@/app/components/primitives/StatusBadge";
 import { Tag } from "@/app/components/primitives/Tag";
+import { Tip } from "@/app/components/primitives/Tip";
 import { Ico } from "@/app/components/primitives/icons";
 import { type AgentCli, ipc } from "@/app/lib/ipc";
 import { useStore } from "@/app/lib/store";
@@ -378,19 +379,20 @@ export function RepositoryPicker({
         }}
       >
         {Ico.files}
-        <span
-          className="mono"
-          style={{
-            fontSize: 12.5,
-            color: "var(--fg-1)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={effective ?? undefined}
-        >
-          {effective ?? dash}
-        </span>
+        <Tip text={effective ?? ""}>
+          <span
+            className="mono"
+            style={{
+              fontSize: 12.5,
+              color: "var(--fg-1)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {effective ?? dash}
+          </span>
+        </Tip>
         <span style={{ flex: 1 }} />
         <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
           /workspace
@@ -439,15 +441,15 @@ export function RepositoryPicker({
       {otherRecents.length > 0 && (
         <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
           {otherRecents.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => chooseRecent(p)}
-              title={p}
-              style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
-            >
-              <Tag>{shortPath(p)}</Tag>
-            </button>
+            <Tip key={p} text={p}>
+              <button
+                type="button"
+                onClick={() => chooseRecent(p)}
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+              >
+                <Tag>{shortPath(p)}</Tag>
+              </button>
+            </Tip>
           ))}
         </div>
       )}

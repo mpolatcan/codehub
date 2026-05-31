@@ -278,18 +278,21 @@ async fn credential_fingerprint(docker: &DockerClient, file: &str) -> Option<Str
     }
 }
 
-/// Read the live Codex `auth.json` from a container, or `None` when it's absent
-/// or lacks a usable access token (so a cleared/partial file never overwrites a
-/// good vault entry). Codex stores credentials at `$CODEX_HOME/auth.json`
-/// (pinned to `/config/codex`), shared across that container's Codex sessions —
-/// unlike Claude's per-profile dirs.
-async fn capture_codex_auth_at(docker: &DockerClient) -> Result<Option<String>, String> {
+/// Read the live Codex `auth.json` from a profile's `CODEX_HOME` dir, or `None`
+/// when it's absent or lacks a usable access token (so a cleared/partial file
+/// never overwrites a good vault entry). With per-profile homes
+/// (`/config/codex-profiles/<env>`) each account has its own `auth.json`, keyed
+/// directly to a profile — like Claude's per-profile dirs.
+async fn capture_codex_auth_at(
+    docker: &DockerClient,
+    home: &str,
+) -> Result<Option<String>, String> {
+    let script = format!(
+        "[ -f {home}/auth.json ] && cat {home}/auth.json || true",
+        home = shell_single_quote(home),
+    );
     let out = docker
-        .exec_capture_pub(vec![
-            "sh",
-            "-c",
-            "[ -f /config/codex/auth.json ] && cat /config/codex/auth.json || true",
-        ])
+        .exec_capture_pub(vec!["sh", "-c", &script])
         .await
         .map_err(|e| e.to_string())?;
     let trimmed = out.trim();
@@ -314,18 +317,53 @@ fn codex_has_access_token(json: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// The ChatGPT account id inside a Codex `auth.json`, used to attribute a live
-/// credential back to the right vault profile when more than one Codex account
-/// exists.
-fn codex_account_id(json: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(json)
-        .ok()
-        .and_then(|v| {
-            v.get("tokens")
-                .and_then(|t| t.get("account_id"))
-                .and_then(|a| a.as_str())
-                .map(String::from)
-        })
+/// Read the signed-in account's email from a freshly-captured credential, run
+/// against the still-alive login container right after `capture_credential`.
+/// Identity only — the same address already surfaced in the Integrations pane —
+/// so it's safe to persist on the profile (config), unlike the token.
+///
+/// The decode is done container-side (`jq` + `base64` are in the runtime image)
+/// because the credential we hold here is opaque to the host: Claude's is a
+/// tar+gzip bundle and Codex's email lives inside a base64url JWT — neither is
+/// parseable in-process without pulling new Rust deps. Returns `None` on any
+/// miss (no file, no field, unparseable) — the caller treats email as optional.
+pub async fn capture_account_email(
+    docker: &Arc<DockerClient>,
+    provider: &str,
+    session_name: Option<&str>,
+) -> Option<String> {
+    let script = match provider {
+        "claude" => {
+            let dir = claude_login_config_dir(session_name?);
+            format!(
+                "PATH=\"/root/.local/bin:$PATH\"; f={}/.claude.json; [ -f \"$f\" ] && jq -r '.oauthAccount.emailAddress // empty' \"$f\" 2>/dev/null || true",
+                shell_single_quote(&dir),
+            )
+        },
+        // Codex's email is a claim in the id_token JWT. Pull the payload (2nd
+        // dot-segment), convert base64url→base64, pad, decode, and read `email`
+        // (falling back to the OpenAI profile claim some tokens use instead).
+        "codex" => r#"f=/config/codex/auth.json
+[ -f "$f" ] || exit 0
+tok=$(jq -r '.tokens.id_token // empty' "$f" 2>/dev/null)
+[ -n "$tok" ] || exit 0
+payload=$(printf '%s' "$tok" | cut -d. -f2 | tr '_-' '/+')
+case $(( ${#payload} % 4 )) in 2) payload="${payload}==";; 3) payload="${payload}=";; esac
+printf '%s' "$payload" | base64 -d 2>/dev/null \
+  | jq -r '.email // (."https://api.openai.com/profile".email) // empty' 2>/dev/null || true"#
+            .to_string(),
+        _ => return None,
+    };
+    let out = docker
+        .exec_capture_pub(vec!["sh", "-c", &script])
+        .await
+        .ok()?;
+    let email = out.trim();
+    if email.is_empty() || !email.contains('@') {
+        None
+    } else {
+        Some(email.to_string())
+    }
 }
 
 /// Interval between credential-sync sweeps. Claude access tokens live for hours,
@@ -353,19 +391,15 @@ const CREDENTIAL_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_
 /// the dev bridge has no vault.
 ///
 /// Claude vs Codex shape: Claude isolates each profile under its own
-/// `/config/claude-profiles/<env>` dir, so the file is per-profile. Codex shares
-/// one `$CODEX_HOME/auth.json` (`/config/codex`) across a container's Codex
-/// sessions, so the live file is attributed back to a profile by its ChatGPT
-/// `account_id` (falling back to the sole profile when only one exists).
+/// `/config/claude-profiles/<env>` dir; Codex likewise now isolates each account
+/// in its own `CODEX_HOME` (`/config/codex-profiles/<env>`), so both are keyed
+/// directly by profile — one `auth.json` per profile dir, no account_id guessing.
 pub async fn credential_sync_loop(
     manager: Arc<crate::manager::LifecycleManager>,
     config: Arc<crate::config::ConfigStore>,
     vault: Arc<Vault>,
 ) {
     use crate::lifecycle::ContainerState;
-    // Sentinel profile-id slot for Codex's shared per-container auth.json (its
-    // file isn't per-profile, so it can't key by a real profile id like Claude).
-    const CODEX_SLOT: &str = "\0codex-auth";
     let mut seen: std::collections::HashMap<(String, String), String> =
         std::collections::HashMap::new();
     loop {
@@ -386,18 +420,15 @@ pub async fn credential_sync_loop(
                 (p.id.clone(), dir)
             })
             .collect();
-        // Vault-backed Codex profiles: (profile id, stored account_id) for
-        // attributing the shared auth.json back to the right account.
-        let codex_profiles: Vec<(String, Option<String>)> = all
+        // Vault-backed Codex profiles: (profile id, per-profile CODEX_HOME dir),
+        // mirroring Claude — each account's auth.json lives in its own home.
+        let codex_profiles: Vec<(String, String)> = all
             .iter()
             .filter(|p| p.agent == "codex" && is_vault(p))
             .map(|p| {
-                let acct = vault
-                    .read(&p.id)
-                    .ok()
-                    .flatten()
-                    .and_then(|s| codex_account_id(&s));
-                (p.id.clone(), acct)
+                let dir =
+                    crate::docker::codex_profile_dir_for_env(&crate::config::vault_env_name(&p.id));
+                (p.id.clone(), dir)
             })
             .collect();
         if claude_profiles.is_empty() && codex_profiles.is_empty() {
@@ -452,37 +483,25 @@ pub async fn credential_sync_loop(
                 }
             }
 
-            // Codex: one shared auth.json per container, attributed by account_id.
-            if !codex_profiles.is_empty() {
-                let key = (cid.clone(), CODEX_SLOT.to_string());
-                if let Some(fp) = credential_fingerprint(&docker, "/config/codex/auth.json").await {
-                    if seen.get(&key) != Some(&fp) {
-                        if let Ok(Some(json)) = capture_codex_auth_at(&docker).await {
-                            let live_acct = codex_account_id(&json);
-                            // Match by account_id; if we can't (no id parsed) but there's
-                            // exactly one Codex profile, attribute to it. Otherwise skip —
-                            // never guess which of several accounts a file belongs to.
-                            let target = codex_profiles
-                                .iter()
-                                .find(|(_, stored)| match (stored, &live_acct) {
-                                    (Some(s), Some(l)) => s == l,
-                                    _ => false,
-                                })
-                                .map(|(pid, _)| pid.clone())
-                                .or_else(|| {
-                                    if codex_profiles.len() == 1 {
-                                        Some(codex_profiles[0].0.clone())
-                                    } else {
-                                        None
-                                    }
-                                });
-                            if let Some(pid) = target {
-                                if vault.store(&pid, &json).is_ok() {
-                                    seen.insert(key, fp);
-                                }
-                            }
+            // Codex: one auth.json per profile home (same shape as Claude above).
+            for (pid, dir) in &codex_profiles {
+                let file = format!("{dir}/auth.json");
+                let Some(fp) = credential_fingerprint(&docker, &file).await else {
+                    continue; // profile not seeded in this container
+                };
+                let key = (cid.clone(), pid.clone());
+                if seen.get(&key) == Some(&fp) {
+                    continue; // unchanged since the last sweep
+                }
+                match capture_codex_auth_at(&docker, dir).await {
+                    Ok(Some(json)) => {
+                        if vault.store(pid, &json).is_ok() {
+                            seen.insert(key, fp);
                         }
-                    }
+                    },
+                    // No usable creds on disk: keep the vault entry, retry next sweep.
+                    Ok(None) => {},
+                    Err(e) => tracing::debug!("codex credential sync capture failed: {e}"),
                 }
             }
         }

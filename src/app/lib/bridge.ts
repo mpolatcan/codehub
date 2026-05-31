@@ -153,6 +153,8 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       return jsend("POST", `/account-profiles/${encodeURIComponent(String(args.id))}/enabled`, {
         enabled: args.enabled,
       }) as Promise<T>;
+    case "backfill_account_emails":
+      return jsend("POST", "/account-profiles/backfill-emails") as Promise<T>;
     // Vault: OS-keychain ops — Tauri-only, degrade to no-op in browser mode.
     case "vault_store_key":
     case "vault_delete_key":

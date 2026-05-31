@@ -13,6 +13,7 @@ import { installBlockGlyphOverlay } from "../../app/lib/block-glyph-overlay";
 import { type UnlistenFn, listen } from "../../app/lib/bridge";
 import { createPtyOutputNormalizer } from "../../app/lib/pty-output";
 import { Button } from "../ui/button";
+import { Tip } from "./primitives/Tip";
 
 const TERM_THEME = {
   background: "#08090b",
@@ -306,9 +307,16 @@ export function LoginTerminalDialog({
                   : "error"}
           </span>
           <span style={{ flex: 1 }} />
-          <Button variant="ghost" size="icon-xs" onClick={() => void dismiss()} aria-label="Close">
-            ×
-          </Button>
+          <Tip text="Close">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => void dismiss()}
+              aria-label="Close"
+            >
+              ×
+            </Button>
+          </Tip>
         </div>
 
         {/* terminal */}

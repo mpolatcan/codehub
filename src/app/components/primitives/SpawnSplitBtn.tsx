@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { activeWorkspace, useStore } from "../../lib/store";
 import { MAX_GROUP_PANES, type SplitDir, activeGroup, leavesList } from "../../lib/tree";
+import { Tip } from "./Tip";
 import { Ico } from "./icons";
 
 // THE primary spawn CTA for the Hub ActionBar — one button replacing the old
@@ -62,29 +63,29 @@ export function SpawnSplitBtn() {
 
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
-      <button
-        type="button"
-        className="spawn-half spawn-main"
-        title={
+      <Tip
+        text={
           groupFull
             ? `Group full (${MAX_GROUP_PANES}/${MAX_GROUP_PANES}) — add agent in a new group (⌘⇧N)`
             : "New agent — fills the next grid cell (⌘N)"
         }
-        onClick={primary}
       >
-        {Ico.plus}
-        {groupFull ? "New group" : "New agent"}
-        <span className="kbd">{groupFull ? "⌘⇧N" : "⌘N"}</span>
-      </button>
-      <button
-        type="button"
-        className={`spawn-half spawn-chev${open ? " open" : ""}`}
-        title="Placement options"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {Ico.chevD}
-      </button>
+        <button type="button" className="spawn-half spawn-main" onClick={primary}>
+          {Ico.plus}
+          {groupFull ? "New group" : "New agent"}
+          <span className="kbd">{groupFull ? "⌘⇧N" : "⌘N"}</span>
+        </button>
+      </Tip>
+      <Tip text="Placement options">
+        <button
+          type="button"
+          className={`spawn-half spawn-chev${open ? " open" : ""}`}
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {Ico.chevD}
+        </button>
+      </Tip>
       {open && (
         <SpawnPlacementMenu
           focused={focused}

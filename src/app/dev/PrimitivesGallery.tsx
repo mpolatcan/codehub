@@ -9,16 +9,30 @@ import { ContextGauge } from "@/app/components/primitives/ContextGauge";
 import { IconBtn } from "@/app/components/primitives/IconBtn";
 import { Logo } from "@/app/components/primitives/Logo";
 import { MetricStat } from "@/app/components/primitives/MetricStat";
+import { SearchInput } from "@/app/components/primitives/SearchInput";
+import { Segmented } from "@/app/components/primitives/Segmented";
 import { Spark } from "@/app/components/primitives/Spark";
 import { StatusBadge } from "@/app/components/primitives/StatusBadge";
 import { STATUS, StatusDot } from "@/app/components/primitives/StatusDot";
 import type { StatusKey } from "@/app/components/primitives/StatusDot";
 import { Tag } from "@/app/components/primitives/Tag";
 import { SNIPPETS, TermBlock } from "@/app/components/primitives/TermBlock";
+import { Tip } from "@/app/components/primitives/Tip";
 import { Ico } from "@/app/components/primitives/icons";
 import { Badge } from "@/app/ui/badge";
 import { Button } from "@/app/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/app/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/ui/select";
 import { Separator } from "@/app/ui/separator";
+import { Switch } from "@/app/ui/switch";
 /**
  * PrimitivesGallery — dev-only smoke screen rendering every domain primitive
  * in every state. Gated behind import.meta.env.DEV + #/__primitives hash in main.tsx.
@@ -73,6 +87,12 @@ function Cell({ label, children }: { label?: string; children: React.ReactNode }
 
 export default function PrimitivesGallery() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  // Interactive demo state for the standardized control showcase below.
+  const [switchOn, setSwitchOn] = useState(true);
+  const [muted, setMuted] = useState(false);
+  const [provider, setProvider] = useState("claude");
+  const [seg, setSeg] = useState<"unified" | "split">("unified");
+  const [search, setSearch] = useState("");
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -116,22 +136,9 @@ export default function PrimitivesGallery() {
             CodeHub Phase 1 — all domain primitives in all states
           </p>
         </div>
-        <button
-          type="button"
-          onClick={toggleTheme}
-          style={{
-            padding: "6px 14px",
-            borderRadius: "var(--r-2)",
-            border: "1px solid var(--bd)",
-            background: "var(--bg-3)",
-            color: "var(--fg-0)",
-            fontFamily: "var(--mono)",
-            fontSize: 12,
-            cursor: "pointer",
-          }}
-        >
+        <Button variant="outline" size="sm" onClick={toggleTheme}>
           Theme: {theme}
-        </button>
+        </Button>
       </div>
 
       {/* ── AgentGlyph ── */}
@@ -319,6 +326,15 @@ export default function PrimitivesGallery() {
             {Ico.close}
           </IconBtn>
         </Cell>
+        <Cell label="sizes (20 / 22 / 26)">
+          <IconBtn size={20} title="size 20">
+            {Ico.settings}
+          </IconBtn>
+          <IconBtn size={22} title="size 22">
+            {Ico.settings}
+          </IconBtn>
+          <IconBtn title="size 26 (default)">{Ico.settings}</IconBtn>
+        </Cell>
         <Cell label="all icons">
           {Object.entries(Ico).map(([k, icon]) => (
             <IconBtn key={k} title={k}>
@@ -505,6 +521,133 @@ export default function PrimitivesGallery() {
             />
             <WorkspaceTab repo="sandbox" />
           </div>
+        </Cell>
+      </Section>
+
+      {/* ── Switch (canonical toggle) ── */}
+      <Section title="Switch — the canonical toggle (replaces every hand-rolled toggle)">
+        <Cell label="default (interactive)">
+          <Switch checked={switchOn} onCheckedChange={setSwitchOn} />
+          <span className="lbl-soft">{switchOn ? "on" : "off"}</span>
+        </Cell>
+        <Cell label="size sm">
+          <Switch size="sm" checked={muted} onCheckedChange={setMuted} />
+        </Cell>
+        <Cell label="on / off / disabled">
+          <Switch defaultChecked />
+          <Switch defaultChecked={false} />
+          <Switch defaultChecked disabled />
+        </Cell>
+      </Section>
+
+      {/* ── Select (canonical native-select replacement) ── */}
+      <Section title="Select — replaces every native <select>">
+        <Cell label="default (interactive)">
+          <Select value={provider} onValueChange={setProvider}>
+            <SelectTrigger size="sm" className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="claude">Claude</SelectItem>
+              <SelectItem value="codex">Codex</SelectItem>
+              <SelectItem value="antigravity">Antigravity</SelectItem>
+            </SelectContent>
+          </Select>
+        </Cell>
+        <Cell label="default size + placeholder">
+          <Select>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Choose a model…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="opus">Opus 4.8</SelectItem>
+              <SelectItem value="sonnet">Sonnet 4.6</SelectItem>
+              <SelectItem value="haiku">Haiku 4.5</SelectItem>
+            </SelectContent>
+          </Select>
+        </Cell>
+      </Section>
+
+      {/* ── DropdownMenu (canonical action menu) ── */}
+      <Section title="DropdownMenu — the canonical trigger-anchored action menu">
+        <Cell label="actions + shortcuts">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                {Ico.more} Menu
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuLabel>Pane</DropdownMenuLabel>
+              <DropdownMenuItem>{Ico.expand} Maximize</DropdownMenuItem>
+              <DropdownMenuItem>{Ico.plus} Split right</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem checked>Show telemetry</DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive">{Ico.close} Close session</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </Cell>
+      </Section>
+
+      {/* ── Tooltip (Tip) — the canonical hover tooltip ── */}
+      <Section title="Tip — the canonical hover tooltip (replaces native title=)">
+        <Cell label="on an icon button">
+          <Tip text="Settings">
+            <IconBtn>{Ico.settings}</IconBtn>
+          </Tip>
+        </Cell>
+        <Cell label="sides">
+          <Tip text="top" side="top">
+            <Button variant="outline" size="sm">
+              top
+            </Button>
+          </Tip>
+          <Tip text="right" side="right">
+            <Button variant="outline" size="sm">
+              right
+            </Button>
+          </Tip>
+          <Tip text="bottom" side="bottom">
+            <Button variant="outline" size="sm">
+              bottom
+            </Button>
+          </Tip>
+        </Cell>
+      </Section>
+
+      {/* ── Segmented (canonical inline single-select) ── */}
+      <Section title="Segmented — inline mutually-exclusive options (layout/density/etc.)">
+        <Cell label="interactive">
+          <Segmented
+            value={seg}
+            onChange={setSeg}
+            options={[
+              { key: "unified", label: "Unified" },
+              { key: "split", label: "Split" },
+            ]}
+          />
+        </Cell>
+      </Section>
+
+      {/* ── SearchInput (reusable filter field) ── */}
+      <Section title="SearchInput — reusable filter field (replaces the per-screen search boxes)">
+        <Cell label="with clear button">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Filter workspaces…"
+            onClear={() => setSearch("")}
+            style={{ width: 280 }}
+          />
+        </Cell>
+        <Cell label="no clear">
+          <SearchInput
+            value=""
+            onChange={() => {}}
+            placeholder="filter sessions…"
+            style={{ width: 240 }}
+          />
         </Cell>
       </Section>
 

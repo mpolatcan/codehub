@@ -73,7 +73,7 @@ pub struct ContainerStats {
 /// Identity of the image the runtime container runs, from `docker inspect` +
 /// `docker image inspect`. Backs the Containers view "Image" card. Every field
 /// is `Option` so a missing value renders as an em-dash rather than a fake.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageInfo {
     /// Image ID (`sha256:…`), as the container resolves it.
@@ -720,6 +720,15 @@ pub fn claude_profile_dir_for_env(src: &str) -> String {
     format!("/config/claude-profiles/{src}")
 }
 
+/// Per-profile `CODEX_HOME` for a vault profile's env name. Mirrors
+/// [`claude_profile_dir_for_env`]: each subscription account gets its OWN Codex
+/// home (auth.json + rollouts + config.toml) so two Codex accounts in one
+/// workspace don't clobber the single shared `/config/codex/auth.json`. The base
+/// `CODEX_HOME=/config/codex` stays the default for account-less (auto) panes.
+pub fn codex_profile_dir_for_env(src: &str) -> String {
+    format!("/config/codex-profiles/{src}")
+}
+
 pub struct TmuxSessionRequest<'a> {
     pub name: &'a str,
     pub cli: Cli,
@@ -1168,25 +1177,42 @@ unset secret payload {src}
     /// A JSON secret (ChatGPT OAuth `auth.json`) is written verbatim; a bare API
     /// key is piped to `codex login --with-api-key` so Codex writes `auth.json` in
     /// its own format.
+    ///
+    /// Per-profile isolation: each vault account materializes into its OWN
+    /// `CODEX_HOME` (`/config/codex-profiles/<src>`), mirroring Claude's
+    /// per-profile config dir — so two Codex accounts in one workspace keep
+    /// separate auth.json + rollouts instead of clobbering the shared
+    /// `/config/codex`. Returns the home dir; the caller exports it as the pane's
+    /// `CODEX_HOME` (overriding the base default).
     pub async fn restore_codex_auth_from_env(
         &self,
         src: &str,
         account_env: &[String],
-    ) -> Result<(), DockerError> {
+    ) -> Result<String, DockerError> {
         if !is_env_name(src) {
             return Err(DockerError::Command(format!(
                 "invalid Codex auth env name: {src}"
             )));
         }
+        let dir = codex_profile_dir_for_env(src);
         let script = format!(
             r#"set -eu
 PATH="{path}"
+home={home}
 secret="${{{src}:-}}"
 if [ -z "$secret" ]; then
   echo "missing Codex auth env {src}" >&2
   exit 1
 fi
-mkdir -p {home}
+mkdir -p "$home"
+chmod 700 "$home"
+# Seed config.toml forward so the isolated home carries the runtime's Codex
+# config. Hooks/notify ride `-c` argv (CODEX_HOOK_ARGS) and OVERRIDE the same
+# keys, so the copied file's hooks never double-fire; this just preserves any
+# baked defaults + saves Codex a from-scratch first-run rewrite.
+if [ -f {base}/config.toml ] && [ ! -f "$home/config.toml" ]; then
+  cp {base}/config.toml "$home/config.toml"
+fi
 umask 077
 case "$secret" in
   \{{*|\[*)
@@ -1196,25 +1222,86 @@ case "$secret" in
     # is newer. dash has no string `>`, so pick the later via `sort`.
     inc=$(printf '%s' "$secret" | jq -r '.last_refresh // ""' 2>/dev/null || echo "")
     cur=""
-    [ -f {home}/auth.json ] && cur=$(jq -r '.last_refresh // ""' {home}/auth.json 2>/dev/null || echo "")
+    [ -f "$home/auth.json" ] && cur=$(jq -r '.last_refresh // ""' "$home/auth.json" 2>/dev/null || echo "")
     if [ -n "$cur" ] && [ -n "$inc" ] \
        && [ "$(printf '%s\n%s\n' "$cur" "$inc" | sort | tail -n1)" = "$cur" ] \
        && [ "$cur" != "$inc" ]; then
       : # container holds a newer auth.json — keep it
     else
-      printf '%s' "$secret" > {home}/auth.json
+      printf '%s' "$secret" > "$home/auth.json"
     fi ;;
-  *) printf '%s' "$secret" | CODEX_HOME={home} codex login --with-api-key ;;
+  *) printf '%s' "$secret" | CODEX_HOME="$home" codex login --with-api-key ;;
 esac
 unset secret {src}
 "#,
             path = CONTAINER_PATH,
-            home = CODEX_CONFIG_DIR,
+            home = shell_single_quote(&dir),
+            base = CODEX_CONFIG_DIR,
             src = src,
         );
         self.exec_capture_env(vec!["sh", "-c", &script], account_env)
             .await?;
-        Ok(())
+        Ok(dir)
+    }
+
+    /// Decode the signed-in account's email from a vault credential `secret`,
+    /// without re-login — used to backfill profiles signed in before the email
+    /// was captured. The secret rides in the exec ENV by name (never an argv, so
+    /// it can't leak via `docker top`), and the decode runs container-side
+    /// because the host can't crack it dep-free: Claude's is a tar+gzip bundle,
+    /// Codex's email is a base64url JWT claim — `base64`/`tar`/`jq` all live in
+    /// the runtime image. Identity only; `None` on any miss (wrong agent, not a
+    /// recognizable credential, no email field).
+    pub async fn read_account_email_from_secret(
+        &self,
+        agent: &str,
+        secret: &str,
+    ) -> Option<String> {
+        let prefix = crate::auth::CLAUDE_AUTH_BUNDLE_PREFIX;
+        let body = match agent {
+            // Strip the bundle prefix, base64-decode, stream just `.claude.json`
+            // out of the tar, read `oauthAccount.emailAddress`.
+            "claude" => format!(
+                r#"case "$secret" in
+  {prefix}*) payload="${{secret#{prefix}}}" ;;
+  *) exit 0 ;;
+esac
+printf '%s' "$payload" | base64 -d 2>/dev/null | tar -xzO ./.claude.json 2>/dev/null | jq -r '.oauthAccount.emailAddress // empty' 2>/dev/null || true"#,
+                prefix = prefix,
+            ),
+            // Pull the id_token JWT, base64url→base64 + pad its payload, decode,
+            // read the email claim (or the OpenAI profile claim some tokens use).
+            "codex" => {
+                r#"tok=$(printf '%s' "$secret" | jq -r '.tokens.id_token // empty' 2>/dev/null)
+[ -n "$tok" ] || exit 0
+payload=$(printf '%s' "$tok" | cut -d. -f2 | tr '_-' '/+')
+case $(( ${#payload} % 4 )) in 2) payload="${payload}==";; 3) payload="${payload}=";; esac
+printf '%s' "$payload" | base64 -d 2>/dev/null \
+  | jq -r '.email // (."https://api.openai.com/profile".email) // empty' 2>/dev/null || true"#
+                    .to_string()
+            },
+            _ => return None,
+        };
+        let script = format!(
+            r#"PATH="{path}"
+secret="${{CODEHUB_EMAIL_SECRET:-}}"
+[ -n "$secret" ] || exit 0
+{body}
+unset secret CODEHUB_EMAIL_SECRET payload tok"#,
+            path = CONTAINER_PATH,
+            body = body,
+        );
+        let env = vec![format!("CODEHUB_EMAIL_SECRET={secret}")];
+        let out = self
+            .exec_capture_env(vec!["sh", "-c", &script], &env)
+            .await
+            .ok()?;
+        let email = out.trim();
+        if email.is_empty() || !email.contains('@') {
+            None
+        } else {
+            Some(email.to_string())
+        }
     }
 
     pub async fn kill_tmux_session(&self, name: &str) -> Result<(), DockerError> {
@@ -2145,7 +2232,7 @@ rm -f /tmp/codehub-pr.json"#,
         self.exec_capture(vec![
             "sh",
             "-c",
-            "find /config/codex/sessions -type f -name 'rollout-*.jsonl' -exec cat {} + 2>/dev/null || true",
+            "find /config/codex/sessions /config/codex-profiles/*/sessions -type f -name 'rollout-*.jsonl' -exec cat {} + 2>/dev/null || true",
         ])
         .await
     }
@@ -2263,7 +2350,7 @@ rm -f /tmp/codehub-pr.json"#,
         }
         self.require_running().await?;
         let pattern = format!(
-            "find /config/codex/sessions -type f -name 'rollout-*{id}.jsonl' -exec cat {{}} + 2>/dev/null || true"
+            "find /config/codex/sessions /config/codex-profiles/*/sessions -type f -name 'rollout-*{id}.jsonl' -exec cat {{}} + 2>/dev/null || true"
         );
         let raw = self.exec_capture(vec!["sh", "-c", &pattern]).await?;
         Ok(codex_session_usage_from_raw(&raw))
@@ -2280,7 +2367,7 @@ rm -f /tmp/codehub-pr.json"#,
             .exec_capture(vec![
                 "sh",
                 "-c",
-                "f=$(find /config/codex/sessions -type f -name 'rollout-*.jsonl' 2>/dev/null | sort | tail -1); [ -n \"$f\" ] && cat \"$f\" || true",
+                "f=$(find /config/codex/sessions /config/codex-profiles/*/sessions -type f -name 'rollout-*.jsonl' 2>/dev/null | sort | tail -1); [ -n \"$f\" ] && cat \"$f\" || true",
             ])
             .await?;
         Ok(extract_codex_rate_limits(&raw))
