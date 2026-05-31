@@ -63,13 +63,6 @@ function specLabel(sz: ContainerSizing | null | undefined): string | null {
   return out || null;
 }
 
-// Repo display name from a container_repos path: "/workspace" → the workspace's
-// own name; "/workspace/foo" → "foo".
-function repoName(path: string, fallback: string): string {
-  if (path === "/workspace") return fallback;
-  return path.split("/").filter(Boolean).pop() ?? fallback;
-}
-
 // Compact size for the card's lifecycle IconBtns (smaller than the default 26 so
 // they sit proportionally in the footer; matches the sidebar row controls).
 const LIFE_BTN = { width: 22, height: 22 } as const;
@@ -183,53 +176,14 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // Live fleet ops (rehomed from the old Workspaces screen). Poll the real tmux
-  // session keys every 3s to tell which RUNNING containers are idle (no agents),
-  // and re-read the container fleet so cards/counts stay current as the user
-  // stops/prunes. Lifecycle reuses the same ipc the inspector used.
-  const [liveKeys, setLiveKeys] = useState<Set<string>>(new Set());
+  // Re-read the container fleet every 3s so cards/counts stay current as the user
+  // opens/stops/removes workspaces (bulk delete + per-card lifecycle live here).
   useEffect(() => {
-    let alive = true;
-    const tick = () => {
-      void refreshContainers();
-      ipc
-        .listSessions()
-        .then((ss) => alive && setLiveKeys(new Set(ss.map((s) => s.workspace))))
-        .catch(() => {});
-    };
+    const tick = () => void refreshContainers();
     tick();
     const h = setInterval(tick, 3000);
-    return () => {
-      alive = false;
-      clearInterval(h);
-    };
+    return () => clearInterval(h);
   }, [refreshContainers]);
-
-  const stoppedContainers = containers.filter((c) => c.status.state !== "running");
-  // Idle = running but no real tmux session — the empty containers that leak
-  // CPU/mem. Saved-but-empty counts too: this is the user's explicit choice.
-  const idleContainers = containers.filter(
-    (c) => c.status.state === "running" && !liveKeys.has(c.key),
-  );
-  const stopIdle = async () => {
-    if (idleContainers.length === 0) return;
-    await Promise.all(idleContainers.map((c) => ipc.containerStop(c.key).catch(() => {})));
-    await refreshContainers();
-  };
-  const pruneStopped = async () => {
-    if (stoppedContainers.length === 0) return;
-    const n = stoppedContainers.length;
-    if (
-      !window.confirm(
-        `Remove ${n} stopped container${n === 1 ? "" : "s"}? Bind-mounted /workspace files are preserved; container-local state is lost.`,
-      )
-    )
-      return;
-    await Promise.all(
-      stoppedContainers.map((c) => ipc.removeWorkspaceContainer(c.key).catch(() => {})),
-    );
-    await refreshContainers();
-  };
 
   // Overlay mode: Esc dismisses (stopPropagation so it doesn't also fire a pane's
   // own Esc handler behind the scrim).
@@ -361,72 +315,15 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          {selectMode ? (
-            <>
-              <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)", marginRight: 2 }}>
-                {selected.size} selected
-              </span>
-              <Button
-                variant="outline"
-                onClick={() => void bulkOpen()}
-                disabled={selected.size === 0}
-                title="Open the selected workspaces"
-              >
-                {Ico.arrowR}Open · {selected.size}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => void bulkDelete()}
-                disabled={selected.size === 0}
-                title="Delete the selected workspaces (prunes containers + saved records)"
-                style={{ color: selected.size > 0 ? "var(--err)" : undefined }}
-              >
-                {Ico.trash}Remove · {selected.size}
-              </Button>
-              <Button variant="ghost" onClick={exitSelect} title="Exit selection">
-                Done
-              </Button>
-            </>
-          ) : (
-            <>
-              {entries.length > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectMode(true)}
-                  title="Select multiple workspaces"
-                >
-                  {Ico.check}Select
-                </Button>
-              )}
-              {idleContainers.length > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={() => void stopIdle()}
-                  title="Stop running containers that have no agents (frees CPU/mem)"
-                >
-                  Stop idle · {idleContainers.length}
-                </Button>
-              )}
-              {stoppedContainers.length > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={() => void pruneStopped()}
-                  title="Remove all stopped containers"
-                >
-                  Prune stopped
-                </Button>
-              )}
-              <Button
-                onClick={() => {
-                  openWizard(true);
-                  onClose?.();
-                }}
-                title="Create a new workspace"
-              >
-                {Ico.plus}New workspace
-              </Button>
-            </>
-          )}
+          <Button
+            onClick={() => {
+              openWizard(true);
+              onClose?.();
+            }}
+            title="Create a new workspace"
+          >
+            {Ico.plus}New workspace
+          </Button>
         </div>
       </div>
 
@@ -516,6 +413,48 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
               </button>
             ))}
           </div>
+
+          {/* select controls — live at the filter level, right-aligned. Entering
+              select mode swaps the trigger for the bulk Open/Remove/Done actions. */}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            {selectMode ? (
+              <>
+                <span className="mono" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+                  {selected.size} selected
+                </span>
+                <Button
+                  variant="outline"
+                  onClick={() => void bulkOpen()}
+                  disabled={selected.size === 0}
+                  title="Open the selected workspaces"
+                >
+                  {Ico.arrowR}Open · {selected.size}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => void bulkDelete()}
+                  disabled={selected.size === 0}
+                  title="Delete the selected workspaces (prunes containers + saved records)"
+                  style={{ color: selected.size > 0 ? "var(--err)" : undefined }}
+                >
+                  {Ico.trash}Remove · {selected.size}
+                </Button>
+                <Button variant="ghost" onClick={exitSelect} title="Exit selection">
+                  Done
+                </Button>
+              </>
+            ) : (
+              entries.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectMode(true)}
+                  title="Select multiple workspaces"
+                >
+                  {Ico.check}Select
+                </Button>
+              )
+            )}
+          </div>
         </div>
 
         {filtered.length > 0 && (
@@ -567,7 +506,10 @@ function CardSection({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
+          // auto-fill + minmax so cards keep a sane width and wide screens get MORE
+          // columns instead of a few ultra-wide cards with dead space on the right.
+          // The 0-floor inside min() lets a long repo chip ellipsize, not widen its track.
+          gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
           gap: 12,
         }}
       >
@@ -631,7 +573,15 @@ function WorkspaceCard({
           : state === "starting"
             ? "starting"
             : "stopped";
-  const action = isOpen ? "Show" : entry.container ? "Resume" : "Open";
+  // A stopped container can't be opened directly — its click STARTS it instead
+  // (see cardClick), so the affordance reads "Start", not "Resume".
+  const action = isOpen
+    ? "Show"
+    : !entry.container
+      ? "Open"
+      : state === "running"
+        ? "Resume"
+        : "Start";
 
   // Live repos + their branches, discovered under /workspace. Only readable while
   // the container runs (it's a docker exec) — fetched once per (key, state), so
@@ -716,44 +666,89 @@ function WorkspaceCard({
     await startContainer(entry.key);
   };
 
-  // Repo pills: live repos + branches when running; otherwise the primary folder
-  // plus any saved additional repos (so a stopped multi-repo workspace still
-  // shows every repo it mounts).
+  // Card-body click opens the workspace — but ONLY when there's something live to
+  // open: a running container, an already-open tab, or a never-created saved entry
+  // (create-on-open). A STOPPED container is deliberately NOT openable by clicking
+  // the card: booting it on a body click felt broken (nothing visibly happens, the
+  // container just starts in the background). The explicit "Start" CTA in the footer
+  // is the only way to boot a stopped container. Select mode + in-flight ops swallow.
+  const canOpen = isOpen || !entry.container || state === "running";
+  // Whole-card affordance is live only when the click does something (open) — or in
+  // select mode for bulk-pick. A stopped/booting card is inert except for its controls.
+  const clickable = selectMode || canOpen;
+  const cardClick = () => {
+    if (selectMode) {
+      onToggleSelect();
+      return;
+    }
+    if (busy || state === "starting") return;
+    if (canOpen) void open();
+  };
+  // State-colored accent spine down the card's left edge — at-a-glance status that
+  // reads before the badge text: active workspaces glow (open/live), dormant stay quiet.
+  const spine = busy
+    ? "var(--wait)"
+    : isOpen
+      ? "var(--pri)"
+      : state === "running"
+        ? "var(--live)"
+        : state === "unreachable"
+          ? "var(--err)"
+          : state === "stopped"
+            ? "var(--idle)"
+            : "var(--bd-strong)";
+
+  // Mount chips: one chip per thing this workspace MOUNTS — the primary dir
+  // (at /workspace) plus any additional repos (at /workspace/<basename>) — NOT the
+  // git repos discovered inside them. A directly-mounted parent folder (e.g.
+  // my-projects) is a single directory chip; we don't expand the nested repos it
+  // happens to contain. A chip shows a branch + repo glyph only when that mount is
+  // ITSELF a git repo (matched against the live discovery while running); a plain
+  // directory gets a folder glyph and no branch.
   const fallbackRepo = entry.dir ? dirName(entry.dir) : entry.name;
-  const repoChips = repos.length
-    ? repos.map((r) => ({ name: repoName(r.path, fallbackRepo), branch: r.branch }))
-    : [
-        { name: fallbackRepo, branch: null as string | null },
-        ...(entry.additionalDirs ?? []).map((d) => ({
-          name: dirName(d),
-          branch: null as string | null,
-        })),
-      ];
+  const repoAt = (path: string) => repos.find((r) => r.path === path);
+  const primaryRepo = repoAt("/workspace");
+  const repoChips = [
+    { name: fallbackRepo, branch: primaryRepo?.branch ?? null, isRepo: !!primaryRepo },
+    ...(entry.additionalDirs ?? []).map((d) => {
+      const r = repoAt(`/workspace/${dirName(d)}`);
+      return { name: dirName(d), branch: r?.branch ?? null, isRepo: !!r };
+    }),
+  ];
+  // Cap the visible repo chips so a many-repo workspace doesn't wrap into a tall
+  // card; the rest collapse into a "+N" chip that lists them on hover.
+  const MAX_REPO_CHIPS = 2;
+  const shownChips = repoChips.slice(0, MAX_REPO_CHIPS);
+  const hiddenChips = repoChips.slice(MAX_REPO_CHIPS);
   const specs = specLabel(entry.sizing ?? defaultSizing);
   const created = fmtDate(entry.createdAt);
   const sid = shortId(entry.savedId);
 
   return (
     <div
-      className={`ch-card ws-card${selected ? " ws-selected" : ""}`}
-      // biome-ignore lint/a11y/useSemanticElements: card nests pin/remove buttons, so it can't be a <button>
-      role="button"
-      tabIndex={0}
-      onClick={() => (selectMode ? onToggleSelect() : void open())}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          if (selectMode) onToggleSelect();
-          else void open();
-        }
-      }}
+      className={`ch-card ws-card${clickable ? " is-clickable" : ""}${selected ? " ws-selected" : ""}`}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={clickable ? cardClick : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                cardClick();
+              }
+            }
+          : undefined
+      }
       title={
         selectMode
           ? `${entry.name} — ${selected ? "deselect" : "select"}`
-          : `${entry.name} — ${action.toLowerCase()} (${stateLabel})`
+          : clickable
+            ? `${entry.name} — ${action.toLowerCase()} (${stateLabel})`
+            : `${entry.name} — ${stateLabel}; press Start to launch`
       }
       style={{
-        padding: "14px 16px",
+        padding: "14px 16px 14px 18px",
         position: "relative",
         display: "flex",
         flexDirection: "column",
@@ -761,6 +756,19 @@ function WorkspaceCard({
         borderColor: isOpen ? "var(--pri)" : undefined,
       }}
     >
+      {/* state accent spine — left edge, color-coded by container state */}
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 8,
+          bottom: 8,
+          width: 3,
+          borderRadius: 999,
+          background: spine,
+        }}
+      />
       {/* name row: select + pin + workspace mark + name + state badge + remove */}
       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
         {/* Bulk-select checkbox — rendered ONLY in select mode, so it reserves no
@@ -838,6 +846,21 @@ function WorkspaceCard({
         >
           {entry.name}
         </span>
+        {/* Live agents (only when the workspace is open in a tab) sit beside the
+            identity so activity reads inline with the name. */}
+        {agents.length > 0 && (
+          <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+            {agents.slice(0, 4).map((m, i) => (
+              <AgentGlyph
+                // biome-ignore lint/suspicious/noArrayIndexKey: positional agent indicators
+                key={i}
+                agent={m.cli}
+                size={12}
+                color={`var(--a-${m.cli})`}
+              />
+            ))}
+          </div>
+        )}
         <span
           title={`Container is ${stateLabel}`}
           style={{
@@ -871,64 +894,69 @@ function WorkspaceCard({
           )}
           {stateLabel}
         </span>
-        {canRemove && (
-          <button
-            type="button"
-            className="ws-remove"
-            title={
-              entry.container ? "Remove workspace + prune container" : "Remove from workspaces"
-            }
-            onClick={(e) => {
-              e.stopPropagation();
-              void remove();
-            }}
-            style={{
-              background: "none",
-              border: "none",
-              padding: 2,
-              cursor: "pointer",
-              color: "var(--fg-3)",
-              display: "inline-flex",
-              lineHeight: 0,
-            }}
-          >
-            {Ico.trash}
-          </button>
-        )}
       </div>
 
-      {/* repo pills — every git repo under /workspace (live) or the folder name */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-        {repoChips.map((r, i) => (
+      {/* repo pills — one row of repo NAMES (the identifier you scan for); the
+          branch is detail-on-hover (title), not inline, so two long branches can't
+          chop the names or bloat the card. Extras collapse into a "+N" chip. */}
+      <div style={{ display: "flex", gap: 5, overflow: "hidden" }}>
+        {shownChips.map((r, i) => (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: positional repo chips
             key={i}
-            title={r.branch ? `${r.name} · ${r.branch}` : r.name}
+            title={r.branch && r.branch !== r.name ? `${r.name} · ${r.branch}` : r.name}
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 4,
-              padding: "2px 8px",
-              borderRadius: 4,
+              gap: 5,
+              padding: "2px 9px",
+              borderRadius: 6,
               background: "var(--bg-3)",
               border: "1px solid var(--bd-soft)",
               fontFamily: "var(--mono)",
               fontSize: 11,
-              color: "var(--fg-1)",
-              maxWidth: "100%",
+              flex: "0 1 auto",
+              minWidth: 0,
             }}
           >
             <span style={{ color: "var(--fg-3)", display: "inline-flex", flexShrink: 0 }}>
-              {Ico.branch}
+              {r.isRepo ? Ico.branch : Ico.files}
             </span>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span
+              style={{
+                color: "var(--fg-1)",
+                fontWeight: 500,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                minWidth: 0,
+              }}
+            >
               {r.name}
             </span>
-            {r.branch && r.branch !== r.name && (
-              <span style={{ color: "var(--fg-3)" }}>· {r.branch}</span>
-            )}
           </span>
         ))}
+        {hiddenChips.length > 0 && (
+          <span
+            title={hiddenChips
+              .map((c) => (c.branch ? `${c.name} · ${c.branch}` : c.name))
+              .join("\n")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "2px 9px",
+              borderRadius: 6,
+              background: "var(--bg-3)",
+              border: "1px solid var(--bd-soft)",
+              fontFamily: "var(--mono)",
+              fontSize: 11,
+              color: "var(--fg-3)",
+              flex: "0 0 auto",
+            }}
+          >
+            +{hiddenChips.length}
+          </span>
+        )}
       </div>
 
       {/* specs row: container sizing + last-opened age */}
@@ -966,102 +994,102 @@ function WorkspaceCard({
           }}
         >
           {created && <span>created {created}</span>}
-          {created && sid && <span>·</span>}
+          <span style={{ flex: 1 }} />
           {sid && <span title="Workspace id">#{sid}</span>}
         </div>
       )}
 
-      {/* footer: agents (when live) + always-on lifecycle + open affordance */}
+      {/* footer action bar: manage controls (left) · primary CTA (right). Filling
+          both edges is what stops the card reading as a left-stacked column — the
+          big tinted CTA is the obvious click target; lifecycle + delete sit opposite.
+          Start is the CTA itself, so there's no separate play control for it. */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           gap: 8,
-          fontFamily: "var(--mono)",
-          fontSize: 11,
-          color: "var(--fg-2)",
           borderTop: "1px solid var(--bd-soft)",
-          paddingTop: 8,
+          paddingTop: 10,
         }}
       >
-        {agents.length > 0 && (
-          <>
-            <span>
-              {agents.length} agent{agents.length === 1 ? "" : "s"}
-            </span>
-            <div style={{ display: "flex", gap: 3 }}>
-              {agents.map((m, i) => (
-                <AgentGlyph
-                  // biome-ignore lint/suspicious/noArrayIndexKey: positional agent indicators
-                  key={i}
-                  agent={m.cli}
-                  size={12}
-                  color={`var(--a-${m.cli})`}
-                />
-              ))}
-            </div>
-          </>
-        )}
-        <span style={{ flex: 1 }} />
         {busy ? (
-          // Mid-transition: a bare spinner replaces the lifecycle controls + open
-          // affordance so the op can't be re-fired. The verb itself lives only in
-          // the top state pill (no duplicate "stopping…/restarting…" down here).
-          <span style={{ display: "inline-flex", lineHeight: 0, color: "var(--wait)" }}>
-            {Ico.spinner}
-          </span>
+          // Mid-transition: hide controls + CTA so the op can't be re-fired; the
+          // spinner lives ONLY in the top state pill.
+          <span style={{ display: "inline-flex", height: 28 }} />
         ) : (
           <>
-            {state === "running" && (
-              <span style={{ display: "inline-flex", gap: 2 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              {state === "running" && (
+                <>
+                  <IconBtn
+                    title="Restart container"
+                    style={LIFE_BTN}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void restart();
+                    }}
+                  >
+                    {Ico.restart}
+                  </IconBtn>
+                  <IconBtn
+                    title="Stop container"
+                    style={LIFE_BTN}
+                    hoverColor="var(--err)"
+                    hoverBg="color-mix(in oklab, var(--err) 16%, transparent)"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void stop();
+                    }}
+                  >
+                    {Ico.stop}
+                  </IconBtn>
+                </>
+              )}
+              {canRemove && (
                 <IconBtn
-                  title="Restart container"
-                  style={LIFE_BTN}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void restart();
-                  }}
-                >
-                  {Ico.restart}
-                </IconBtn>
-                <IconBtn
-                  title="Stop container"
-                  style={LIFE_BTN}
+                  title={
+                    entry.container
+                      ? "Remove workspace + prune container"
+                      : "Remove from workspaces"
+                  }
+                  idleColor="var(--fg-3)"
                   hoverColor="var(--err)"
                   hoverBg="color-mix(in oklab, var(--err) 16%, transparent)"
+                  style={LIFE_BTN}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void stop();
+                    void remove();
                   }}
                 >
-                  {Ico.stop}
+                  {Ico.trash}
                 </IconBtn>
-              </span>
-            )}
-            {state === "stopped" && (
-              <IconBtn
-                title="Start container"
-                style={LIFE_BTN}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void start();
-                }}
-              >
-                {Ico.play}
-              </IconBtn>
-            )}
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                color: "var(--fg-1)",
-                paddingLeft: 2,
+              )}
+            </div>
+            <span style={{ flex: 1 }} />
+            <button
+              type="button"
+              className="ws-cta"
+              title={`${action} ${entry.name}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                // Start is the ONLY way to boot a stopped container (the card body is
+                // inert for those); everything else opens via the shared cardClick.
+                if (action === "Start") void start();
+                else cardClick();
               }}
             >
-              {action}
-              {Ico.arrowR}
-            </span>
+              {action === "Start" ? (
+                <>
+                  <span style={{ display: "inline-flex", lineHeight: 0 }}>{Ico.play}</span>
+                  Start
+                </>
+              ) : (
+                <>
+                  {action}
+                  <span style={{ display: "inline-flex", lineHeight: 0 }}>{Ico.arrowR}</span>
+                </>
+              )}
+            </button>
           </>
         )}
       </div>

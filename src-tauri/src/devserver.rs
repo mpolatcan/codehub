@@ -278,6 +278,7 @@ pub async fn serve() {
         .route("/container-image", get(container_image))
         .route("/container-health", get(container_health))
         .route("/container-list-dir", get(container_list_dir))
+        .route("/container-browse-dirs", get(container_browse_dirs))
         .route("/container-read-file", get(container_read_file))
         .route("/container-git-status", get(container_git_status))
         .route("/container-git-diff", get(container_git_diff))
@@ -755,6 +756,18 @@ async fn container_list_dir(
     let ws = workspace_required(q.workspace)?;
     docker_container_for(&st, &ws)
         .list_dir(&q.path.unwrap_or_default())
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+async fn container_browse_dirs(
+    State(st): State<AppState>,
+    Query(q): Query<PathQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    docker_container_for(&st, &ws)
+        .browse_dirs(&q.path.unwrap_or_default())
         .await
         .map(Json)
         .map_err(err)

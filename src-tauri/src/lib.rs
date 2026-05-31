@@ -30,7 +30,7 @@ use activity::SessionActivity;
 use config::{AccountProfile, ConfigStore, Settings};
 use docker::{
     AgentConfig, AgentVersion, ClaudeIntegrations, ClaudeSession, ClaudeUsage, Cli, CommitInfo,
-    ContainerStats, DockerClient, FileEntry, GitStatus, ImageInfo, LaunchMode, MountInfo,
+    ContainerStats, DirEntry, DockerClient, FileEntry, GitStatus, ImageInfo, LaunchMode, MountInfo,
     ProcessInfo, RuntimeHealth, SessionUsage, TmuxSessionRequest,
 };
 use events::EventsTracker;
@@ -824,6 +824,21 @@ async fn container_list_dir(
 ) -> Result<Vec<FileEntry>, String> {
     docker_container_for(&state, &workspace)
         .list_dir(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Immediate subdirectories of a `/workspace` path, git-repo-flagged. Powers the
+/// agent-pane working-directory browser (multi-repo mounts nest repos deeper than
+/// `container_repos` discovery reaches).
+#[tauri::command]
+async fn container_browse_dirs(
+    state: tauri::State<'_, AppState>,
+    path: String,
+    workspace: String,
+) -> Result<Vec<DirEntry>, String> {
+    docker_container_for(&state, &workspace)
+        .browse_dirs(&path)
         .await
         .map_err(|e| e.to_string())
 }
@@ -2506,6 +2521,7 @@ pub fn run() {
             container_image,
             container_health,
             container_list_dir,
+            container_browse_dirs,
             container_read_file,
             container_git_status,
             container_git_diff,

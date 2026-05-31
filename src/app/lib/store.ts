@@ -412,8 +412,13 @@ function resetGridOverlays() {
 // which workspace it belongs to — in the UI pane head AND the tmux `#W` status
 // bar (the alias is passed as the tmux window name at create time, so both read
 // identically).
-function aliasFor(label: string, cli: Cli, num: number): string {
-  return `${label} · ${SPEC_BY_CLI[cli].alias} ${num}`;
+// Session label / pane title: just the agent + its per-workspace sequence
+// ("Claude 1"). The workspace is already shown by the tab + sidebar header and the
+// working dir by the pane footer / sidebar dir line, so it is NOT repeated here.
+// `_workspace` stays on the signature for call-site compatibility (every spawn
+// path passes the workspace title); the label simply omits it.
+function aliasFor(_workspace: string, cli: Cli, num: number): string {
+  return `${SPEC_BY_CLI[cli].alias} ${num}`;
 }
 
 // Next per-(workspace, cli) sequence number: existing sessions of that CLI in
@@ -495,6 +500,7 @@ export const useStore = create<CodeHubState>((set, get) => {
     containerKey: string,
     alias: string,
     claudeId?: string,
+    cwd?: string,
   ) => {
     const meta: SessionMeta = {
       cli,
@@ -505,6 +511,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       groupId,
       claudeId,
       containerKey,
+      cwd,
       // Restore a persisted pane color (survives reload / session adoption).
       color: recallPaneColor(name),
     };
@@ -865,7 +872,7 @@ export const useStore = create<CodeHubState>((set, get) => {
         );
         await registry.spawnPane(name, containerKey);
         prefillPrompt(name, initialPrompt);
-        registerMeta(name, cli, mode, ws.id, grp.id, containerKey, alias, claudeId);
+        registerMeta(name, cli, mode, ws.id, grp.id, containerKey, alias, claudeId, cwd);
 
         set((s) => ({
           workspaces: updateWs(s.workspaces, ws.id, (w) =>
@@ -1190,6 +1197,7 @@ export const useStore = create<CodeHubState>((set, get) => {
           ws.containerKey,
           alias,
           claudeId,
+          draft.cwd,
         );
         // A NEW-workspace draft created the container just now → refresh status.
         const status = draft.workspaceDir
@@ -1496,7 +1504,7 @@ export const useStore = create<CodeHubState>((set, get) => {
       );
       await registry.spawnPane(name, containerKey);
       prefillPrompt(name, initialPrompt);
-      registerMeta(name, cli, mode, ws.id, grp.id, containerKey, alias, claudeId);
+      registerMeta(name, cli, mode, ws.id, grp.id, containerKey, alias, claudeId, cwd);
       set((s) => ({
         workspaces: updateWs(s.workspaces, wsId, (w) =>
           updateGroup(w, groupId, (g) => ({
@@ -1941,6 +1949,7 @@ type RegisterMeta = (
   containerKey: string,
   alias: string,
   claudeId?: string,
+  cwd?: string,
 ) => void;
 
 // Adopt one container's surviving tmux sessions into a workspace tab — the unit
@@ -2024,20 +2033,7 @@ async function adoptWorkspace(
   return ws.id;
 }
 
-async function bootstrap(
-  get: Get,
-  set: Set,
-  registerMeta: (
-    name: string,
-    cli: Cli,
-    mode: Mode,
-    workspaceId: string,
-    groupId: string,
-    containerKey: string,
-    alias: string,
-    claudeId?: string,
-  ) => void,
-) {
+async function bootstrap(get: Get, set: Set, registerMeta: RegisterMeta) {
   // Tier-1 reads: daemon info, per-CLI version + key presence.
   // dockerInfo, dockerRuntime, workspaceContainers are loaded eagerly in
   // initLifecycle (they don't need a running container). Refresh them here too

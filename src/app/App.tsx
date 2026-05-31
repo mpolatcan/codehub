@@ -16,7 +16,6 @@ import { HubTabs } from "./components/hub/HubTabs";
 import { RuntimeBanner } from "./components/hub/RuntimeBanner";
 import { ShellPanel } from "./components/hub/ShellPanel";
 import { Shortcuts } from "./components/hub/Shortcuts";
-import { WorkspaceBar } from "./components/hub/WorkspaceBar";
 import { useActivityPoll } from "./hooks/useActivityPoll";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useContainerStatsPoll } from "./hooks/useContainerStatsPoll";
@@ -186,7 +185,6 @@ function HubView() {
               <Grid ws={active} />
             </div>
             <AnimatePresence>{shell && <ShellPanel key="shell" />}</AnimatePresence>
-            <WorkspaceBar />
             <ActionBar />
           </>
         ) : !bootSettled ? (

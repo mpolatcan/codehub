@@ -798,12 +798,19 @@ body.dragging .divider::after {
    the workspace card reveals its remove affordance only on hover so the resting
    card stays clean. */
 .ws-card {
-  cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease, box-shadow 0.12s
+    ease;
 }
-.ws-card:hover {
+/* Only cards that actually open something are interactive — a stopped container's
+   card is inert (boot it with its Start button). Pointer + hover-lift gate on that. */
+.ws-card.is-clickable {
+  cursor: pointer;
+}
+.ws-card.is-clickable:hover {
   border-color: var(--bd-strong);
   background: var(--bg-3);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
 }
 .ws-card .ws-remove {
   opacity: 1;
@@ -811,6 +818,27 @@ body.dragging .divider::after {
 }
 .ws-card .ws-remove:hover {
   color: var(--err);
+}
+/* Workspace card primary CTA (Open / Resume / Start). Lives bottom-right of the
+   card footer; primary-tinted so it reads as the obvious click target. */
+.ws-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--pri);
+  border: 1px solid color-mix(in oklab, var(--pri) 35%, transparent);
+  background: color-mix(in oklab, var(--pri) 10%, transparent);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ws-cta:hover {
+  background: color-mix(in oklab, var(--pri) 20%, transparent);
+  border-color: color-mix(in oklab, var(--pri) 55%, transparent);
 }
 .tmpl-card {
   cursor: pointer;
