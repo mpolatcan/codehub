@@ -67,16 +67,16 @@ export function AgentDetail({
   }, [isClaude, running]);
 
   return (
-    <div style={{ maxWidth: 820 }}>
+    <div style={{ maxWidth: "min(51.25rem, 100%)" }}>
       {/* agent tab bar — switch agents in place (design agent-settings.jsx). The
           back chip returns to the Agents card list (settings.jsx Agents pane). */}
       <div
         style={{
           display: "flex",
           alignItems: "stretch",
-          gap: 2,
-          height: 44,
-          marginBottom: 22,
+          gap: "0.125rem",
+          height: "2.75rem",
+          marginBottom: "1.375rem",
           borderBottom: "1px solid var(--bd-soft)",
         }}
       >
@@ -88,13 +88,13 @@ export function AgentDetail({
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 6,
+              gap: "0.375rem",
               alignSelf: "center",
-              padding: "5px 9px",
-              marginRight: 6,
+              padding: "0.3125rem 0.5625rem",
+              marginRight: "0.375rem",
               background: "transparent",
               border: "1px solid var(--bd-soft)",
-              borderRadius: 6,
+              borderRadius: "0.375rem",
               color: "var(--fg-2)",
               cursor: "pointer",
               fontSize: "var(--fs-12)",
@@ -126,12 +126,14 @@ export function AgentDetail({
       </div>
 
       {/* hero */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24 }}>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: "0.875rem", marginBottom: "1.5rem" }}
+      >
         <div
           style={{
-            width: 44,
-            height: 44,
-            borderRadius: 10,
+            width: "2.75rem",
+            height: "2.75rem",
+            borderRadius: "0.625rem",
             background: `color-mix(in oklab, ${meta.accent} 16%, var(--bg-1))`,
             border: `1px solid color-mix(in oklab, ${meta.accent} 35%, var(--bd))`,
             display: "flex",
@@ -144,7 +146,14 @@ export function AgentDetail({
           </span>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 3 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.625rem",
+              marginBottom: "0.1875rem",
+            }}
+          >
             <h1
               style={{ margin: 0, fontSize: "var(--fs-20)", fontWeight: 600, color: "var(--fg-0)" }}
             >
@@ -157,7 +166,7 @@ export function AgentDetail({
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 5,
+                gap: "0.3125rem",
                 fontSize: "var(--fs-12)",
                 color: key?.present ? "var(--live)" : "var(--wait)",
               }}
@@ -201,7 +210,14 @@ export function AgentDetail({
               model={config?.model ?? null}
               active
             />
-            <div style={{ display: "flex", gap: 8, margin: "10px 0 28px", flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                margin: "0.625rem 0 1.75rem",
+                flexWrap: "wrap",
+              }}
+            >
               <Tip text="Provider writes need backend support">
                 <span style={{ display: "inline-flex" }}>
                   <Button variant="outline" size="sm" disabled>
@@ -222,8 +238,8 @@ export function AgentDetail({
                 style={{
                   display: "flex",
                   alignItems: "baseline",
-                  gap: 10,
-                  marginBottom: 10,
+                  gap: "0.625rem",
+                  marginBottom: "0.625rem",
                   flexWrap: "wrap",
                 }}
               >
@@ -238,11 +254,11 @@ export function AgentDetail({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 10,
-                  padding: "10px 12px",
+                  gap: "0.625rem",
+                  padding: "0.625rem 0.75rem",
                   background: "var(--bg-1)",
                   border: "1px solid var(--bd)",
-                  borderRadius: 7,
+                  borderRadius: "0.4375rem",
                 }}
               >
                 <Badge text="CL" accent="var(--a-claude)" />
@@ -257,14 +273,14 @@ export function AgentDetail({
               </div>
               <div
                 style={{
-                  marginTop: 10,
+                  marginTop: "0.625rem",
                   display: "flex",
-                  gap: 6,
+                  gap: "0.375rem",
                   flexWrap: "wrap",
                   alignItems: "center",
                 }}
               >
-                <span className="lbl" style={{ fontSize: "var(--fs-11)", marginRight: 4 }}>
+                <span className="lbl" style={{ fontSize: "var(--fs-11)", marginRight: "0.25rem" }}>
                   quick switch
                 </span>
                 <ModelChip text={config?.model ?? "CLI default"} active />
@@ -285,10 +301,23 @@ export function AgentDetail({
             {!config?.subagents.length ? (
               <Empty note="No sub-agents in .claude/agents (user or project scope)." />
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(min(13rem, 100%), 1fr))",
+                  gap: "0.5rem",
+                }}
+              >
                 {config.subagents.map((sa) => (
                   <Card key={`${sa.scope}:${sa.name}`}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        marginBottom: "0.375rem",
+                      }}
+                    >
                       <Badge text="SA" accent="var(--a-claude)" />
                       <span
                         className="mono"
@@ -306,13 +335,22 @@ export function AgentDetail({
                     </div>
                     {sa.description && (
                       <div
-                        style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)", marginBottom: 6 }}
+                        style={{
+                          fontSize: "var(--fs-12)",
+                          color: "var(--fg-2)",
+                          marginBottom: "0.375rem",
+                        }}
                       >
                         {sa.description}
                       </div>
                     )}
                     <div
-                      style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "0.3125rem",
+                        alignItems: "center",
+                      }}
                     >
                       {sa.model && (
                         <span
@@ -337,7 +375,13 @@ export function AgentDetail({
             {!config?.skills.length ? (
               <Empty note="No skills in .claude/skills (user or project scope)." />
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(min(11rem, 100%), 1fr))",
+                  gap: "0.5rem",
+                }}
+              >
                 {config.skills.map((sk) => (
                   <Card key={`${sk.scope}:${sk.name}`}>
                     <div
@@ -367,8 +411,8 @@ export function AgentDetail({
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 12,
-                      padding: "11px 14px",
+                      gap: "0.75rem",
+                      padding: "0.6875rem 0.875rem",
                       borderBottom:
                         i === config.plugins.length - 1 ? "none" : "1px solid var(--bd-soft)",
                     }}
@@ -395,7 +439,7 @@ export function AgentDetail({
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
-                        gap: 5,
+                        gap: "0.3125rem",
                         fontSize: "var(--fs-12)",
                         color: p.enabled ? "var(--live)" : "var(--fg-2)",
                       }}
@@ -410,7 +454,7 @@ export function AgentDetail({
             {config && config.marketplaces.length > 0 && (
               <div
                 className="mono"
-                style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: 8 }}
+                style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: "0.5rem" }}
               >
                 marketplaces: {config.marketplaces.join(", ")}
               </div>
@@ -476,7 +520,7 @@ function AgentTab({
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 24 }}>
+    <div style={{ marginBottom: "1.5rem" }}>
       <div
         className="lbl"
         style={{
@@ -484,7 +528,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
           color: "var(--fg-2)",
           textTransform: "uppercase",
           letterSpacing: "0.05em",
-          margin: "0 0 10px",
+          margin: "0 0 0.625rem",
         }}
       >
         {label}
@@ -496,7 +540,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="ch-card" style={{ padding: 14, marginBottom: 8 }}>
+    <div className="ch-card" style={{ padding: "0.875rem", marginBottom: "0.5rem" }}>
       {children}
     </div>
   );
@@ -515,10 +559,17 @@ function ProviderRow({
 }) {
   return (
     <Card>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
         <Badge text="CL" accent="var(--a-claude)" />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              marginBottom: "0.1875rem",
+            }}
+          >
             <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
               {name}
             </span>
@@ -547,8 +598,8 @@ function ProviderTemplate({ label }: { label: string }) {
         style={{
           display: "inline-flex",
           alignItems: "center",
-          padding: "5px 8px",
-          borderRadius: 6,
+          padding: "0.3125rem 0.5rem",
+          borderRadius: "0.375rem",
           background: "var(--bg-2)",
           border: "1px solid var(--bd)",
           color: "var(--fg-3)",
@@ -568,9 +619,9 @@ function ModelChip({ text, active }: { text: string; active?: boolean }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 5,
-        padding: "4px 8px",
-        borderRadius: 5,
+        gap: "0.3125rem",
+        padding: "0.25rem 0.5rem",
+        borderRadius: "0.3125rem",
         background: active ? "var(--bg-3)" : "transparent",
         border: `1px solid ${active ? "var(--pri)" : "var(--bd)"}`,
         color: active ? "var(--fg-0)" : "var(--fg-2)",
@@ -598,13 +649,13 @@ function SettingLine({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 16,
-        padding: "10px 0",
+        gap: "1rem",
+        padding: "0.625rem 0",
         borderBottom: last ? "none" : "1px solid var(--bd-soft)",
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", marginBottom: 2 }}>
+        <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", marginBottom: "0.125rem" }}>
           {label}
         </div>
         <div style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>{desc}</div>
@@ -640,15 +691,15 @@ function PermissionRules({ config }: { config: AgentConfig | null }) {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
-                padding: "9px 14px",
+                gap: "0.625rem",
+                padding: "0.5625rem 0.875rem",
                 borderBottom: i === flat.length - 1 ? "none" : "1px solid var(--bd-soft)",
               }}
             >
               <span
                 className="mono"
                 style={{
-                  width: 42,
+                  width: "2.625rem",
                   flexShrink: 0,
                   fontSize: "var(--fs-10)",
                   fontWeight: 600,
@@ -677,9 +728,9 @@ function Empty({ note }: { note: string }) {
   return (
     <div
       style={{
-        padding: "16px 14px",
+        padding: "1rem 0.875rem",
         border: "1px dashed var(--bd)",
-        borderRadius: 8,
+        borderRadius: "0.5rem",
         fontSize: "var(--fs-12)",
         color: "var(--fg-2)",
         lineHeight: 1.5,
@@ -694,9 +745,9 @@ function Badge({ text, accent }: { text: string; accent: string }) {
   return (
     <span
       style={{
-        width: 26,
-        height: 26,
-        borderRadius: 5,
+        width: "1.625rem",
+        height: "1.625rem",
+        borderRadius: "0.3125rem",
         background: `color-mix(in oklab, ${accent} 16%, var(--bg-1))`,
         border: `1px solid color-mix(in oklab, ${accent} 35%, var(--bd))`,
         color: accent,
@@ -720,10 +771,10 @@ function Chip({ text }: { text: string }) {
       className="mono"
       style={{
         fontSize: "var(--fs-10)",
-        padding: "1px 5px",
+        padding: "0.0625rem 0.3125rem",
         background: "var(--bg-1)",
         border: "1px solid var(--bd)",
-        borderRadius: 3,
+        borderRadius: "0.1875rem",
         color: "var(--fg-1)",
       }}
     >

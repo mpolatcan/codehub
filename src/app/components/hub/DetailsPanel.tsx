@@ -26,8 +26,8 @@ export function WorkspaceGraphs() {
       style={{
         height: "100%",
         display: "flex",
-        gap: 8,
-        padding: 10,
+        gap: "0.5rem",
+        padding: "0.625rem",
         boxSizing: "border-box",
         color: "var(--fg-1)",
       }}
@@ -95,13 +95,13 @@ function GaugeCell({
       style={{
         flex: 1,
         minWidth: 0,
-        padding: "9px 12px 8px",
+        padding: "0.5625rem 0.75rem 0.5rem",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
       }}
     >
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
         <span className="lbl" style={{ fontSize: "var(--fs-10)" }}>
           {label}
         </span>
@@ -124,7 +124,7 @@ function GaugeCell({
           style={{
             fontSize: "var(--fs-10)",
             color: "var(--fg-3)",
-            marginTop: 2,
+            marginTop: "0.125rem",
             textAlign: "right",
           }}
         >
@@ -134,10 +134,10 @@ function GaugeCell({
       <div
         style={{
           flex: 1,
-          minHeight: 20,
+          minHeight: "1.25rem",
           position: "relative",
-          marginTop: 6,
-          borderRadius: 5,
+          marginTop: "0.375rem",
+          borderRadius: "0.3125rem",
           overflow: "hidden",
           background: "color-mix(in oklab, var(--bg-2) 55%, transparent)",
         }}

@@ -623,6 +623,7 @@ name = "codehub"
 version = "0.1.2"
 dependencies = [
  "axum",
+ "block2",
  "bollard",
  "bytes",
  "chacha20poly1305",

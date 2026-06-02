@@ -266,9 +266,9 @@ export function SessionDetail({ session }: { session: string }) {
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
-          gap: 14,
+          gap: "0.875rem",
           flexWrap: "wrap",
-          padding: "8px 16px",
+          padding: "0.5rem 1rem",
           borderBottom: "1px solid var(--bd-soft)",
           background: "var(--bg-1)",
         }}
@@ -281,11 +281,11 @@ export function SessionDetail({ session }: { session: string }) {
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 6,
-              padding: "4px 8px",
+              gap: "0.375rem",
+              padding: "0.25rem 0.5rem",
               background: "transparent",
               border: "1px solid var(--bd-soft)",
-              borderRadius: 6,
+              borderRadius: "0.375rem",
               color: "var(--fg-2)",
               cursor: "pointer",
               fontSize: "var(--fs-12)",
@@ -302,7 +302,7 @@ export function SessionDetail({ session }: { session: string }) {
           INSPECT · DIFF
         </span>
 
-        <span className="vr" style={{ height: 18 }} />
+        <span className="vr" style={{ height: "1.125rem" }} />
 
         <StatusDot status={running ? "live" : "off"} pulse={running} />
         <AgentGlyph agent={meta.cli} size={14} color={accent} />
@@ -320,13 +320,13 @@ export function SessionDetail({ session }: { session: string }) {
 
         {branch && (
           <>
-            <span className="vr" style={{ height: 18 }} />
+            <span className="vr" style={{ height: "1.125rem" }} />
             <span
               className="mono"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 5,
+                gap: "0.3125rem",
                 fontSize: "var(--fs-11)",
                 color: "var(--fg-2)",
               }}
@@ -351,14 +351,14 @@ export function SessionDetail({ session }: { session: string }) {
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 8,
+              gap: "0.5rem",
               fontSize: "var(--fs-11)",
             }}
           >
             <Metric label="ctx" value={fmtTokens(usage.contextUsed)} />
             <Metric label="turn" value={String(usage.turns)} />
             <Metric label="tokens" value={fmtTokens(usage.tokensIn + usage.tokensOut)} />
-            <span className="vr" style={{ height: 16 }} />
+            <span className="vr" style={{ height: "1rem" }} />
           </span>
         )}
 
@@ -372,9 +372,9 @@ export function SessionDetail({ session }: { session: string }) {
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 6,
-              padding: "5px 9px",
-              borderRadius: 6,
+              gap: "0.375rem",
+              padding: "0.3125rem 0.5625rem",
+              borderRadius: "0.375rem",
               border: "1px solid color-mix(in oklab, var(--err) 42%, var(--bd))",
               background: "color-mix(in oklab, var(--err) 9%, transparent)",
               color: "var(--err)",
@@ -401,14 +401,14 @@ export function SessionDetail({ session }: { session: string }) {
         {/* control bar — totals + file filter + layout toggle + refresh */}
         <div
           style={{
-            height: 36,
+            height: "2.25rem",
             flexShrink: 0,
             background: "var(--bg-1)",
             borderBottom: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            padding: "0 16px",
-            gap: 8,
+            padding: "0 1rem",
+            gap: "0.5rem",
           }}
         >
           <span className="mono tnum" style={{ fontSize: "var(--fs-12)", fontWeight: 500 }}>
@@ -419,7 +419,7 @@ export function SessionDetail({ session }: { session: string }) {
               {fileCount(active)} {fileCount(active) === 1 ? "file" : "files"}
             </span>
           </span>
-          <span className="vr" style={{ height: 18, margin: "0 4px" }} />
+          <span className="vr" style={{ height: "1.125rem", margin: "0 0.25rem" }} />
           <Pill active={filter === "all"} onClick={() => setFilter("all")}>
             All · {fileCount(diffs.all)}
           </Pill>
@@ -495,7 +495,7 @@ export function SessionDetail({ session }: { session: string }) {
             <div
               className="mono"
               style={{
-                padding: "5px 16px",
+                padding: "0.3125rem 1rem",
                 fontSize: "var(--fs-11)",
                 color: note.kind === "ok" ? "var(--live)" : "var(--err)",
                 borderBottom: "1px solid var(--bd-soft)",
@@ -509,8 +509,8 @@ export function SessionDetail({ session }: { session: string }) {
             <div
               style={{
                 display: "flex",
-                gap: 8,
-                padding: "8px 16px",
+                gap: "0.5rem",
+                padding: "0.5rem 1rem",
                 borderBottom: "1px solid var(--bd-soft)",
               }}
             >
@@ -539,8 +539,8 @@ export function SessionDetail({ session }: { session: string }) {
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: 8,
-                padding: "8px 16px",
+                gap: "0.5rem",
+                padding: "0.5rem 1rem",
                 borderBottom: "1px solid var(--bd-soft)",
               }}
             >
@@ -551,7 +551,7 @@ export function SessionDetail({ session }: { session: string }) {
                 onChange={(e) => setPrTitle(e.target.value)}
                 placeholder="PR title…"
               />
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
                 <Input
                   className="mono h-auto flex-1 min-w-0 rounded-md px-2.5 py-1 text-xs"
                   value={prBody}
@@ -578,8 +578,8 @@ export function SessionDetail({ session }: { session: string }) {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 10,
-              padding: "10px 16px",
+              gap: "0.625rem",
+              padding: "0.625rem 1rem",
             }}
           >
             <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
@@ -617,19 +617,19 @@ export function SessionDetail({ session }: { session: string }) {
       <div
         className="mono"
         style={{
-          height: 26,
+          height: "1.625rem",
           flexShrink: 0,
           background: "var(--bg-0)",
           borderTop: "1px solid var(--bd-soft)",
           display: "flex",
           alignItems: "center",
-          padding: "0 12px",
-          gap: 14,
+          padding: "0 0.75rem",
+          gap: "0.875rem",
           fontSize: "var(--fs-11)",
           color: "var(--fg-2)",
         }}
       >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
           <StatusDot status={running ? "live" : "off"} pulse={running} />
           {status?.name ?? "—"}
         </span>
@@ -659,7 +659,7 @@ function FileTree({
   return (
     <div
       style={{
-        width: 240,
+        width: "clamp(11rem, 22vw, 15rem)",
         flexShrink: 0,
         borderRight: "1px solid var(--bd-soft)",
         background: "var(--bg-1)",
@@ -668,7 +668,11 @@ function FileTree({
     >
       <div
         className="lbl"
-        style={{ padding: "10px 12px 6px", fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+        style={{
+          padding: "0.625rem 0.75rem 0.375rem",
+          fontSize: "var(--fs-10)",
+          color: "var(--fg-3)",
+        }}
       >
         Files · {files.length}
       </div>
@@ -684,9 +688,9 @@ function FileTree({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
+                gap: "0.375rem",
                 width: "100%",
-                padding: "6px 12px",
+                padding: "0.375rem 0.75rem",
                 background: isActive ? "var(--bg-3)" : "transparent",
                 border: "none",
                 borderLeft: isActive ? "2px solid var(--fg-0)" : "2px solid transparent",
@@ -727,7 +731,12 @@ function FileTree({
               </div>
               <span
                 className="mono tnum"
-                style={{ fontSize: "var(--fs-10)", flexShrink: 0, display: "inline-flex", gap: 4 }}
+                style={{
+                  fontSize: "var(--fs-10)",
+                  flexShrink: 0,
+                  display: "inline-flex",
+                  gap: "0.25rem",
+                }}
               >
                 {f.added > 0 && <span style={{ color: "var(--live)" }}>+{f.added}</span>}
                 {f.removed > 0 && <span style={{ color: "var(--err)" }}>-{f.removed}</span>}
@@ -756,7 +765,7 @@ function fmtMem(used: number, limit: number): string {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
       <span style={{ color: "var(--fg-3)" }}>{label}</span>
       <span style={{ color: "var(--fg-0)", fontWeight: 500 }}>{value}</span>
     </span>
@@ -779,9 +788,9 @@ function Pill({
       onClick={onClick}
       className="mono"
       style={{
-        padding: "3px 9px",
+        padding: "0.1875rem 0.5625rem",
         fontSize: "var(--fs-11)",
-        borderRadius: 5,
+        borderRadius: "0.3125rem",
         border: "1px solid var(--bd-soft)",
         background: active ? "var(--bg-3)" : "transparent",
         color: active ? "var(--fg-0)" : "var(--fg-2)",
@@ -815,15 +824,15 @@ function FooterBtn({
       size="sm"
       onClick={onClick}
       disabled={disabled}
-      className="h-auto gap-1.5 px-2.5 py-[5px] font-mono text-[12px]"
+      className="h-auto gap-1.5 px-2.5 py-[0.3125rem] font-mono text-[0.75rem]"
     >
       {children}
       {kbd && (
         <span
           style={{
             fontSize: "var(--fs-10)",
-            padding: "1px 4px",
-            borderRadius: 3,
+            padding: "0.0625rem 0.25rem",
+            borderRadius: "0.1875rem",
             background: pri ? "color-mix(in oklab, var(--bg-0) 22%, transparent)" : "var(--bg-2)",
             color: pri ? "var(--bg-0)" : "var(--fg-3)",
           }}

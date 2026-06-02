@@ -50,10 +50,10 @@ const POPOVER = "bg-[var(--bg-2)] border-[var(--bd-strong)]";
 function RowHead({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <>
-      <span style={{ display: "inline-flex", color: "var(--fg-2)", width: 16, flexShrink: 0 }}>
+      <span style={{ display: "inline-flex", color: "var(--fg-2)", width: "1rem", flexShrink: 0 }}>
         {icon}
       </span>
-      <span className="lbl" style={{ width: 62, flexShrink: 0, color: "var(--fg-2)" }}>
+      <span className="lbl" style={{ width: "3.875rem", flexShrink: 0, color: "var(--fg-2)" }}>
         {label}
       </span>
     </>
@@ -210,25 +210,25 @@ export function SpawnPane({ id }: { id: string }) {
         justifyContent: "center",
         background: "var(--bg-0)",
         overflow: "auto",
-        padding: 24,
+        padding: "1.5rem",
       }}
     >
-      <div style={{ width: "min(420px, 100%)", display: "flex", flexDirection: "column" }}>
+      <div style={{ width: "min(26.25rem, 100%)", display: "flex", flexDirection: "column" }}>
         {/* header */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: 8,
-            marginBottom: 22,
+            gap: "0.5rem",
+            marginBottom: "1.375rem",
           }}
         >
           <div
             style={{
-              width: 56,
-              height: 56,
-              borderRadius: 14,
+              width: "3.5rem",
+              height: "3.5rem",
+              borderRadius: "0.875rem",
               // Purple draft styling — matches the dashed pane frame + Spawn button
               // (theme primary), not the per-agent accent.
               border: "1.5px dashed color-mix(in oklab, var(--pri) 55%, var(--bd))",
@@ -248,7 +248,7 @@ export function SpawnPane({ id }: { id: string }) {
               fontSize: "var(--fs-13)",
               color: "var(--fg-2)",
               textAlign: "center",
-              maxWidth: 320,
+              maxWidth: "min(20rem, 100%)",
             }}
           >
             {resuming ? (
@@ -265,7 +265,7 @@ export function SpawnPane({ id }: { id: string }) {
         </div>
 
         {/* rows */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
           {/* AGENT */}
           <Select value={agent} onValueChange={(v) => setAgent(v as Cli)} disabled={resuming}>
             <SelectTrigger className={ROW} aria-label="Agent">
@@ -278,10 +278,10 @@ export function SpawnPane({ id }: { id: string }) {
             <SelectContent position="popper" sideOffset={6} className={POPOVER}>
               {CLIS.map((c, i) => (
                 <SelectItem key={c.id} value={c.id} className={ITEM}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                     <AgentGlyph agent={c.id} size={14} color={AGENT_META[c.id].accent} />
                     <span>{c.label}</span>
-                    <span className="kbd" style={{ marginLeft: 4 }}>{`⌘${i + 1}`}</span>
+                    <span className="kbd" style={{ marginLeft: "0.25rem" }}>{`⌘${i + 1}`}</span>
                   </span>
                 </SelectItem>
               ))}
@@ -337,8 +337,8 @@ export function SpawnPane({ id }: { id: string }) {
                   <span
                     style={{
                       display: "inline-block",
-                      width: 6,
-                      height: 6,
+                      width: "0.375rem",
+                      height: "0.375rem",
                       borderRadius: "50%",
                       background: accountActive?.present === false ? "var(--err)" : "var(--live)",
                     }}
@@ -354,11 +354,11 @@ export function SpawnPane({ id }: { id: string }) {
                   disabled={opt.disabled}
                   className={ITEM}
                 >
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                     <span
                       style={{
-                        width: 6,
-                        height: 6,
+                        width: "0.375rem",
+                        height: "0.375rem",
                         borderRadius: "50%",
                         background: opt.present ? "var(--live)" : "var(--err)",
                       }}
@@ -378,10 +378,10 @@ export function SpawnPane({ id }: { id: string }) {
         </div>
 
         {/* spawn */}
-        <Button size="sm" style={{ width: "100%", marginTop: 16 }} onClick={spawn}>
+        <Button size="sm" style={{ width: "100%", marginTop: "1rem" }} onClick={spawn}>
           {Ico.plus}
           {resuming ? "Resume agent" : "Spawn agent"}
-          <span className="kbd" style={{ marginLeft: 6 }}>
+          <span className="kbd" style={{ marginLeft: "0.375rem" }}>
             ⏎
           </span>
         </Button>
@@ -390,7 +390,7 @@ export function SpawnPane({ id }: { id: string }) {
         <div
           className="mono"
           style={{
-            marginTop: 14,
+            marginTop: "0.875rem",
             fontSize: "var(--fs-11)",
             color: "var(--fg-3)",
             textAlign: "center",
@@ -415,7 +415,7 @@ function crumbStyle(active: boolean): CSSProperties {
   return {
     background: "none",
     border: "none",
-    padding: "1px 3px",
+    padding: "0.0625rem 0.1875rem",
     fontSize: "var(--fs-11)",
     cursor: "pointer",
     color: active ? "var(--fg-0)" : "var(--fg-2)",
@@ -507,7 +507,7 @@ function WorkdirBrowser({
               minWidth: 0,
               display: "inline-flex",
               alignItems: "baseline",
-              gap: 8,
+              gap: "0.5rem",
               textAlign: "left",
             }}
           >
@@ -552,9 +552,9 @@ function WorkdirBrowser({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 2,
+            gap: "0.125rem",
             flexWrap: "wrap",
-            padding: "8px 12px",
+            padding: "0.5rem 0.75rem",
             borderBottom: "1px solid var(--bd)",
           }}
         >
@@ -569,7 +569,7 @@ function WorkdirBrowser({
           {crumbs.map((c, i) => (
             <span
               key={crumbs.slice(0, i + 1).join("/")}
-              style={{ display: "inline-flex", alignItems: "center", gap: 2, minWidth: 0 }}
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.125rem", minWidth: 0 }}
             >
               <span style={{ color: "var(--fg-3)" }}>/</span>
               <button
@@ -585,18 +585,21 @@ function WorkdirBrowser({
         </div>
 
         {/* listing — click a folder to drill in */}
-        <div className="scroll" style={{ maxHeight: 240, overflow: "auto", padding: 4 }}>
+        <div
+          className="scroll"
+          style={{ maxHeight: "min(15rem, 42vh)", overflow: "auto", padding: "0.25rem" }}
+        >
           {loading ? (
             <div
               className="mono"
-              style={{ padding: "10px 8px", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+              style={{ padding: "0.625rem 0.5rem", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
             >
               Loading…
             </div>
           ) : entries.length === 0 ? (
             <div
               className="mono"
-              style={{ padding: "10px 8px", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+              style={{ padding: "0.625rem 0.5rem", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
             >
               No subfolders
             </div>
@@ -626,11 +629,11 @@ function WorkdirBrowser({
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
-                      gap: 3,
+                      gap: "0.1875rem",
                       fontSize: "var(--fs-11)",
                       color: "var(--fg-3)",
                       flexShrink: 0,
-                      maxWidth: 120,
+                      maxWidth: "min(7.5rem, 100%)",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
@@ -653,8 +656,8 @@ function WorkdirBrowser({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            padding: "8px 12px",
+            gap: "0.5rem",
+            padding: "0.5rem 0.75rem",
             borderTop: "1px solid var(--bd)",
           }}
         >

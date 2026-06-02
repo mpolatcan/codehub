@@ -97,35 +97,35 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
         style={{
           flex: 1,
           overflow: "auto",
-          padding: "36px 48px 30px",
+          padding: "2.25rem 3rem 1.875rem",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           position: "relative",
         }}
       >
-        <div style={{ maxWidth: 880, width: "100%" }}>
+        <div style={{ maxWidth: "min(55rem, 100%)", width: "100%" }}>
           {/* hero header */}
-          <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ textAlign: "center", marginBottom: "1.75rem" }}>
             {dockerInfo !== null && (
               <div
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 8,
-                  padding: "4px 10px",
+                  gap: "0.5rem",
+                  padding: "0.25rem 0.625rem",
                   border: "1px solid var(--bd)",
                   borderRadius: 999,
                   fontSize: "var(--fs-11)",
                   color: "var(--fg-2)",
                   fontFamily: "var(--mono)",
-                  marginBottom: 18,
+                  marginBottom: "1.125rem",
                 }}
               >
                 <span
                   style={{
-                    width: 5,
-                    height: 5,
+                    width: "0.3125rem",
+                    height: "0.3125rem",
                     borderRadius: "50%",
                     background: daemonUp ? "var(--live)" : "var(--wait)",
                   }}
@@ -152,8 +152,8 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
             </h1>
             <p
               style={{
-                margin: "10px auto 0",
-                maxWidth: 480,
+                margin: "0.625rem auto 0",
+                maxWidth: "min(30rem, 100%)",
                 fontSize: "var(--fs-13)",
                 color: "var(--fg-2)",
                 lineHeight: 1.55,
@@ -162,7 +162,7 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
               Each session spawns a fresh tmux in a per-workspace container — your repo is mounted
               and credentials are stored securely in your OS keychain.
             </p>
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: "1rem" }}>
               <Button onClick={() => openWizard(true)}>{Ico.plus}New workspace</Button>
             </div>
           </div>
@@ -178,15 +178,15 @@ export function EmptyHero({ onNew }: EmptyStateProps) {
           )}
 
           {/* agent cards — primary content */}
-          <div className="lbl" style={{ marginBottom: 10 }}>
+          <div className="lbl" style={{ marginBottom: "0.625rem" }}>
             Choose an agent to get started
           </div>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: 10,
-              marginBottom: 20,
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(11rem, 100%), 1fr))",
+              gap: "0.625rem",
+              marginBottom: "1.25rem",
             }}
           >
             {CLIS.map((c) => (
@@ -225,18 +225,18 @@ function DockerBanner({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 14,
-          padding: "14px 16px",
-          marginBottom: 20,
+          gap: "0.875rem",
+          padding: "0.875rem 1rem",
+          marginBottom: "1.25rem",
           borderColor: "color-mix(in oklab, var(--err) 30%, var(--bd))",
           background: "color-mix(in oklab, var(--err) 4%, var(--bg-2))",
         }}
       >
         <div
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
+            width: "2rem",
+            height: "2rem",
+            borderRadius: "0.5rem",
             background: "color-mix(in oklab, var(--err) 12%, var(--bg-1))",
             display: "flex",
             alignItems: "center",
@@ -283,18 +283,18 @@ function DockerBanner({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 14,
-        padding: "14px 16px",
-        marginBottom: 20,
+        gap: "0.875rem",
+        padding: "0.875rem 1rem",
+        marginBottom: "1.25rem",
         borderColor: "color-mix(in oklab, var(--wait) 35%, var(--bd))",
         background: "color-mix(in oklab, var(--wait) 5%, var(--bg-2))",
       }}
     >
       <div
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
+          width: "2rem",
+          height: "2rem",
+          borderRadius: "0.5rem",
           background: "color-mix(in oklab, var(--wait) 12%, var(--bg-1))",
           display: "flex",
           alignItems: "center",
@@ -314,7 +314,7 @@ function DockerBanner({
           agents.
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: "0.5rem" }}>
         {installed.map((rt) => (
           <Button
             key={rt}
@@ -336,7 +336,7 @@ export function EmptyState({ onNew }: EmptyStateProps) {
     <div style={{ flex: 1, display: "flex", minHeight: 0, height: "100%", color: "var(--fg-1)" }}>
       <aside
         style={{
-          width: 240,
+          width: "clamp(11rem, 22vw, 15rem)",
           flexShrink: 0,
           background: "var(--bg-1)",
           borderRight: "1px solid var(--bd-soft)",
@@ -344,25 +344,27 @@ export function EmptyState({ onNew }: EmptyStateProps) {
           flexDirection: "column",
         }}
       >
-        <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid var(--bd-soft)" }}>
+        <div
+          style={{ padding: "0.75rem 0.875rem 0.625rem", borderBottom: "1px solid var(--bd-soft)" }}
+        >
           <Logo />
         </div>
-        <div style={{ padding: "10px 10px 6px" }}>
+        <div style={{ padding: "0.625rem 0.625rem 0.375rem" }}>
           <Button
             onClick={() => onNew?.()}
             style={{ justifyContent: "space-between", width: "100%" }}
           >
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               {Ico.plus}New agent
             </span>
-            <span style={{ display: "flex", gap: 2, opacity: 0.7 }}>
+            <span style={{ display: "flex", gap: "0.125rem", opacity: 0.7 }}>
               <span className="kbd">⌘</span>
               <span className="kbd">N</span>
             </span>
           </Button>
         </div>
-        <div style={{ padding: "10px 10px 4px" }}>
-          <div className="lbl" style={{ padding: "0 4px 6px" }}>
+        <div style={{ padding: "0.625rem 0.625rem 0.25rem" }}>
+          <div className="lbl" style={{ padding: "0 0.25rem 0.375rem" }}>
             Views
           </div>
           <div className="side-item active">
@@ -374,8 +376,8 @@ export function EmptyState({ onNew }: EmptyStateProps) {
             <span style={{ flex: 1 }}>Settings</span>
           </div>
         </div>
-        <div style={{ flex: 1, padding: "14px 10px 4px" }}>
-          <div className="lbl" style={{ padding: "0 4px 6px" }}>
+        <div style={{ flex: 1, padding: "0.875rem 0.625rem 0.25rem" }}>
+          <div className="lbl" style={{ padding: "0 0.25rem 0.375rem" }}>
             Sessions · 0
           </div>
         </div>
@@ -407,13 +409,13 @@ function AgentCard({
       className="ch-card-interactive"
       onClick={keySet ? onStart : onSetupKey}
       style={{
-        padding: 16,
-        borderRadius: 10,
+        padding: "1rem",
+        borderRadius: "0.625rem",
         background: "var(--bg-2)",
         border: "1px solid var(--bd)",
         display: "flex",
         flexDirection: "column",
-        gap: 8,
+        gap: "0.5rem",
         position: "relative",
         cursor: "pointer",
         color: "inherit",
@@ -422,12 +424,12 @@ function AgentCard({
         width: "100%",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
         <div
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 8,
+            width: "2.25rem",
+            height: "2.25rem",
+            borderRadius: "0.5rem",
             background: `color-mix(in oklab, ${meta.accent} 16%, var(--bg-1))`,
             border: `1px solid color-mix(in oklab, ${meta.accent} 35%, var(--bd))`,
             display: "flex",
@@ -441,7 +443,7 @@ function AgentCard({
           </span>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "0.375rem" }}>
             <span style={{ fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}>
               {name}
             </span>
@@ -459,7 +461,7 @@ function AgentCard({
             color: "var(--pri)",
             display: "flex",
             alignItems: "center",
-            gap: 4,
+            gap: "0.25rem",
           }}
         >
           Start with {name} {Ico.arrowR}
@@ -472,7 +474,7 @@ function AgentCard({
             color: "var(--fg-3)",
             display: "flex",
             alignItems: "center",
-            gap: 4,
+            gap: "0.25rem",
           }}
         >
           Set up API key {Ico.arrowR}

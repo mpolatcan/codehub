@@ -104,13 +104,14 @@ export function ColorDot({
                 : { left: Math.max(8, rect.left) }),
               zIndex: 1000,
               display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              gap: 6,
-              padding: 8,
+              gridTemplateColumns: "repeat(auto-fit, minmax(1.125rem, 1fr))",
+              width: "min(7rem, calc(100vw - 1rem))",
+              gap: "0.375rem",
+              padding: "0.5rem",
               background: "var(--bg-2)",
               border: "1px solid var(--bd)",
-              borderRadius: 8,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+              borderRadius: "0.5rem",
+              boxShadow: "0 0.5rem 1.5rem rgba(0,0,0,0.45)",
             }}
           >
             {PANE_COLORS.map((c) => (
@@ -129,8 +130,8 @@ export function ColorDot({
                     e.currentTarget.style.transform = "scale(1)";
                   }}
                   style={{
-                    width: 18,
-                    height: 18,
+                    width: "1.125rem",
+                    height: "1.125rem",
                     borderRadius: "50%",
                     border: c.bg === selected ? "2px solid var(--fg-0)" : "1px solid var(--bd)",
                     padding: 0,
@@ -162,10 +163,10 @@ export function ColorDot({
                   }}
                   style={{
                     gridColumn: "1 / -1",
-                    marginTop: 2,
-                    padding: "4px 6px",
+                    marginTop: "0.125rem",
+                    padding: "0.25rem 0.375rem",
                     fontSize: "var(--fs-11)",
-                    borderRadius: 5,
+                    borderRadius: "0.3125rem",
                     border: !selected ? "1px solid var(--fg-2)" : "1px solid var(--bd)",
                     background: "var(--bg-1)",
                     color: "var(--fg-1)",

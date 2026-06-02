@@ -25,7 +25,7 @@ export function PaneTypeChip({ kind, style }: PaneTypeChipProps) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 4,
+        gap: "0.25rem",
         fontFamily: "var(--mono)",
         fontSize: "var(--fs-10)",
         lineHeight: 1,
@@ -34,8 +34,8 @@ export function PaneTypeChip({ kind, style }: PaneTypeChipProps) {
         color: accent,
         background: `color-mix(in oklab, ${accent} 12%, transparent)`,
         border: `1px solid color-mix(in oklab, ${accent} 32%, transparent)`,
-        padding: "2px 6px",
-        borderRadius: 4,
+        padding: "0.125rem 0.375rem",
+        borderRadius: "0.25rem",
         ...style,
       }}
     >

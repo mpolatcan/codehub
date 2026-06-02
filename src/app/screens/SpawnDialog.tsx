@@ -165,12 +165,13 @@ export function SpawnDialog({
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: 420,
+          width: "min(26.25rem, calc(100vw - 2rem))",
+          maxHeight: "calc(100vh - 2rem)",
           display: "flex",
           flexDirection: "column",
           background: "var(--bg-2)",
           border: "1px solid var(--bd-strong)",
-          borderRadius: 12,
+          borderRadius: "0.75rem",
           boxShadow: "var(--shadow-3)",
           overflow: "hidden",
         }}
@@ -178,11 +179,12 @@ export function SpawnDialog({
         {/* head */}
         <div
           style={{
-            padding: "14px 18px",
+            padding: "0.875rem 1.125rem",
             borderBottom: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: "0.625rem",
+            flexWrap: "wrap",
             flexShrink: 0,
           }}
         >
@@ -199,7 +201,7 @@ export function SpawnDialog({
         </div>
 
         {/* form */}
-        <div style={{ padding: "18px 18px 10px" }}>
+        <div className="scroll" style={{ padding: "1.125rem 1.125rem 0.625rem", overflow: "auto" }}>
           <FormRow label="Agent">
             <Select value={agent} onValueChange={(v) => setAgent(v as Cli)}>
               <SelectTrigger className="w-full h-10 bg-[var(--bg-1)] border-[var(--bd)] text-[var(--fg-0)] hover:bg-[var(--bg-hover)]">
@@ -214,7 +216,7 @@ export function SpawnDialog({
                       value={c.id}
                       className="text-[var(--fg-1)] focus:bg-[var(--bg-hover)] focus:text-[var(--fg-0)]"
                     >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                         <AgentGlyph agent={c.id} size={14} color={meta.accent} />
                         <span>{c.label}</span>
                         <span
@@ -250,7 +252,7 @@ export function SpawnDialog({
             </Select>
             <div
               className="mono"
-              style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: 6 }}
+              style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: "0.375rem" }}
             >
               {MODE_BY_ID[mode].hint}
             </div>
@@ -267,7 +269,7 @@ export function SpawnDialog({
                     value={WORKSPACE_ROOT}
                     className="text-[var(--fg-1)] focus:bg-[var(--bg-hover)] focus:text-[var(--fg-0)]"
                   >
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                       <span className="mono">/workspace</span>
                       <span
                         className="mono"
@@ -283,7 +285,7 @@ export function SpawnDialog({
                       value={r.path}
                       className="text-[var(--fg-1)] focus:bg-[var(--bg-hover)] focus:text-[var(--fg-0)]"
                     >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                         <span>{dirName(r.path)}</span>
                         {r.branch && (
                           <span
@@ -300,7 +302,7 @@ export function SpawnDialog({
               </Select>
               <div
                 className="mono"
-                style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: 6 }}
+                style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: "0.375rem" }}
               >
                 The agent starts here inside the workspace container.
               </div>
@@ -320,11 +322,11 @@ export function SpawnDialog({
                     disabled={opt.disabled}
                     className="text-[var(--fg-1)] focus:bg-[var(--bg-hover)] focus:text-[var(--fg-0)]"
                   >
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                       <span
                         style={{
-                          width: 6,
-                          height: 6,
+                          width: "0.375rem",
+                          height: "0.375rem",
                           borderRadius: "50%",
                           background: opt.present ? "var(--live)" : "var(--err)",
                           flexShrink: 0,
@@ -344,7 +346,7 @@ export function SpawnDialog({
             </Select>
             <div
               className="mono"
-              style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: 6 }}
+              style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: "0.375rem" }}
             >
               Credentials stored in OS keychain
             </div>
@@ -352,7 +354,9 @@ export function SpawnDialog({
 
           {showGroups && (
             <FormRow label="Group">
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "0.375rem", flexWrap: "wrap" }}
+              >
                 <GroupTargetChip
                   label="New tab"
                   selected={target === ""}
@@ -381,7 +385,7 @@ export function SpawnDialog({
               {groups.some((g) => g.full) && (
                 <div
                   className="mono"
-                  style={{ marginTop: 6, fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+                  style={{ marginTop: "0.375rem", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
                 >
                   Full groups are capped at {MAX_GROUP_PANES} panes. Add a new group to keep the
                   grid readable.
@@ -394,12 +398,13 @@ export function SpawnDialog({
         {/* foot */}
         <div
           style={{
-            padding: "12px 18px",
+            padding: "0.75rem 1.125rem",
             borderTop: "1px solid var(--bd-soft)",
             background: "var(--bg-1)",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: "0.625rem",
+            flexWrap: "wrap",
             flexShrink: 0,
           }}
         >
@@ -409,7 +414,7 @@ export function SpawnDialog({
           </Button>
           <Button
             size="sm"
-            style={{ padding: "6px 14px" }}
+            style={{ padding: "0.375rem 0.875rem" }}
             onClick={() =>
               onLaunch?.(
                 agent,
@@ -422,7 +427,7 @@ export function SpawnDialog({
             }
           >
             Add agent
-            <span className="kbd" style={{ marginLeft: 6 }}>
+            <span className="kbd" style={{ marginLeft: "0.375rem" }}>
               ⏎
             </span>
           </Button>
@@ -457,9 +462,9 @@ function GroupTargetChip({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 6,
-        padding: "4px 9px",
-        borderRadius: 5,
+        gap: "0.375rem",
+        padding: "0.25rem 0.5625rem",
+        borderRadius: "0.3125rem",
         background: selected ? "var(--bg-3)" : "transparent",
         border: `1px solid ${
           selected
@@ -477,7 +482,7 @@ function GroupTargetChip({
       {dot && (
         <span
           aria-hidden="true"
-          style={{ width: 7, height: 7, borderRadius: "50%", background: dot }}
+          style={{ width: "0.4375rem", height: "0.4375rem", borderRadius: "50%", background: dot }}
         />
       )}
       <span>{label}</span>
@@ -497,10 +502,14 @@ function FauxHubBg() {
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", minHeight: 0 }}>
       <div
-        style={{ width: 264, background: "var(--bg-1)", borderRight: "1px solid var(--bd-soft)" }}
+        style={{
+          width: "clamp(10rem, 22vw, 16.5rem)",
+          background: "var(--bg-1)",
+          borderRight: "1px solid var(--bd-soft)",
+        }}
       />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bg-1)" }}>
-        <div style={{ height: 74, borderBottom: "1px solid var(--bd-soft)" }} />
+        <div style={{ height: "4.625rem", borderBottom: "1px solid var(--bd-soft)" }} />
         <div style={{ flex: 1, display: "flex", gap: 1, background: "var(--bd-soft)" }}>
           <div style={{ flex: 1, background: "var(--bg-0)" }} />
           <div style={{ flex: 1, background: "var(--bg-0)" }} />

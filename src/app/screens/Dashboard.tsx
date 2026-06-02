@@ -309,8 +309,8 @@ export function Dashboard() {
       }}
     >
       {/* header */}
-      <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--bd-soft)" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+      <div style={{ padding: "1.25rem 1.5rem 1rem", borderBottom: "1px solid var(--bd-soft)" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "0.875rem" }}>
           <h1
             style={{
               margin: 0,
@@ -326,7 +326,7 @@ export function Dashboard() {
           </span>
           <span style={{ flex: 1 }} />
           <Button size="sm" onClick={() => newAgent()}>
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               {Ico.plus}New agent
             </span>
           </Button>
@@ -338,10 +338,10 @@ export function Dashboard() {
         style={{
           flex: 1,
           overflow: "auto",
-          padding: 24,
+          padding: "1.5rem",
           display: "flex",
           flexDirection: "column",
-          gap: 16,
+          gap: "1rem",
           minHeight: 0,
         }}
       >
@@ -349,8 +349,8 @@ export function Dashboard() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-            gap: 12,
+            gridTemplateColumns: "repeat(auto-fit, minmax(13.125rem, 1fr))",
+            gap: "0.75rem",
           }}
         >
           <Metric
@@ -415,17 +415,17 @@ export function Dashboard() {
         >
           <div
             style={{
-              padding: "12px 16px",
+              padding: "0.75rem 1rem",
               borderBottom: "1px solid var(--bd-soft)",
               display: "flex",
               alignItems: "center",
-              gap: 12,
+              gap: "0.75rem",
             }}
           >
             <span style={{ fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}>
               Sessions
             </span>
-            <div style={{ display: "flex", gap: 4 }}>
+            <div style={{ display: "flex", gap: "0.25rem" }}>
               <FilterBtn label="All" active={filter === "all"} onClick={() => setFilter("all")} />
               <FilterBtn
                 label="Running"
@@ -455,7 +455,7 @@ export function Dashboard() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: "34px 24px",
+                padding: "2.125rem 1.5rem",
                 fontSize: "var(--fs-13)",
                 lineHeight: 1.5,
                 textAlign: "center",
@@ -497,7 +497,7 @@ export function Dashboard() {
                       onClick={() => open(session)}
                     >
                       <Td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                           <AgentGlyph agent={meta.cli} size={13} color={`var(--a-${meta.cli})`} />
                           <span className="mono" style={{ color: "var(--fg-0)" }}>
                             {meta.alias}
@@ -508,17 +508,17 @@ export function Dashboard() {
                         </div>
                       </Td>
                       <Td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
                           <StatusBadge status={st} />
                           {awaiting && (
                             <span
                               style={{
-                                width: 7,
-                                height: 7,
+                                width: "0.4375rem",
+                                height: "0.4375rem",
                                 borderRadius: "50%",
                                 background: "var(--wait)",
                                 boxShadow:
-                                  "0 0 0 2px color-mix(in oklab, var(--wait) 30%, transparent)",
+                                  "0 0 0 0.125rem color-mix(in oklab, var(--wait) 30%, transparent)",
                               }}
                             />
                           )}
@@ -530,7 +530,7 @@ export function Dashboard() {
                             style={{
                               color: task ? "var(--fg-1)" : "var(--fg-3)",
                               display: "block",
-                              maxWidth: 320,
+                              maxWidth: "min(20rem, 100%)",
                               overflow: "hidden",
                               textOverflow: "ellipsis",
                               whiteSpace: "nowrap",
@@ -600,8 +600,8 @@ export function Dashboard() {
           style={{
             display: "flex",
             alignItems: "baseline",
-            gap: 14,
-            marginTop: 4,
+            gap: "0.875rem",
+            marginTop: "0.25rem",
             animationDelay: "210ms",
           }}
         >
@@ -634,17 +634,28 @@ export function Dashboard() {
           </Button>
         </div>
 
-        {/* activity chart — turns/hour over 24h */}
+        {/* activity chart — turns/hour over 24h. Grows to fill the column's
+            leftover height (single flex grower) so a short/empty dashboard has no
+            dead band; min-height floor keeps it readable and lets the page scroll
+            when usage content below overflows. */}
         <div
           className="ch-card dash-rise"
-          style={{ padding: 16, minWidth: 0, animationDelay: "260ms" }}
+          style={{
+            padding: "1rem",
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            flex: "1 1 auto",
+            minHeight: "clamp(9rem, 24vh, 13rem)",
+            animationDelay: "260ms",
+          }}
         >
           <div
             style={{
               display: "flex",
               alignItems: "baseline",
-              gap: 14,
-              marginBottom: 14,
+              gap: "0.875rem",
+              marginBottom: "0.875rem",
               flexWrap: "wrap",
             }}
           >
@@ -664,7 +675,12 @@ export function Dashboard() {
         {/* per-agent usage cards */}
         <div
           className="dash-rise"
-          style={{ display: "flex", flexDirection: "column", gap: 12, animationDelay: "300ms" }}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.75rem",
+            animationDelay: "300ms",
+          }}
         >
           {!running ? (
             <UsageNote>Runtime not running — start a workspace to see usage data.</UsageNote>
@@ -725,10 +741,10 @@ export function Dashboard() {
                 <div
                   className="ch-card"
                   style={{
-                    padding: "12px 16px",
+                    padding: "0.75rem 1rem",
                     display: "flex",
                     alignItems: "center",
-                    gap: 11,
+                    gap: "0.6875rem",
                     opacity: 0.7,
                   }}
                 >
@@ -772,7 +788,7 @@ function FilterBtn({
       size="sm"
       pressed={active}
       onPressedChange={() => onClick()}
-      className="mono h-auto min-w-0 rounded-[5px] border border-transparent px-[9px] py-[3px] text-[11px] text-[var(--fg-2)] hover:bg-[var(--bg-hover)] data-[state=on]:bg-[var(--bg-3)] data-[state=on]:text-[var(--fg-0)]"
+      className="mono h-auto min-w-0 rounded-[0.3125rem] border border-transparent px-[0.5625rem] py-[0.1875rem] text-[0.6875rem] text-[var(--fg-2)] hover:bg-[var(--bg-hover)] data-[state=on]:bg-[var(--bg-3)] data-[state=on]:text-[var(--fg-0)]"
     >
       {label}
     </Toggle>
@@ -812,22 +828,26 @@ function ActivityChart({
   }
 
   const max = any ? Math.max(1, ...claude.map((c, i) => c + codex[i])) : 1;
-  // Full plot when there's data to read; a compact band when empty so an idle
-  // window doesn't reserve a tall blank rectangle.
-  const PLOT = any ? 150 : 80;
-  const GUTTER = 32;
+  // The plot fills the card's leftover height (the chart root is the column's flex
+  // grower) so the dashboard has no dead band; bars are %-of-plot so they scale
+  // with it. GUTTER is the y-label width; AXIS_PAD aligns the hour labels under
+  // the bars (gutter width + the plot gap).
+  const GUTTER = "2rem";
+  const AXIS_PAD = "2.5rem";
   const rules = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 8 }}>
-        {/* y-axis gutter — only labels the scale when there's data to scale */}
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <div
+        style={{ display: "flex", gap: "0.5rem", flex: 1, minHeight: "clamp(4.5rem, 14vh, 6rem)" }}
+      >
+        {/* y-axis gutter — only labels the scale when there's data to scale.
+            Stretches to the plot height via the row's align-items:stretch. */}
         <div
           className="mono tnum"
           style={{
             position: "relative",
             width: GUTTER,
-            height: PLOT,
             flexShrink: 0,
             fontSize: "var(--fs-11)",
             color: "var(--fg-3)",
@@ -835,15 +855,16 @@ function ActivityChart({
         >
           {any && (
             <>
-              <span style={{ position: "absolute", top: -4, right: 0 }}>{max}</span>
-              <span style={{ position: "absolute", bottom: -4, right: 0 }}>0</span>
+              <span style={{ position: "absolute", top: "-0.25rem", right: 0 }}>{max}</span>
+              <span style={{ position: "absolute", bottom: "-0.25rem", right: 0 }}>0</span>
             </>
           )}
         </div>
 
         {/* plot — gridlines always render so an empty window reads as a calm
-            chart with an overlaid note, not a blank rectangle */}
-        <div style={{ position: "relative", flex: 1, height: PLOT, minWidth: 0 }}>
+            chart with an overlaid note, not a blank rectangle. Fills the row
+            height; bars/gridlines position against it. */}
+        <div style={{ position: "relative", flex: 1, minWidth: 0, minHeight: 0 }}>
           {rules.map((f) => (
             <div
               key={f}
@@ -866,7 +887,7 @@ function ActivityChart({
                 inset: 0,
                 display: "flex",
                 alignItems: "flex-end",
-                gap: 3,
+                gap: "0.1875rem",
               }}
             >
               {claude.map((c, i) => {
@@ -890,16 +911,16 @@ function ActivityChart({
                         style={{
                           height: `${(x / max) * 100}%`,
                           background: "var(--a-codex)",
-                          minHeight: x > 0 ? 3 : 0,
-                          borderRadius: "3px 3px 0 0",
+                          minHeight: x > 0 ? "0.1875rem" : 0,
+                          borderRadius: "0.1875rem 0.1875rem 0 0",
                         }}
                       />
                       <div
                         style={{
                           height: `${(c / max) * 100}%`,
                           background: "var(--a-claude)",
-                          minHeight: c > 0 ? 3 : 0,
-                          borderRadius: x > 0 ? 0 : "3px 3px 0 0",
+                          minHeight: c > 0 ? "0.1875rem" : 0,
+                          borderRadius: x > 0 ? 0 : "0.1875rem 0.1875rem 0 0",
                         }}
                       />
                     </div>
@@ -935,9 +956,9 @@ function ActivityChart({
       <div
         style={{
           display: "flex",
-          gap: 3,
-          marginTop: 8,
-          paddingLeft: GUTTER + 8,
+          gap: "0.1875rem",
+          marginTop: "0.5rem",
+          paddingLeft: AXIS_PAD,
           fontFamily: "var(--mono)",
           fontSize: "var(--fs-11)",
           color: "var(--fg-3)",
@@ -965,7 +986,7 @@ function Th({ children, align }: { children?: React.ReactNode; align?: "left" | 
     <th
       style={{
         textAlign: align || "left",
-        padding: "9px 14px",
+        padding: "0.5625rem 0.875rem",
         fontWeight: 500,
         color: "var(--fg-2)",
         fontSize: "var(--fs-11)",
@@ -981,7 +1002,9 @@ function Th({ children, align }: { children?: React.ReactNode; align?: "left" | 
 
 function Td({ children, align }: { children?: React.ReactNode; align?: "left" | "right" }) {
   return (
-    <td style={{ padding: "11px 14px", textAlign: align || "left", verticalAlign: "middle" }}>
+    <td
+      style={{ padding: "0.6875rem 0.875rem", textAlign: align || "left", verticalAlign: "middle" }}
+    >
       {children}
     </td>
   );
@@ -993,12 +1016,19 @@ function Legend({ color, label }: { color: string; label: string }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 6,
+        gap: "0.375rem",
         fontSize: "var(--fs-12)",
         color: "var(--fg-1)",
       }}
     >
-      <span style={{ width: 10, height: 2, background: color, borderRadius: 2 }} />
+      <span
+        style={{
+          width: "0.625rem",
+          height: "0.125rem",
+          background: color,
+          borderRadius: "0.125rem",
+        }}
+      />
       {label}
     </span>
   );
@@ -1052,17 +1082,17 @@ function Metric({
     <div
       className="ch-card ch-card-interactive dash-rise"
       style={{
-        padding: 14,
+        padding: "0.875rem",
         display: "flex",
         flexDirection: "column",
-        gap: 8,
+        gap: "0.5rem",
         animationDelay: `${delay}ms`,
       }}
     >
       <div className="lbl" style={{ fontSize: "var(--fs-11)" }}>
         {label}
       </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "0.625rem" }}>
         <span
           className="mono tnum"
           style={{
@@ -1075,18 +1105,18 @@ function Metric({
           {value ?? "—"}
         </span>
         {value && spark && spark.length > 0 && (
-          <span style={{ flex: 1, height: 22, minWidth: 0 }}>
+          <span style={{ flex: 1, height: "1.375rem", minWidth: 0 }}>
             <Spark data={spark} color={sparkColor} fill calm={sparkCalm} responsive />
           </span>
         )}
       </div>
       {value && pips ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.4375rem" }}>
           <Pips statuses={pips} />
           {subEl}
         </div>
       ) : value && isGauge ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.3125rem" }}>
           <GaugeTrack pct={gauge} color={gaugeColor} />
           {subEl}
         </div>
@@ -1095,16 +1125,16 @@ function Metric({
       ) : isGauge ? (
         // Gauge metric with no reading: an empty track reads "gauge, awaiting
         // data", not a broken hatch.
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.3125rem" }}>
           <GaugeTrack pct={null} color={gaugeColor} />
           {subEl}
         </div>
       ) : (
         <div
           style={{
-            height: 4,
+            height: "0.25rem",
             borderRadius: 999,
-            marginTop: 2,
+            marginTop: "0.125rem",
             background: "repeating-linear-gradient(45deg, var(--bg-3) 0 6px, transparent 6px 12px)",
             opacity: 0.5,
           }}
@@ -1117,7 +1147,14 @@ function Metric({
 // A thin gauge bar; `pct === null` renders just the empty track.
 function GaugeTrack({ pct, color }: { pct: number | null; color: string }) {
   return (
-    <div style={{ height: 4, borderRadius: 999, background: "var(--bg-3)", overflow: "hidden" }}>
+    <div
+      style={{
+        height: "0.25rem",
+        borderRadius: 999,
+        background: "var(--bg-3)",
+        overflow: "hidden",
+      }}
+    >
       {pct !== null && (
         <div style={{ width: `${Math.min(1, pct) * 100}%`, height: "100%", background: color }} />
       )}
@@ -1140,16 +1177,16 @@ function Pips({ statuses }: { statuses: StatusKey[] }) {
             ? "var(--err)"
             : "var(--idle)";
   const shown = statuses.slice(0, 14);
-  if (shown.length === 0) return <div style={{ height: 6 }} />;
+  if (shown.length === 0) return <div style={{ height: "0.375rem" }} />;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", flexWrap: "wrap" }}>
       {shown.map((s, i) => (
         <span
           // biome-ignore lint/suspicious/noArrayIndexKey: positional session pips, no stable id needed.
           key={i}
           style={{
-            width: 6,
-            height: 6,
+            width: "0.375rem",
+            height: "0.375rem",
             borderRadius: "50%",
             background: color(s),
             opacity: s === "idle" ? 0.6 : 1,
@@ -1292,11 +1329,11 @@ function AgentUsageCard({
       {/* header */}
       <div
         style={{
-          padding: "13px 16px",
+          padding: "0.8125rem 1rem",
           borderBottom: "1px solid var(--bd-soft)",
           display: "flex",
           alignItems: "center",
-          gap: 11,
+          gap: "0.6875rem",
           flexWrap: "wrap",
         }}
       >
@@ -1311,19 +1348,25 @@ function AgentUsageCard({
         </div>
         <StatusBadge status="live">Active</StatusBadge>
         <span style={{ flex: 1 }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
           <HeadStat label="tokens" value={fmtNum(tokens)} />
-          <span style={{ width: 1, height: 22, background: "var(--bd-soft)" }} />
+          <span style={{ width: 1, height: "1.375rem", background: "var(--bd-soft)" }} />
           <HeadStat label="turns" value={String(usage.turns)} />
-          <span style={{ width: 1, height: 22, background: "var(--bd-soft)" }} />
+          <span style={{ width: 1, height: "1.375rem", background: "var(--bd-soft)" }} />
           <HeadStat label="est cost" value={fmtUsd(usage.estCostUsd)} accent />
         </div>
       </div>
 
       {/* body: wide tokens/day chart + stats + by-model bars */}
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
         {agent === "codex" && hasRate && rateMeters && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(13rem, 100%), 1fr))",
+              gap: "1rem",
+            }}
+          >
             <RateMeter
               label="primary window"
               usedPct={rateMeters.primaryUsedPct}
@@ -1340,7 +1383,7 @@ function AgentUsageCard({
         )}
 
         {days.length >= 1 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             <div
               className="lbl-soft"
               style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--fs-11)" }}
@@ -1357,8 +1400,8 @@ function AgentUsageCard({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
-            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(6.875rem, 1fr))",
+            gap: "0.875rem",
           }}
         >
           <UsageStat label="Input" value={fmtNum(totals.input)} />
@@ -1371,7 +1414,7 @@ function AgentUsageCard({
           )}
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.4375rem" }}>
           <div className="lbl">By model</div>
           <ModelBarHead />
           {usage.byModel.map((m) => (
@@ -1390,11 +1433,11 @@ function AgentUsageCard({
 
         <div
           style={{
-            paddingTop: 10,
+            paddingTop: "0.625rem",
             borderTop: "1px dashed var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: "0.625rem",
             flexWrap: "wrap",
             fontSize: "var(--fs-12)",
             color: tone === "over" ? "var(--err)" : tone === "warn" ? "var(--wait)" : "var(--fg-2)",
@@ -1430,7 +1473,7 @@ function AgentUsageCard({
 // A compact label+value pair for the usage-card header (tokens · turns · cost).
 function HeadStat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "0.375rem" }}>
       <span
         className="mono"
         style={{
@@ -1463,24 +1506,24 @@ function HeadStat({ label, value, accent }: { label: string; value: string; acce
 // so they always align under their bar.
 function DayChart({ days, color }: { days: { date: string; tokens: number }[]; color: string }) {
   const max = Math.max(...days.map((d) => d.tokens), 1);
-  const PLOT = 104;
+  const PLOT = "6.5rem";
   const labelAt = new Set([0, Math.floor((days.length - 1) / 2), days.length - 1]);
   return (
-    <div style={{ display: "flex", gap: 8 }}>
+    <div style={{ display: "flex", gap: "0.5rem" }}>
       {/* y-axis gutter */}
       <div
         className="mono tnum"
         style={{
           position: "relative",
-          width: 34,
+          width: "2.125rem",
           height: PLOT,
           flexShrink: 0,
           fontSize: "var(--fs-10)",
           color: "var(--fg-3)",
         }}
       >
-        <span style={{ position: "absolute", top: -3, right: 0 }}>{fmtNum(max)}</span>
-        <span style={{ position: "absolute", bottom: -3, right: 0 }}>0</span>
+        <span style={{ position: "absolute", top: "-0.1875rem", right: 0 }}>{fmtNum(max)}</span>
+        <span style={{ position: "absolute", bottom: "-0.1875rem", right: 0 }}>0</span>
       </div>
       {/* plot + per-column labels */}
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1495,7 +1538,7 @@ function DayChart({ days, color }: { days: { date: string; tokens: number }[]; c
               background: "var(--bd)",
             }}
           />
-          <div style={{ position: "absolute", inset: 0, display: "flex", gap: 4 }}>
+          <div style={{ position: "absolute", inset: 0, display: "flex", gap: "0.25rem" }}>
             {days.map((d) => {
               const r = d.tokens / max;
               return (
@@ -1514,14 +1557,14 @@ function DayChart({ days, color }: { days: { date: string; tokens: number }[]; c
                       className="bar-col"
                       style={{
                         width: "100%",
-                        maxWidth: 56,
+                        maxWidth: "min(3.5rem, 100%)",
                         height: `${Math.max(2, r * 100)}%`,
-                        minHeight: d.tokens > 0 ? 3 : 2,
+                        minHeight: d.tokens > 0 ? "0.1875rem" : "0.125rem",
                         // Lit top → grounded base: a vertical gradient reads more
                         // refined than a flat bar; opacity still ramps with volume.
                         background: `linear-gradient(to top, color-mix(in oklab, ${color} 55%, transparent), ${color})`,
                         opacity: 0.4 + 0.6 * r,
-                        borderRadius: "3px 3px 0 0",
+                        borderRadius: "0.1875rem 0.1875rem 0 0",
                       }}
                     />
                   </div>
@@ -1533,8 +1576,8 @@ function DayChart({ days, color }: { days: { date: string; tokens: number }[]; c
         <div
           style={{
             display: "flex",
-            gap: 4,
-            marginTop: 6,
+            gap: "0.25rem",
+            marginTop: "0.375rem",
             fontFamily: "var(--mono)",
             fontSize: "var(--fs-10)",
             color: "var(--fg-3)",
@@ -1566,8 +1609,8 @@ function RateMeter({
   const pct = Math.min(1, Math.max(0, usedPct / 100));
   const color = pct > 0.85 ? "var(--err)" : pct > 0.7 ? "var(--wait)" : "var(--live)";
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.3125rem" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
         <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-1)" }}>
           {label}
           {windowMinutes !== null && (
@@ -1582,7 +1625,14 @@ function RateMeter({
           {usedPct.toFixed(usedPct < 10 ? 1 : 0)}%
         </span>
       </div>
-      <div style={{ height: 5, background: "var(--bg-3)", borderRadius: 999, overflow: "hidden" }}>
+      <div
+        style={{
+          height: "0.3125rem",
+          background: "var(--bg-3)",
+          borderRadius: 999,
+          overflow: "hidden",
+        }}
+      >
         <div style={{ width: `${pct * 100}%`, height: "100%", background: color }} />
       </div>
       <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
@@ -1598,8 +1648,8 @@ function ModelBarHead() {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 10,
-        padding: "0 0 4px",
+        gap: "0.625rem",
+        padding: "0 0 0.25rem",
         borderBottom: "1px solid var(--bd-soft)",
       }}
     >
@@ -1639,7 +1689,7 @@ function ModelBar({
 }) {
   const r = Math.min(1, tokens / max);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.25rem 0" }}>
       <Tip text={model}>
         <span
           className="mono"
@@ -1655,7 +1705,9 @@ function ModelBar({
         >
           {model}
           {!priced && (
-            <span style={{ marginLeft: 6, fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
+            <span
+              style={{ marginLeft: "0.375rem", fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+            >
               unpriced
             </span>
           )}
@@ -1665,7 +1717,7 @@ function ModelBar({
         style={{
           width: "32%",
           flexShrink: 0,
-          height: 6,
+          height: "0.375rem",
           background: "var(--bg-3)",
           borderRadius: 999,
           overflow: "hidden",
@@ -1702,7 +1754,7 @@ function NumCell({
     <span
       className={head ? "lbl tnum" : "mono tnum"}
       style={{
-        width: wide ? 80 : 56,
+        width: wide ? "clamp(3.5rem, 12vw, 5rem)" : "clamp(3rem, 10vw, 3.5rem)",
         textAlign: "right",
         flexShrink: 0,
         fontSize: head ? undefined : "var(--fs-12)",
@@ -1716,7 +1768,7 @@ function NumCell({
 
 function UsageStat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
       <span className="lbl-soft" style={{ fontSize: "var(--fs-11)" }}>
         {label}
       </span>
@@ -1746,11 +1798,11 @@ function EmptyAgentCard({
     <div className="ch-card" style={{ padding: 0, display: "flex", flexDirection: "column" }}>
       <div
         style={{
-          padding: "13px 16px",
+          padding: "0.8125rem 1rem",
           borderBottom: "1px solid var(--bd-soft)",
           display: "flex",
           alignItems: "center",
-          gap: 11,
+          gap: "0.6875rem",
         }}
       >
         <AgentGlyph agent={agent} size={24} color={accent} />
@@ -1766,12 +1818,12 @@ function EmptyAgentCard({
         <StatusBadge status="idle">Ready</StatusBadge>
       </div>
 
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
-            gap: 14,
+            gridTemplateColumns: "repeat(auto-fit, minmax(6.875rem, 1fr))",
+            gap: "0.875rem",
           }}
         >
           <UsageStat label="Input" value="—" />
@@ -1796,7 +1848,7 @@ function UsageNote({ children }: { children: React.ReactNode }) {
     <div
       className="mono ch-card"
       style={{
-        padding: "40px 16px",
+        padding: "2.5rem 1rem",
         textAlign: "center",
         fontSize: "var(--fs-12)",
         color: "var(--fg-3)",

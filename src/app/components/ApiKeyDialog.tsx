@@ -54,7 +54,10 @@ export function ApiKeyDialog({ agent, onClose, onSaved }: ApiKeyDialogProps) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[420px]" showCloseButton={false}>
+      <DialogContent
+        className="w-[min(26.25rem,calc(100vw-2rem))] sm:max-w-none"
+        showCloseButton={false}
+      >
         <DialogHeader>
           <DialogTitle>Add {agentLabel}</DialogTitle>
           <DialogDescription>
@@ -90,7 +93,7 @@ export function ApiKeyDialog({ agent, onClose, onSaved }: ApiKeyDialogProps) {
           </div>
 
           {error && (
-            <div className="text-[12px]" style={{ color: "var(--err)" }}>
+            <div className="text-[0.75rem]" style={{ color: "var(--err)" }}>
               {error}
             </div>
           )}

@@ -12,6 +12,10 @@
   --bg-3: #1f242d;
   --bg-hover: #242a34;
   --bg-active: #2b323d;
+  /* Dynamic-Island surface — PURE black to seamlessly merge with the physical
+     notch / camera housing (true #000). --bg-0 is blue-tinted (#08090b) and
+     leaves a visible tone seam against the notch, so the island never uses it. */
+  --island-bg: #000000;
 
   /* borders */
   --bd: #262b34;
@@ -60,17 +64,17 @@
   --mono: "JetBrains Mono", ui-monospace, monospace;
 
   /* radii */
-  --r-1: 4px;
-  --r-2: 6px;
-  --r-3: 8px;
-  --r-4: 10px;
-  --r-5: 14px;
-  --radius: 6px;
+  --r-1: 0.25rem;
+  --r-2: 0.375rem;
+  --r-3: 0.5rem;
+  --r-4: 0.625rem;
+  --r-5: 0.875rem;
+  --radius: 0.375rem;
 
   /* shadows */
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.35);
-  --shadow-3: 0 18px 60px rgba(0, 0, 0, 0.5);
+  --shadow-1: 0 1px 0.125rem rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 0.375rem 1.5rem rgba(0, 0, 0, 0.35);
+  --shadow-3: 0 1.125rem 3.75rem rgba(0, 0, 0, 0.5);
 
   /* ── shadcn token bridge (dark) ─────────────────────────────────────────── */
   --background: #10131a;
@@ -201,9 +205,9 @@
   --a-antigravity: oklch(0.76 0.1 205);
   --a-shell: oklch(0.72 0.13 150);
 
-  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.025), 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-2: 0 2px 0 rgba(255, 255, 255, 0.02), 0 6px 16px rgba(0, 0, 0, 0.4);
-  --shadow-3: 0 4px 0 rgba(255, 255, 255, 0.015), 0 18px 60px rgba(0, 0, 0, 0.55);
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.025), 0 1px 0.125rem rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 0.125rem 0 rgba(255, 255, 255, 0.02), 0 0.375rem 1rem rgba(0, 0, 0, 0.4);
+  --shadow-3: 0 0.25rem 0 rgba(255, 255, 255, 0.015), 0 1.125rem 3.75rem rgba(0, 0, 0, 0.55);
 
   /* shadcn token bridge (gray) */
   --background: #262930;
@@ -259,7 +263,7 @@
 .ch-rename:hover {
   text-decoration: underline dotted;
   text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
+  text-underline-offset: 0.1875rem;
 }
 
 /* Uppercase mini-label (loud — for section heads) */
@@ -291,8 +295,8 @@
 
 /* Status dot */
 .dot {
-  width: 6px;
-  height: 6px;
+  width: 0.375rem;
+  height: 0.375rem;
   border-radius: 50%;
   flex: 0 0 auto;
   display: inline-block;
@@ -300,22 +304,22 @@
 
 .dot.live {
   background: var(--live);
-  box-shadow: 0 0 0 3px var(--live-dim);
+  box-shadow: 0 0 0 0.1875rem var(--live-dim);
 }
 
 .dot.wait {
   background: var(--wait);
-  box-shadow: 0 0 0 3px var(--wait-dim);
+  box-shadow: 0 0 0 0.1875rem var(--wait-dim);
 }
 
 .dot.idle {
   background: var(--idle);
-  box-shadow: 0 0 0 3px var(--idle-dim);
+  box-shadow: 0 0 0 0.1875rem var(--idle-dim);
 }
 
 .dot.err {
   background: var(--err);
-  box-shadow: 0 0 0 3px var(--err-dim);
+  box-shadow: 0 0 0 0.1875rem var(--err-dim);
 }
 
 .dot.done {
@@ -330,11 +334,11 @@
 @keyframes ch-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 3px var(--live-dim);
+    box-shadow: 0 0 0 0.1875rem var(--live-dim);
   }
 
   50% {
-    box-shadow: 0 0 0 5px var(--live-dim);
+    box-shadow: 0 0 0 0.3125rem var(--live-dim);
   }
 }
 
@@ -423,9 +427,9 @@
 
 /* Progress bar */
 .bar {
-  height: 4px;
+  height: 0.25rem;
   background: var(--bg-3);
-  border-radius: 999px;
+  border-radius: 62.4375rem;
   overflow: hidden;
   position: relative;
 }
@@ -446,7 +450,7 @@
 }
 
 .bar.thin {
-  height: 2px;
+  height: 0.125rem;
 }
 
 /* Card */
@@ -464,17 +468,17 @@
 
 /* Keyboard shortcut badge */
 .kbd {
-  font: 500 11px / 1 var(--mono);
+  font: 500 0.6875rem / 1 var(--mono);
   letter-spacing: 0.02em;
   background: var(--bg-3);
   border: 1px solid var(--bd);
-  border-bottom-width: 2px;
+  border-bottom-width: 0.125rem;
   color: var(--fg-1);
-  padding: 2px 5px 1.5px;
-  border-radius: 4px;
+  padding: 0.125rem 0.3125rem 0.09375rem;
+  border-radius: 0.25rem;
   display: inline-flex;
   align-items: center;
-  min-width: 16px;
+  min-width: 1rem;
   justify-content: center;
 }
 
@@ -495,8 +499,8 @@
 .side-item {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
+  gap: 0.5625rem;
+  padding: 0.5rem 0.625rem;
   border-radius: var(--r-2);
   cursor: pointer;
   color: var(--fg-1);
@@ -522,12 +526,12 @@
 .side-item.active::before {
   content: "";
   position: absolute;
-  left: -10px;
+  left: -0.625rem;
   top: 50%;
-  width: 2px;
-  height: 18px;
+  width: 0.125rem;
+  height: 1.125rem;
   background: var(--fg-0);
-  border-radius: 2px;
+  border-radius: 0.125rem;
   transform: translateY(-50%);
   animation: indicator-in 0.2s ease;
 }
@@ -565,10 +569,10 @@
   background: var(--bg-3);
 }
 .session-row:hover td:first-child {
-  border-radius: 6px 0 0 6px;
+  border-radius: 0.375rem 0 0 0.375rem;
 }
 .session-row:hover td:last-child {
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 0.375rem 0.375rem 0;
 }
 
 /* Dashboard activity chart — brighten the hovered hour column */
@@ -588,7 +592,7 @@
 }
 .ch-card-interactive:hover {
   border-color: var(--bd-strong);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.12);
 }
 
 /* Dashboard mount reveal — staggered fade + rise. Callers set animation-delay
@@ -599,7 +603,7 @@
 @keyframes dash-rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(0.5rem);
   }
   to {
     opacity: 1;
@@ -618,14 +622,14 @@
   scrollbar-color: var(--bg-3) transparent;
 }
 .scroll::-webkit-scrollbar {
-  width: 5px;
+  width: 0.3125rem;
 }
 .scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 .scroll::-webkit-scrollbar-thumb {
   background: var(--bg-3);
-  border-radius: 999px;
+  border-radius: 62.4375rem;
 }
 .scroll::-webkit-scrollbar-thumb:hover {
   background: var(--fg-3);
@@ -638,9 +642,9 @@
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 2px;
-  height: 16px;
-  border-radius: 2px;
+  width: 0.125rem;
+  height: 1rem;
+  border-radius: 0.125rem;
   background: var(--fg-0);
 }
 
@@ -669,27 +673,27 @@
 .ch-slider {
   -webkit-appearance: none;
   appearance: none;
-  height: 6px;
-  border-radius: 999px;
+  height: 0.375rem;
+  border-radius: 62.4375rem;
   background: var(--bg-3);
   outline: none;
 }
 .ch-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
   border-radius: 50%;
   background: var(--pri);
-  border: 2px solid var(--bg-1);
+  border: 0.125rem solid var(--bg-1);
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 0.25rem rgba(0, 0, 0, 0.4);
 }
 .ch-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
   border-radius: 50%;
   background: var(--pri);
-  border: 2px solid var(--bg-1);
+  border: 0.125rem solid var(--bg-1);
   cursor: pointer;
 }
 
@@ -714,10 +718,10 @@ select.mono {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
   border: none;
-  border-radius: 5px;
+  border-radius: 0.3125rem;
   background: transparent;
   color: var(--fg-3);
   font-size: var(--fs-14);
@@ -746,12 +750,12 @@ select.mono {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 19px;
-  height: 19px;
+  width: 1.1875rem;
+  height: 1.1875rem;
   flex-shrink: 0;
   padding: 0;
   border: none;
-  border-radius: 5px;
+  border-radius: 0.3125rem;
   background: transparent;
   color: var(--fg-3);
   cursor: pointer;
@@ -775,8 +779,8 @@ select.mono {
   opacity: 1;
 }
 .tab-close:focus-visible {
-  outline: 2px solid var(--pri);
-  outline-offset: -2px;
+  outline: 0.125rem solid var(--pri);
+  outline-offset: -0.125rem;
 }
 
 /* Keyboard users get a clear accent ring on all custom chrome elements.
@@ -791,8 +795,8 @@ select.mono {
 .rail-file:focus-visible,
 .ch-tab:focus-visible,
 .ws-side-row:focus-visible {
-  outline: 2px solid var(--pri);
-  outline-offset: -2px;
+  outline: 0.125rem solid var(--pri);
+  outline-offset: -0.125rem;
 }
 
 /* ---- Reduced motion ------------------------------------------------------ */

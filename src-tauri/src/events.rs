@@ -55,6 +55,12 @@ type TailError = Box<dyn std::error::Error + Send + Sync + 'static>;
 /// `.keep` (the dir sentinel) never matches `*.jsonl`, so it's skipped. `trap
 /// 'kill 0'` reaps the child tails when the exec shell exits. dash-compatible (the
 /// runtime's `/bin/sh`): `case` glob membership, no-match glob guarded by `[ -e ]`.
+///
+/// `stdbuf -oL` is load-bearing: the bollard exec stdout is a pipe, not a TTY, so
+/// libc FULL-buffers `tail`'s output (~4-8 KiB). A lone ~100-byte event line then
+/// sits in that buffer for many seconds until later events flush it — agent
+/// notifications/island pops arrived 20s+ late. `-oL` line-buffers each `tail` so
+/// every event flushes immediately. `stdbuf` ships in coreutils (Debian runtime).
 const TAIL_SCRIPT: &str = r#"cd /tmp/codehub/events 2>/dev/null || exit 0
 trap 'kill 0' EXIT
 tailed=""
@@ -63,7 +69,7 @@ while :; do
     [ -e "$f" ] || continue
     case " $tailed " in
       *" $f "*) ;;
-      *) tail -n +1 -F "$f" 2>/dev/null & tailed="$tailed $f" ;;
+      *) stdbuf -oL tail -n +1 -F "$f" 2>/dev/null & tailed="$tailed $f" ;;
     esac
   done
   sleep 1
@@ -162,6 +168,16 @@ impl EventsTracker {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Pane alias + workspace title + cli for a session, for an OS notification.
+    /// Empty when no `ActivityTracker` is wired (the dev bridge) or the session is
+    /// unknown → the caller falls back to the raw session name.
+    pub fn notify_label(&self, session: &str) -> crate::activity::NotifyLabel {
+        self.activity
+            .as_ref()
+            .map(|a| a.notify_label(session))
+            .unwrap_or_default()
+    }
+
     /// Process one line from the tail stream and update state.
     /// Returns `Some(AgentEvent)` when the line parses into an event the
     /// frontend should receive.
@@ -179,6 +195,13 @@ impl EventsTracker {
             notification_type: Option<String>,
             #[serde(default)]
             tool_name: Option<String>,
+            // Short, in-container-TRUNCATED tool summaries (Bash command / file
+            // path / first result line). Drive the island's output block. Absent
+            // for non-tool events and for older images without the capture hook.
+            #[serde(default)]
+            tool_arg: Option<String>,
+            #[serde(default)]
+            tool_result: Option<String>,
             // Codex notify carries its conversation/rollout uuid here (emitted by
             // codehub-hook). Captured as the session's `codex_id` for telemetry.
             #[serde(default)]
@@ -277,7 +300,7 @@ impl EventsTracker {
             },
             KIND_PRE_TOOL => {
                 if let Some(ref act) = self.activity {
-                    act.on_pre_tool(&ev.session, ev.tool_name.as_deref());
+                    act.on_pre_tool(&ev.session, ev.tool_name.as_deref(), ev.tool_arg.as_deref());
                 }
                 // A structured "ask the user" tool (Claude `AskUserQuestion` / Codex
                 // `request_user_input`) blocks the turn on a user answer — surface it
@@ -298,7 +321,7 @@ impl EventsTracker {
                 // approved permission whose tool just ran).
                 state.pending = None;
                 if let Some(ref act) = self.activity {
-                    act.on_post_tool(&ev.session);
+                    act.on_post_tool(&ev.session, ev.tool_result.as_deref());
                 }
             },
             KIND_STOP => {
@@ -430,13 +453,17 @@ pub fn start_event_tailer(
     // resolved permission prompts / turn finishes. In-app state still rebuilds
     // from the full replay — only the OS toast is suppressed for old lines.
     let started_at = now_ms();
+    // The sink needs the tracker to resolve a session's alias/workspace for the
+    // notification text; the reconcile loop takes ownership of `tracker`, so clone
+    // for the closure first.
+    let notify_tracker = tracker.clone();
     tauri::async_runtime::spawn(reconcile_event_tailers_loop(
         manager,
         tracker,
         move |event| {
             let _ = app.emit("codehub://agent-event", event);
             if event.at >= started_at {
-                maybe_notify(&app, &config, event);
+                maybe_notify(&app, &config, &notify_tracker, event);
             }
         },
     ));
@@ -564,17 +591,50 @@ fn now_ms() -> i64 {
 
 /// Fire an OS notification for a single agent event when the matching Settings
 /// flag is enabled. Honest: only `notification` (permission_prompt → await-input)
-/// and `stop` (turn-finish) kinds notify, and only when the user opted in. The
-/// session alias would require a registry lookup the sink does not hold, so the
-/// body uses the tmux session name — a real identifier, never fabricated.
-fn maybe_notify(app: &tauri::AppHandle, config: &crate::config::ConfigStore, event: &AgentEvent) {
+/// and `stop` (turn-finish) kinds notify, and only when the user opted in.
+///
+/// The toast title is the session's readable identity — workspace title plus pane
+/// alias ("[my-project] Claude 1") — so it's clear WHICH agent in WHICH workspace
+/// needs attention without opening the app. Both come from the
+/// `ActivityTracker` (set at `create_session`); a session missing them (e.g.
+/// adopted on restart before re-register) falls back to the raw session name — a
+/// real identifier, never fabricated.
+fn maybe_notify(
+    app: &tauri::AppHandle,
+    config: &crate::config::ConfigStore,
+    tracker: &EventsTracker,
+    event: &AgentEvent,
+) {
+    use tauri::Manager;
     use tauri_plugin_notification::NotificationExt;
+
+    // Don't toast what the user is already looking at: suppress when the main
+    // window is focused (honors the "while its window isn't focused" promise in
+    // Settings → Notifications). A missing window, an `is_focused` error, or a
+    // minimized window all read as NOT focused → fire (safe default).
+    let main_focused = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false);
+    if main_focused {
+        return;
+    }
+
+    // On macOS, when the Dynamic Island is on screen it IS the notification
+    // surface — it expands at the notch to announce the event — so an OS banner
+    // is redundant. Suppress it whenever the island is visible (the island route
+    // polls the same activity feed and shows the same event). When the island is
+    // disabled/hidden, fall through and fire the OS notification as before.
+    #[cfg(target_os = "macos")]
+    if crate::island::is_visible() {
+        return;
+    }
 
     let settings = config.get();
 
-    // Map the normalized event to (enabled?, title). Await-input is a
+    // Map the normalized event to the body action. Await-input is a
     // permission_prompt Notification; turn-finish is a Stop.
-    let title: Option<&str> = match event.kind.as_str() {
+    let action: Option<&str> = match event.kind.as_str() {
         KIND_NOTIFICATION
             if settings.notify_await_input
                 && matches!(
@@ -582,21 +642,26 @@ fn maybe_notify(app: &tauri::AppHandle, config: &crate::config::ConfigStore, eve
                     Some("permission_prompt") | Some("idle_prompt")
                 ) =>
         {
-            Some("Agent needs input")
+            Some("🔔 Needs your input")
         },
-        KIND_STOP if settings.notify_turn_finish => Some("Agent finished"),
+        KIND_STOP if settings.notify_turn_finish => Some("✅ Finished its turn"),
         _ => None,
     };
 
-    let Some(title) = title else {
+    let Some(action) = action else {
         return;
     };
 
-    let mut builder = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(&event.session);
+    // Readable identity: "[<workspace>] <alias>", falling back to the alias alone,
+    // then the raw session name.
+    let label = tracker.notify_label(&event.session);
+    let who = label.alias.unwrap_or_else(|| event.session.clone());
+    let title = match label.workspace {
+        Some(ws) if !ws.is_empty() => format!("[{ws}] {who}"),
+        _ => who,
+    };
+
+    let mut builder = app.notification().builder().title(&title).body(action);
     if settings.play_sound {
         // "default" asks the OS to play its standard notification sound.
         builder = builder.sound("default");

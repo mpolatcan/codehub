@@ -31,7 +31,10 @@ export interface TermBlockProps {
 
 export function TermBlock({ lines, style }: TermBlockProps) {
   return (
-    <div className="term" style={{ flex: 1, padding: "12px 14px", overflow: "hidden", ...style }}>
+    <div
+      className="term"
+      style={{ flex: 1, padding: "0.75rem 0.875rem", overflow: "hidden", ...style }}
+    >
       {lines.map((segs, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: terminal lines are positional, no stable id
         <TermLine key={i} segs={segs} />

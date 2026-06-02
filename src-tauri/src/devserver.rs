@@ -1227,6 +1227,9 @@ struct CreateBody {
     /// In-container working directory (a path under /workspace) the agent starts in.
     cwd: Option<String>,
     task_description: Option<String>,
+    /// Human workspace title (distinct from `workspace`, the container key) — stored
+    /// on the activity entry for the "[<workspace>] <pane>" OS notification.
+    workspace_label: Option<String>,
 }
 
 async fn create_session(
@@ -1295,6 +1298,9 @@ async fn create_session(
         git_branch.as_deref(),
         body.task_description.as_deref(),
     );
+    if let Some(label) = body.workspace_label.as_deref().filter(|s| !s.is_empty()) {
+        st.registry.activity().set_workspace(&body.name, label);
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1313,6 +1319,7 @@ async fn kill_session(
     // Same ordering as lib.rs: drop pane bookkeeping before killing tmux.
     st.registry.detach_by_session(&name).await;
     st.events.remove_session(&name);
+    st.registry.activity().remove(&name);
     docker_for(&st, &ws)
         .kill_tmux_session(&name)
         .await
@@ -1533,7 +1540,9 @@ async fn github_repos(State(st): State<AppState>) -> Result<impl IntoResponse, A
         return Ok(Json(Vec::new()));
     };
     Ok(Json(
-        crate::vault::github_fetch_repos(&token).await.unwrap_or_default(),
+        crate::vault::github_fetch_repos(&token)
+            .await
+            .unwrap_or_default(),
     ))
 }
 
@@ -1575,7 +1584,8 @@ async fn github_clone_into(
     State(st): State<AppState>,
     Json(body): Json<GithubCloneIntoBody>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let token = resolve_github_token_dev(&st).ok_or_else(|| err("GitHub not connected".to_string()))?;
+    let token =
+        resolve_github_token_dev(&st).ok_or_else(|| err("GitHub not connected".to_string()))?;
     let lifecycle = st.manager.resolve(&body.workspace, None);
     lifecycle.ensure_runtime().await.map_err(err)?;
     lifecycle

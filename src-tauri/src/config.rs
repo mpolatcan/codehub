@@ -28,12 +28,6 @@ fn default_hub_layout() -> String {
 fn default_true() -> bool {
     true
 }
-fn default_character() -> String {
-    "glyph".into()
-}
-fn default_companion_size() -> String {
-    "M".into()
-}
 
 /// Where an account profile's credential lives.
 ///
@@ -369,12 +363,12 @@ pub struct Settings {
     pub notify_turn_finish: bool,
     #[serde(default)]
     pub play_sound: bool,
-    /// Master enable for the always-on-top ambient surface — the macOS Dynamic
-    /// Island (native NSPanel) or the companion window elsewhere. Default on:
-    /// the island shows on launch and auto-pops on agent events. Turning this off
-    /// hides it and suppresses the auto-pop.
-    #[serde(default = "default_true")]
-    pub show_companion: bool,
+    /// Master enable for the macOS Dynamic Island — a transparent webview window
+    /// at the notch that announces agent events. macOS-only; ignored elsewhere.
+    /// Default on: built (hidden) on launch, auto-pops on agent events. Turning
+    /// it off tears the window down. `show_companion` alias preserves old configs.
+    #[serde(default = "default_true", alias = "show_companion")]
+    pub show_island: bool,
 
     // — Container sizing —
     #[serde(default)]
@@ -412,10 +406,6 @@ pub struct Settings {
     // — Prompt templates —
     #[serde(default)]
     pub prompt_templates: Vec<PromptTemplate>,
-
-    // — Companion avatar preferences —
-    #[serde(default)]
-    pub companion: CompanionPrefs,
 }
 
 /// A saved prompt template for the spawn dialog.
@@ -549,33 +539,6 @@ pub fn provider_kind_launchable(kind: &str) -> bool {
         kind,
         "anthropic" | "anthropic-compatible" | "openai" | "openai-compatible"
     )
-}
-
-/// Preferences for the always-on-top companion avatar window. Persisted to disk
-/// via the main `Settings` object so they survive across sessions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CompanionPrefs {
-    #[serde(default = "default_true")]
-    pub show: bool,
-    #[serde(default)]
-    pub hide_when_focused: bool,
-    #[serde(default)]
-    pub click_through: bool,
-    #[serde(default)]
-    pub snap_to_edges: bool,
-    #[serde(default = "default_true")]
-    pub bubble_on_hover: bool,
-    #[serde(default = "default_character")]
-    pub character: String,
-    #[serde(default = "default_companion_size")]
-    pub size: String,
-}
-
-impl Default for CompanionPrefs {
-    fn default() -> Self {
-        serde_json::from_str("{}").expect("empty object yields defaults")
-    }
 }
 
 impl Default for Settings {

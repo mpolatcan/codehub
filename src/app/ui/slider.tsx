@@ -45,7 +45,7 @@ function Slider({
           data-slot="slider-thumb"
           // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length thumb list, index is stable
           key={i}
-          className="block size-4 shrink-0 rounded-full border-2 border-[var(--bg-1)] bg-[var(--pri)] shadow-sm transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--pri-dim)] disabled:pointer-events-none"
+          className="block size-4 shrink-0 rounded-full border-2 border-[var(--bg-1)] bg-[var(--pri)] shadow-sm transition-[color,box-shadow] outline-none focus-visible:ring-[0.1875rem] focus-visible:ring-[var(--pri-dim)] disabled:pointer-events-none"
         />
       ))}
     </SliderPrimitive.Root>

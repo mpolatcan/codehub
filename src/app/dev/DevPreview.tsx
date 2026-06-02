@@ -21,7 +21,6 @@ import { useOverlay } from "@/app/lib/overlay";
 import { type HubView, activeWorkspace, initLifecycle, useStore } from "@/app/lib/store";
 import { useTheme } from "@/app/lib/theme";
 import { MAX_GROUP_PANES, leavesList, workspaceTitle } from "@/app/lib/tree";
-import { Companion } from "@/app/screens/Companion";
 import { Dashboard } from "@/app/screens/Dashboard";
 import { EmptyHero, EmptyState } from "@/app/screens/EmptyState";
 import { LiveActivities } from "@/app/screens/LiveActivities";
@@ -53,7 +52,6 @@ type ScreenKey =
   | "settings-platform"
   | "settings-notifications"
   | "live-activities"
-  | "companion"
   | "agent-settings"
   | "resume"
   | "session-detail"
@@ -77,7 +75,6 @@ const SCREENS: { key: ScreenKey; label: string; title: string }[] = [
   { key: "settings-platform", label: "Platform", title: "codehub · platform" },
   { key: "settings-notifications", label: "Notifications", title: "codehub · notifications" },
   { key: "live-activities", label: "Live activities", title: "codehub · live activities" },
-  { key: "companion", label: "Companion", title: "codehub · companion" },
   { key: "agent-settings", label: "Agent settings", title: "codehub · agent settings" },
   { key: "resume", label: "Resume", title: "codehub · resume" },
   { key: "session-detail", label: "Session detail", title: "codehub · session detail" },
@@ -187,8 +184,8 @@ export default function DevPreview() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
-          padding: "8px 14px",
+          gap: "0.5rem",
+          padding: "0.5rem 0.875rem",
           borderBottom: "1px solid var(--bd-soft)",
           background: "var(--bg-1)",
           flexShrink: 0,
@@ -199,14 +196,14 @@ export default function DevPreview() {
         <span className="lbl" style={{ color: "var(--fg-2)" }}>
           Screens
         </span>
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", minWidth: 0 }}>
+        <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap", minWidth: 0 }}>
           {SCREENS.map((s) => (
             <button
               key={s.key}
               type="button"
               onClick={() => select(s.key)}
               style={{
-                padding: "4px 10px",
+                padding: "0.25rem 0.625rem",
                 borderRadius: "var(--r-2)",
                 border: "1px solid var(--bd)",
                 background: screen === s.key ? "var(--bg-3)" : "transparent",
@@ -224,7 +221,7 @@ export default function DevPreview() {
           type="button"
           onClick={toggle}
           style={{
-            padding: "4px 12px",
+            padding: "0.25rem 0.75rem",
             borderRadius: "var(--r-2)",
             border: "1px solid var(--bd)",
             background: "var(--bg-3)",
@@ -238,7 +235,7 @@ export default function DevPreview() {
       </div>
 
       {/* framed screen */}
-      <div style={{ flex: 1, overflow: "hidden", padding: 16 }}>
+      <div style={{ flex: 1, overflow: "hidden", padding: "1rem" }}>
         <div
           style={{
             width: "100%",
@@ -271,7 +268,6 @@ function PreviewBody({ screen }: { screen: ScreenKey }) {
 
   if (screen === "states") return <StatesGallery />;
   if (screen === "live-activities") return <LiveActivities />;
-  if (screen === "companion") return <Companion />;
   if (screen === "agent-settings")
     return <SettingsPreview section="agents" initialAgentDetail="claude" />;
   if (screen === "session-detail") return <SessionDetailPreview />;

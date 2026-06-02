@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Tip } from "../../components/primitives/Tip";
 import { Ico } from "../../components/primitives/icons";
-import { useResizableDock } from "../../hooks/useResizableDock";
+import { rootPx, useResizableDock } from "../../hooks/useResizableDock";
 import { EASE } from "../../hooks/useSlideIn";
 import { ipc } from "../../lib/ipc";
 import { activeWorkspace, useStore } from "../../lib/store";
@@ -22,15 +22,15 @@ import { ResizeHandle } from "./ResizeHandle";
 // that doesn't exist. The agents drive git from inside their panes.
 
 // 22rem — matches the design's DiffPanel width.
-const WIDTH = 352;
+const WIDTH = 22; // rem (scales with the fluid root)
 
 export function DiffViewer({ path, onClose }: { path: string; onClose: () => void }) {
   const [diff, setDiff] = useState<string | null>(null);
   // The diff is for the active workspace's container.
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
-  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.diff.w", WIDTH, {
-    min: 300,
-    max: 700,
+  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.diff.wr2", WIDTH, {
+    min: 12,
+    max: () => Math.max(12, Math.min(window.innerWidth * 0.5, 43.75 * rootPx()) / rootPx()),
     edge: "left",
   });
 
@@ -53,16 +53,16 @@ export function DiffViewer({ path, onClose }: { path: string; onClose: () => voi
   return (
     <motion.aside
       ref={ref}
-      initial={{ width: 0 }}
-      animate={{ width: size }}
-      exit={{ width: 0 }}
+      initial={{ width: "0rem" }}
+      animate={{ width: `${size}rem` }}
+      exit={{ width: "0rem" }}
       transition={{ duration: dragging ? 0 : 0.28, ease: EASE }}
       style={{ flexShrink: 0, overflow: "hidden", position: "relative" }}
     >
-      {/* fixed-width inner so content doesn't reflow while the outer width animates */}
+      {/* sized inner so content doesn't reflow while the outer width animates */}
       <div
         style={{
-          width: size,
+          width: `${size}rem`,
           height: "100%",
           background: "var(--bg-1)",
           borderLeft: "1px solid var(--bd-soft)",
@@ -74,11 +74,11 @@ export function DiffViewer({ path, onClose }: { path: string; onClose: () => voi
       >
         <div
           style={{
-            padding: "8px 10px",
+            padding: "0.5rem 0.625rem",
             borderBottom: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 7,
+            gap: "0.4375rem",
           }}
         >
           <span style={{ color: "var(--wait)", display: "inline-flex" }}>{Ico.diff}</span>

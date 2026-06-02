@@ -38,9 +38,10 @@ type NavId = "hub" | "dashboard" | "settings";
 
 export function HubSidebar() {
   const collapsed = useStore((s) => s.sidebarCollapsed);
+  const expandedWidth = "clamp(12rem, 18vw, 16.5rem)";
   return (
     <motion.div
-      animate={{ width: collapsed ? 52 : 264 }}
+      animate={{ width: collapsed ? "3.25rem" : expandedWidth }}
       transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
       style={{
         flexShrink: 0,
@@ -101,7 +102,7 @@ function useNav() {
   return { activeId, items };
 }
 
-// ── EXPANDED (264px) ─────────────────────────────────────────────────────────
+// ── EXPANDED ─────────────────────────────────────────────────────────────────
 function SidebarExpanded() {
   const { activeId, items } = useNav();
   const toggleSidebar = useStore((s) => s.toggleSidebar);
@@ -110,7 +111,8 @@ function SidebarExpanded() {
   return (
     <aside
       style={{
-        width: 264,
+        width: "100%",
+        minWidth: 0,
         flexShrink: 0,
         background: "var(--bg-1)",
         borderRight: "1px solid var(--bd-soft)",
@@ -122,7 +124,7 @@ function SidebarExpanded() {
       {/* header — logo + collapse */}
       <div
         style={{
-          padding: "12px 14px 10px",
+          padding: "0.75rem 0.875rem 0.625rem",
           borderBottom: "1px solid var(--bd-soft)",
           display: "flex",
           alignItems: "center",
@@ -153,8 +155,8 @@ function SidebarExpanded() {
       </div>
 
       {/* Views */}
-      <div style={{ padding: "10px 10px 4px" }}>
-        <div style={{ padding: "0 4px 6px" }}>
+      <div style={{ padding: "0.625rem 0.625rem 0.25rem" }}>
+        <div style={{ padding: "0 0.25rem 0.375rem" }}>
           <span className="lbl">Views</span>
         </div>
         {items.map((n) => (
@@ -194,7 +196,7 @@ function WorkspacesSection() {
     <div
       style={{
         flex: 1,
-        padding: "12px 10px 4px",
+        padding: "0.75rem 0.625rem 0.25rem",
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
@@ -206,7 +208,7 @@ function WorkspacesSection() {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "0 4px 8px",
+          padding: "0 0.25rem 0.5rem",
         }}
       >
         <span className="lbl">Workspaces · {workspaces.length}</span>
@@ -224,10 +226,10 @@ function WorkspacesSection() {
       {workspaces.length === 0 ? (
         <div
           style={{
-            padding: "20px 12px",
+            padding: "1.25rem 0.75rem",
             textAlign: "center",
             border: "1px dashed var(--bd)",
-            borderRadius: 8,
+            borderRadius: "0.5rem",
             fontSize: "var(--fs-12)",
             color: "var(--fg-2)",
             lineHeight: 1.55,
@@ -243,7 +245,13 @@ function WorkspacesSection() {
       ) : (
         <div
           className="scroll"
-          style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}
+          style={{
+            flex: 1,
+            overflow: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.375rem",
+          }}
         >
           {workspaces.map((ws) => (
             <WorkspaceSideRow key={ws.id} workspaceId={ws.id} />
@@ -307,8 +315,8 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
     <div
       className="ws-side-row"
       style={{
-        borderRadius: 7,
-        padding: 4,
+        borderRadius: "0.4375rem",
+        padding: "0.25rem",
         background: open ? "color-mix(in oklab, var(--bg-2) 60%, transparent)" : "transparent",
         border: `1px solid ${open ? "var(--bd-soft)" : "transparent"}`,
       }}
@@ -317,8 +325,8 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 4,
-          padding: "4px 6px 1px",
+          gap: "0.25rem",
+          padding: "0.25rem 0.375rem 0.0625rem",
         }}
       >
         <button
@@ -327,7 +335,7 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 6,
+            gap: "0.375rem",
             flex: 1,
             minWidth: 0,
             background: "transparent",
@@ -426,8 +434,8 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
                 fontWeight: 600,
                 color: open ? "var(--fg-1)" : "var(--fg-2)",
                 background: "var(--bg-3)",
-                borderRadius: 5,
-                padding: "1px 6px",
+                borderRadius: "0.3125rem",
+                padding: "0.0625rem 0.375rem",
                 flexShrink: 0,
               }}
             >
@@ -445,12 +453,12 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
             fontFamily: "var(--mono)",
             fontSize: "var(--fs-11)",
             color: "var(--fg-2)",
-            padding: "0 6px 6px",
+            padding: "0 0.375rem 0.375rem",
             borderBottom: open ? "1px solid var(--bd-soft)" : "none",
             marginBottom: open ? 5 : 0,
             display: "flex",
             alignItems: "center",
-            gap: 5,
+            gap: "0.3125rem",
           }}
         >
           <span style={{ display: "inline-flex", flexShrink: 0, color: "var(--fg-3)" }}>
@@ -471,11 +479,11 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 3,
+                gap: "0.1875rem",
                 flexShrink: 0,
                 maxWidth: "45%",
-                padding: "0 5px",
-                borderRadius: 4,
+                padding: "0 0.3125rem",
+                borderRadius: "0.25rem",
                 background: "var(--bg-3)",
                 color: "var(--fg-1)",
               }}
@@ -514,11 +522,18 @@ function GroupSessions({ group, showLabel }: { group: Group; showLabel: boolean 
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 6,
-            padding: "4px 6px 2px",
+            gap: "0.375rem",
+            padding: "0.25rem 0.375rem 0.125rem",
           }}
         >
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color }} />
+          <span
+            style={{
+              width: "0.4375rem",
+              height: "0.4375rem",
+              borderRadius: "50%",
+              background: group.color,
+            }}
+          />
           <span className="lbl" style={{ fontSize: "var(--fs-9)" }}>
             {group.name}
           </span>
@@ -607,20 +622,20 @@ function SessionRow({
       className={`side-item${focused ? " active" : ""}${working ? " session-working" : ""}`}
       style={{
         alignItems: "flex-start",
-        padding: "8px 10px",
+        padding: "0.5rem 0.625rem",
         position: "relative",
         overflow: "hidden",
         ...(working
           ? {
               background: "color-mix(in oklab, var(--live) 6%, transparent)",
               borderLeft: "2px solid var(--live)",
-              paddingLeft: 8,
+              paddingLeft: "0.5rem",
             }
           : isWait
             ? {
                 background: "color-mix(in oklab, var(--wait) 8%, transparent)",
                 borderLeft: "2px solid var(--wait)",
-                paddingLeft: 8,
+                paddingLeft: "0.5rem",
               }
             : {}),
       }}
@@ -631,7 +646,14 @@ function SessionRow({
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* line 1: agent identity + live status (right) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.375rem",
+            marginBottom: "0.125rem",
+          }}
+        >
           <AgentGlyph agent={meta.cli} size={12} color={`var(--a-${meta.cli})`} />
           <span
             className="mono"
@@ -656,8 +678,8 @@ function SessionRow({
                 fontWeight: 600,
                 color: "var(--wait)",
                 background: "color-mix(in oklab, var(--wait) 15%, transparent)",
-                padding: "1px 5px",
-                borderRadius: 3,
+                padding: "0.0625rem 0.3125rem",
+                borderRadius: "0.1875rem",
                 flexShrink: 0,
                 letterSpacing: "0.03em",
               }}
@@ -686,7 +708,7 @@ function SessionRow({
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 4,
+              gap: "0.25rem",
               fontSize: "var(--fs-11)",
               color: "var(--fg-2)",
             }}
@@ -753,18 +775,18 @@ function SidebarFooter() {
   return (
     <div
       style={{
-        padding: "10px 12px",
+        padding: "0.625rem 0.75rem",
         borderTop: "1px solid var(--bd-soft)",
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: "0.625rem",
       }}
     >
       <div
         style={{
-          width: 22,
-          height: 22,
-          borderRadius: 5,
+          width: "1.375rem",
+          height: "1.375rem",
+          borderRadius: "0.3125rem",
           background: "linear-gradient(135deg, oklch(0.7 0.13 30), oklch(0.6 0.13 280))",
           flexShrink: 0,
           position: "relative",
@@ -773,10 +795,10 @@ function SidebarFooter() {
         <span
           style={{
             position: "absolute",
-            right: -2,
-            bottom: -2,
-            width: 8,
-            height: 8,
+            right: "-0.125rem",
+            bottom: "-0.125rem",
+            width: "0.5rem",
+            height: "0.5rem",
             borderRadius: "50%",
             background: runtimeLive ? "var(--live)" : "var(--idle)",
             border: "1.5px solid var(--bg-1)",
@@ -815,20 +837,20 @@ function SidebarRail() {
   return (
     <aside
       style={{
-        width: 52,
+        width: "3.25rem",
         flexShrink: 0,
         background: "var(--bg-0)",
         borderRight: "1px solid var(--bd-soft)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        padding: "12px 0 10px",
+        padding: "0.75rem 0 0.625rem",
       }}
     >
       <div
         style={{
-          paddingBottom: 10,
-          marginBottom: 8,
+          paddingBottom: "0.625rem",
+          marginBottom: "0.5rem",
           width: "100%",
           display: "flex",
           justifyContent: "center",
@@ -839,7 +861,7 @@ function SidebarRail() {
       <RailIcon title="Expand sidebar (⌘B)" onClick={toggleSidebar}>
         {Ico.sidebarR}
       </RailIcon>
-      <div style={{ height: 8 }} />
+      <div style={{ height: "0.5rem" }} />
       {items.map((n) => (
         <RailIcon
           key={n.id}
@@ -857,7 +879,7 @@ function SidebarRail() {
           style={{
             display: "flex",
             justifyContent: "center",
-            padding: "6px 0",
+            padding: "0.375rem 0",
           }}
         >
           <StatusDot
@@ -891,10 +913,10 @@ function RailIcon({
         type="button"
         onClick={onClick}
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 7,
-          marginBottom: 4,
+          width: "2rem",
+          height: "2rem",
+          borderRadius: "0.4375rem",
+          marginBottom: "0.25rem",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -925,15 +947,15 @@ function RailIcon({
             className="mono"
             style={{
               position: "absolute",
-              top: -2,
-              right: -2,
+              top: "-0.125rem",
+              right: "-0.125rem",
               fontSize: "var(--fs-10)",
               fontWeight: 600,
               background: "var(--fg-0)",
               color: "var(--bg-0)",
-              borderRadius: 7,
-              padding: "1px 4px",
-              minWidth: 14,
+              borderRadius: "0.4375rem",
+              padding: "0.0625rem 0.25rem",
+              minWidth: "0.875rem",
               textAlign: "center",
               border: "1.5px solid var(--bg-0)",
             }}

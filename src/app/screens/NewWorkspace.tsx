@@ -238,12 +238,11 @@ export function NewWorkspace() {
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: "40rem",
-          maxWidth: "calc(100vw - 48px)",
-          maxHeight: "calc(100vh - 56px)",
+          width: "min(40rem, calc(100vw - 2rem))",
+          height: "min(38.5rem, calc(100vh - 3.5rem))",
           background: "var(--bg-2)",
           border: "1px solid var(--bd-strong)",
-          borderRadius: 14,
+          borderRadius: "0.875rem",
           boxShadow: "var(--shadow-3)",
           display: "flex",
           flexDirection: "column",
@@ -253,11 +252,11 @@ export function NewWorkspace() {
         {/* head */}
         <div
           style={{
-            padding: "14px 18px",
+            padding: "0.875rem 1.125rem",
             borderBottom: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: "0.625rem",
             flexShrink: 0,
           }}
         >
@@ -273,12 +272,13 @@ export function NewWorkspace() {
         {/* stepper */}
         <div
           style={{
-            padding: "12px 18px",
+            padding: "0.75rem 1.125rem",
             borderBottom: "1px solid var(--bd-soft)",
             background: "var(--bg-1)",
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: "0.5rem",
+            flexWrap: "wrap",
             flexShrink: 0,
           }}
         >
@@ -292,14 +292,14 @@ export function NewWorkspace() {
           })}
         </div>
 
-        {/* body — fixed height so the card never resizes between steps. Each step
-            is a full-height flex column: list/scroll regions take fixed heights and
-            the primary controls anchor to the bottom, so nothing reflows. */}
+        {/* body — flexes within the viewport-capped card. Each step is a full-height
+            flex column: list/scroll regions take the available space and the
+            primary controls anchor to the bottom, so nothing reflows. */}
         <div
           style={{
-            padding: "18px",
-            height: 440,
-            flexShrink: 0,
+            padding: "1.125rem",
+            flex: "1 1 auto",
+            minHeight: 0,
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
@@ -356,9 +356,15 @@ export function NewWorkspace() {
 
               {/* agent + mode share one row; both selects fill their half-width */}
               <FormRow label="First agent">
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(12rem, 100%), 1fr))",
+                    gap: "0.75rem",
+                  }}
+                >
                   <div>
-                    <div className="lbl" style={{ marginBottom: 6 }}>
+                    <div className="lbl" style={{ marginBottom: "0.375rem" }}>
                       Agent
                     </div>
                     <Select value={agent} onValueChange={(v) => setAgent(v as Cli)}>
@@ -375,7 +381,7 @@ export function NewWorkspace() {
                     </Select>
                   </div>
                   <div>
-                    <div className="lbl" style={{ marginBottom: 6 }}>
+                    <div className="lbl" style={{ marginBottom: "0.375rem" }}>
                       Mode
                     </div>
                     <Select value={mode} onValueChange={(v) => setMode(v as Mode)}>
@@ -417,11 +423,13 @@ export function NewWorkspace() {
                         className={SELECT_ITEM}
                         disabled={opt.value !== HOST_ACCOUNT && !opt.present}
                       >
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span
+                          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+                        >
                           <span
                             style={{
-                              width: 6,
-                              height: 6,
+                              width: "0.375rem",
+                              height: "0.375rem",
                               borderRadius: "50%",
                               background: opt.present ? "var(--live)" : "var(--err)",
                               flexShrink: 0,
@@ -445,7 +453,12 @@ export function NewWorkspace() {
               <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                 <div
                   className="lbl"
-                  style={{ color: "var(--fg-1)", marginBottom: 8, display: "flex", gap: 8 }}
+                  style={{
+                    color: "var(--fg-1)",
+                    marginBottom: "0.5rem",
+                    display: "flex",
+                    gap: "0.5rem",
+                  }}
                 >
                   Initial prompt
                   <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
@@ -458,7 +471,7 @@ export function NewWorkspace() {
                   placeholder="First message handed to the agent once it launches…"
                   spellCheck={false}
                   className="mono resize-none text-sm"
-                  style={{ flex: 1, minHeight: 64 }}
+                  style={{ flex: 1, minHeight: "4rem" }}
                 />
               </div>
             </div>
@@ -468,12 +481,12 @@ export function NewWorkspace() {
         {/* footer */}
         <div
           style={{
-            padding: "12px 18px",
+            padding: "0.75rem 1.125rem",
             borderTop: "1px solid var(--bd-soft)",
             background: "var(--bg-1)",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: "0.625rem",
             flexShrink: 0,
           }}
         >
@@ -502,12 +515,12 @@ export function NewWorkspace() {
           </Button>
           <Button
             size="sm"
-            style={{ padding: "6px 14px" }}
+            style={{ padding: "0.375rem 0.875rem" }}
             disabled={!dir || saving}
             onClick={next}
           >
             {saving ? "Launching..." : step < 3 ? "Continue" : "Save & launch"}
-            <span className="kbd" style={{ marginLeft: 6 }}>
+            <span className="kbd" style={{ marginLeft: "0.375rem" }}>
               {step < 3 ? "⏎" : "⌘⏎"}
             </span>
           </Button>
@@ -543,18 +556,18 @@ function BaseImagePanel() {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 12,
-        padding: "12px 14px",
+        gap: "0.75rem",
+        padding: "0.75rem 0.875rem",
         background: "var(--bg-1)",
         border: "1px solid var(--bd-soft)",
-        borderRadius: 8,
+        borderRadius: "0.5rem",
       }}
     >
       <div
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 6,
+          width: "2rem",
+          height: "2rem",
+          borderRadius: "0.375rem",
           background: "var(--bg-3)",
           border: "1px solid var(--bd-soft)",
           display: "flex",
@@ -581,7 +594,7 @@ function BaseImagePanel() {
         </div>
         <div
           className="mono"
-          style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)", marginTop: 2 }}
+          style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)", marginTop: "0.125rem" }}
         >
           bundles every agent's runtime · {platform}
         </div>
@@ -591,11 +604,11 @@ function BaseImagePanel() {
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: 4,
+            gap: "0.25rem",
             fontFamily: "var(--mono)",
             fontSize: "var(--fs-10)",
             color: "var(--live)",
-            padding: "2px 8px",
+            padding: "0.125rem 0.5rem",
             borderRadius: 999,
             background: "color-mix(in oklab, var(--live) 12%, transparent)",
             flexShrink: 0,
@@ -603,7 +616,12 @@ function BaseImagePanel() {
         >
           <span
             aria-hidden="true"
-            style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--live)" }}
+            style={{
+              width: "0.3125rem",
+              height: "0.3125rem",
+              borderRadius: "50%",
+              background: "var(--live)",
+            }}
           />
           pinned
         </span>
@@ -630,11 +648,11 @@ function Step({
   const filled = done || current;
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <span
           style={{
-            width: 24,
-            height: 24,
+            width: "1.5rem",
+            height: "1.5rem",
             borderRadius: "50%",
             display: "inline-flex",
             alignItems: "center",
@@ -670,7 +688,7 @@ function Bar({ done }: { done?: boolean }) {
     <div
       style={{
         flex: 1,
-        height: 2,
+        height: "0.125rem",
         background: done ? "var(--pri)" : "var(--bd-soft)",
         borderRadius: 1,
       }}
@@ -696,13 +714,15 @@ function ResourceSlider({
   return (
     <div
       style={{
-        padding: "14px 16px",
+        padding: "0.875rem 1rem",
         background: "var(--bg-1)",
         border: "1px solid var(--bd-soft)",
-        borderRadius: 10,
+        borderRadius: "0.625rem",
       }}
     >
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+      <div
+        style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", marginBottom: "0.625rem" }}
+      >
         <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
           {label}
         </span>
@@ -732,7 +752,7 @@ function ResourceSlider({
           justifyContent: "space-between",
           fontSize: "var(--fs-10)",
           color: "var(--fg-3)",
-          marginTop: 4,
+          marginTop: "0.25rem",
         }}
       >
         <span>{min}</span>
@@ -757,11 +777,11 @@ function ContainerResourceStep({
     <FormRow label="Container resources">
       <div
         className="mono"
-        style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginBottom: 12 }}
+        style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginBottom: "0.75rem" }}
       >
         local Docker resources for this workspace
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         <ResourceSlider label="CPU" unit="vCPU" value={cpus} min={1} max={8} onChange={setCpus} />
         <ResourceSlider
           label="Memory"
@@ -854,10 +874,10 @@ function RepoStep({
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          marginBottom: 14,
+          marginBottom: "0.875rem",
         }}
       >
-        <div className="lbl" style={{ color: "var(--fg-1)", marginBottom: 8 }}>
+        <div className="lbl" style={{ color: "var(--fg-1)", marginBottom: "0.5rem" }}>
           Selected · {allDirs.length}
         </div>
         {/* bordered drop-area so the selected region reads as a defined panel even
@@ -870,11 +890,11 @@ function RepoStep({
             overflow: "auto",
             display: "flex",
             flexDirection: "column",
-            gap: 4,
+            gap: "0.25rem",
             border: "1px solid var(--bd-soft)",
             background: "var(--bg-1)",
-            borderRadius: 8,
-            padding: 8,
+            borderRadius: "0.5rem",
+            padding: "0.5rem",
           }}
         >
           {allDirs.length === 0 ? (
@@ -882,14 +902,14 @@ function RepoStep({
               className="mono"
               style={{
                 flex: 1,
-                minHeight: 56,
+                minHeight: "3.5rem",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 textAlign: "center",
                 color: "var(--fg-3)",
                 fontSize: "var(--fs-12)",
-                padding: "0 12px",
+                padding: "0 0.75rem",
               }}
             >
               No repositories yet — add one below.
@@ -904,11 +924,11 @@ function RepoStep({
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
-                    padding: "7px 10px",
+                    gap: "0.5rem",
+                    padding: "0.4375rem 0.625rem",
                     background: "var(--bg-2)",
                     border: "1px solid var(--bd-soft)",
-                    borderRadius: 6,
+                    borderRadius: "0.375rem",
                     fontFamily: "var(--mono)",
                     fontSize: "var(--fs-11)",
                     color: "var(--fg-1)",
@@ -930,8 +950,8 @@ function RepoStep({
                     className="mono"
                     style={{
                       fontSize: "var(--fs-9)",
-                      padding: "1px 5px",
-                      borderRadius: 3,
+                      padding: "0.0625rem 0.3125rem",
+                      borderRadius: "0.1875rem",
                       background: "var(--bg-3)",
                       border: "1px solid var(--bd-soft)",
                       color: "var(--fg-3)",
@@ -958,7 +978,7 @@ function RepoStep({
       <div style={{ flexShrink: 0 }}>
         {/* local folder — input + browse button */}
         <FormRow label="Local folder">
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
             <Input
               className="mono flex-1 text-xs"
               value={localPath}
@@ -983,14 +1003,14 @@ function RepoStep({
           {!connected ? (
             <div
               className="mono"
-              style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "6px 0" }}
+              style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "0.375rem 0" }}
             >
               Not connected. Set up GitHub in Settings → Source control to browse repos here.
             </div>
           ) : githubRepos.length === 0 ? (
             <div
               className="mono"
-              style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "6px 0" }}
+              style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "0.375rem 0" }}
             >
               No repos found for this token.
             </div>
@@ -998,11 +1018,11 @@ function RepoStep({
             <div
               className="scroll"
               style={{
-                maxHeight: 120,
+                maxHeight: "min(7.5rem, 24vh)",
                 overflow: "auto",
                 display: "flex",
                 flexDirection: "column",
-                gap: 4,
+                gap: "0.25rem",
               }}
             >
               {githubRepos.map((repo) => {
@@ -1024,11 +1044,11 @@ function RepoStep({
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 10,
-                      padding: "8px 12px",
+                      gap: "0.625rem",
+                      padding: "0.5rem 0.75rem",
                       background: already ? "var(--bg-3)" : "var(--bg-2)",
                       border: `1px solid ${already ? "var(--bd)" : "var(--bd-soft)"}`,
-                      borderRadius: 6,
+                      borderRadius: "0.375rem",
                       cursor: disabled ? "default" : "pointer",
                       opacity: already || (picking !== null && !busy) ? 0.6 : 1,
                       color: "inherit",
@@ -1057,7 +1077,11 @@ function RepoStep({
                       {repo.private && (
                         <span
                           className="mono"
-                          style={{ fontSize: "var(--fs-9)", color: "var(--fg-3)", marginLeft: 6 }}
+                          style={{
+                            fontSize: "var(--fs-9)",
+                            color: "var(--fg-3)",
+                            marginLeft: "0.375rem",
+                          }}
                         >
                           private
                         </span>
@@ -1077,7 +1101,7 @@ function RepoStep({
           {pickError && (
             <div
               className="mono"
-              style={{ fontSize: "var(--fs-11)", color: "var(--err)", padding: "6px 0 0" }}
+              style={{ fontSize: "var(--fs-11)", color: "var(--err)", padding: "0.375rem 0 0" }}
             >
               {pickError}
             </div>
@@ -1086,7 +1110,7 @@ function RepoStep({
 
         <div
           className="mono"
-          style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", padding: "8px 4px 0" }}
+          style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", padding: "0.5rem 0.25rem 0" }}
         >
           {allDirs.length > 1
             ? "Each repo mounts at /workspace/{repo-name}; /workspace is the shared parent."

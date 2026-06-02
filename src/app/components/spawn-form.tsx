@@ -39,8 +39,10 @@ export function FormRow({
   children: ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+    <div style={{ marginBottom: "1rem" }}>
+      <div
+        style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", marginBottom: "0.5rem" }}
+      >
         <span className="lbl" style={{ color: "var(--fg-1)" }}>
           {label}
         </span>
@@ -71,25 +73,25 @@ export function AgentCard({
       onClick={onSelect}
       style={{
         textAlign: "left",
-        padding: "12px 14px",
+        padding: "0.75rem 0.875rem",
         background: selected ? "var(--bg-3)" : "var(--bg-1)",
         border: `1px solid ${selected ? "var(--fg-2)" : "var(--bd)"}`,
-        borderRadius: 8,
+        borderRadius: "0.5rem",
         cursor: "pointer",
         position: "relative",
         display: "flex",
         flexDirection: "column",
-        gap: 6,
+        gap: "0.375rem",
       }}
     >
       {selected && (
         <span
           style={{
             position: "absolute",
-            top: 8,
-            right: 8,
-            width: 16,
-            height: 16,
+            top: "0.5rem",
+            right: "0.5rem",
+            width: "1rem",
+            height: "1rem",
             borderRadius: "50%",
             background: "var(--fg-0)",
             color: "var(--bg-0)",
@@ -103,7 +105,12 @@ export function AgentCard({
       )}
       <AgentGlyph agent={agent} size={18} color={meta.accent} />
       <div
-        style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)", marginTop: 2 }}
+        style={{
+          fontSize: "var(--fs-13)",
+          fontWeight: 500,
+          color: "var(--fg-0)",
+          marginTop: "0.125rem",
+        }}
       >
         {meta.name}
       </div>
@@ -137,24 +144,24 @@ export function AccountCard({
       onClick={onSelect}
       style={{
         textAlign: "left",
-        padding: "10px 12px",
+        padding: "0.625rem 0.75rem",
         background: selected ? "var(--bg-3)" : "var(--bg-1)",
         border: `1px solid ${selected ? "var(--fg-2)" : "var(--bd)"}`,
-        borderRadius: 8,
+        borderRadius: "0.5rem",
         cursor: disabled ? "not-allowed" : "pointer",
         display: "flex",
         flexDirection: "column",
-        gap: 3,
-        minHeight: 52,
+        gap: "0.1875rem",
+        minHeight: "3.25rem",
         justifyContent: "center",
         opacity: disabled ? 0.62 : 1,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
         <span
           style={{
-            width: 6,
-            height: 6,
+            width: "0.375rem",
+            height: "0.375rem",
             borderRadius: "50%",
             background: present ? "var(--live)" : "var(--err)",
             flexShrink: 0,
@@ -185,14 +192,14 @@ export function RuntimeFact({
   children: ReactNode;
 }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
       <span
         aria-hidden="true"
         style={{
-          width: 12,
-          height: 12,
+          width: "0.75rem",
+          height: "0.75rem",
           flexShrink: 0,
-          borderRadius: 3,
+          borderRadius: "0.1875rem",
           border: `1px solid ${on ? "var(--live)" : "var(--bd-strong)"}`,
           background: on ? "var(--live)" : "transparent",
           color: "var(--bg-0)",
@@ -222,21 +229,21 @@ export function SharedRuntimePanel() {
     <>
       <div
         style={{
-          padding: "12px 14px",
+          padding: "0.75rem 0.875rem",
           display: "flex",
           alignItems: "center",
-          gap: 14,
+          gap: "0.875rem",
           background: live ? "color-mix(in oklab, var(--live) 8%, var(--bg-1))" : "var(--bg-1)",
           border: live
             ? "1px solid color-mix(in oklab, var(--live) 40%, var(--bd))"
             : "1px solid var(--bd)",
-          borderRadius: 8,
+          borderRadius: "0.5rem",
         }}
       >
         <span
           style={{
-            width: 16,
-            height: 16,
+            width: "1rem",
+            height: "1rem",
             borderRadius: "50%",
             background: "var(--fg-0)",
             color: "var(--bg-0)",
@@ -249,7 +256,14 @@ export function SharedRuntimePanel() {
           {Ico.check}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              marginBottom: "0.125rem",
+            }}
+          >
             <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
               Workspace container
             </span>
@@ -274,10 +288,10 @@ export function SharedRuntimePanel() {
           "Coming soon", not faked. */}
       <div
         style={{
-          marginTop: 8,
+          marginTop: "0.5rem",
           display: "flex",
           flexWrap: "wrap",
-          gap: "6px 16px",
+          gap: "0.375rem 1rem",
           fontSize: "var(--fs-11)",
           color: "var(--fg-2)",
         }}
@@ -377,11 +391,11 @@ export function RepositoryPicker({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
+          gap: "0.625rem",
           background: "var(--bg-1)",
           border: "1px solid var(--bd)",
-          borderRadius: 8,
-          padding: "9px 12px",
+          borderRadius: "0.5rem",
+          padding: "0.5625rem 0.75rem",
         }}
       >
         {Ico.files}
@@ -411,14 +425,14 @@ export function RepositoryPicker({
       {(manualOpen || !effective) && (
         <div
           style={{
-            marginTop: 8,
+            marginTop: "0.5rem",
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: "0.5rem",
           }}
         >
           <Input
-            className="mono h-auto flex-1 min-w-0 rounded-md px-2 py-1.5 text-[12px]"
+            className="mono h-auto flex-1 min-w-0 rounded-md px-2 py-1.5 text-[0.75rem]"
             value={manualPath}
             onChange={(e) => setManualPath(e.target.value)}
             onKeyDown={(e) => {
@@ -441,14 +455,14 @@ export function RepositoryPicker({
       {!controlled && error?.startsWith("set workspace dir failed") && (
         <div
           className="mono"
-          style={{ marginTop: 6, fontSize: "var(--fs-11)", color: "var(--err)" }}
+          style={{ marginTop: "0.375rem", fontSize: "var(--fs-11)", color: "var(--err)" }}
         >
           {error}
         </div>
       )}
 
       {otherRecents.length > 0 && (
-        <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ marginTop: "0.375rem", display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
           {otherRecents.map((p) => (
             <Tip key={p} text={p}>
               <button
@@ -466,14 +480,14 @@ export function RepositoryPicker({
       {needsRecreate && (
         <div
           style={{
-            marginTop: 8,
+            marginTop: "0.5rem",
             display: "flex",
             alignItems: "center",
-            gap: 10,
-            padding: "8px 11px",
+            gap: "0.625rem",
+            padding: "0.5rem 0.6875rem",
             background: "color-mix(in oklab, var(--wait) 10%, var(--bg-1))",
             border: "1px solid color-mix(in oklab, var(--wait) 40%, var(--bd))",
-            borderRadius: 8,
+            borderRadius: "0.5rem",
           }}
         >
           <span style={{ fontSize: "var(--fs-12)", color: "var(--fg-1)", flex: 1 }}>

@@ -51,8 +51,12 @@ function fmtUptime(rfc3339: string): string | null {
 }
 
 const EASE = [0.22, 1, 0.36, 1] as const;
-const LINE_H = 30;
-const GRAPHS_H = 126;
+// Heights as rem so the bottom region scales with the fluid root font-size.
+// Precomputed targets (not arithmetic) since framer animates the string values:
+//   line 1.875rem (30px) · graphs 7.875rem (126px) · expanded 9.75rem (156px).
+const LINE_H = "1.875rem";
+const GRAPHS_H = "7.875rem";
+const EXPANDED_H = "9.75rem";
 
 const regionStyle: React.CSSProperties = {
   flexShrink: 0,
@@ -70,8 +74,8 @@ const lineStyle: React.CSSProperties = {
   flexShrink: 0,
   display: "flex",
   alignItems: "center",
-  padding: "0 10px",
-  gap: 10,
+  padding: "0 0.625rem",
+  gap: "0.625rem",
   fontFamily: "var(--mono)",
   fontSize: "var(--fs-11)",
   color: "var(--fg-2)",
@@ -89,7 +93,7 @@ const graphsSlotStyle: React.CSSProperties = {
   overflow: "hidden",
 };
 
-const vr = <span className="vr" style={{ height: 14, flexShrink: 0 }} />;
+const vr = <span className="vr" style={{ height: "0.875rem", flexShrink: 0 }} />;
 
 // One metric in the collapsed line: label + value + a small inline sparkline. The
 // sparkline uses the shared statsHistory window; `calm` keeps an idle/flat series
@@ -111,11 +115,11 @@ function MiniMetric({
     <Tip text={title}>
       <span
         className="tnum"
-        style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}
+        style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", flexShrink: 0 }}
       >
         <span style={{ color: "var(--fg-3)" }}>{label}</span>
         <span style={{ color: "var(--fg-1)" }}>{value}</span>
-        <span style={{ width: 40, height: 16, display: "inline-block", opacity: 0.9 }}>
+        <span style={{ width: "2.5rem", height: "1rem", display: "inline-block", opacity: 0.9 }}>
           {series.length >= 2 && (
             <Spark data={series} w={40} h={16} color={accent} fill responsive calm />
           )}
@@ -161,7 +165,15 @@ function RuntimeIndicator() {
 
   return (
     <Tip text={title}>
-      <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexShrink: 1 }}>
+      <span
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.375rem",
+          minWidth: 0,
+          flexShrink: 1,
+        }}
+      >
         <StatusDot status={dotStatus} pulse={state === "running"} />
         <span style={{ color: stateColor }}>{STATE_LABEL[state]}</span>
         {vr}
@@ -213,7 +225,7 @@ export function HubStatusBar({ variant = "tabs" }: { variant?: "tabs" | "grid" }
   return (
     <motion.div
       initial={false}
-      animate={{ height: details ? LINE_H + GRAPHS_H : LINE_H }}
+      animate={{ height: details ? EXPANDED_H : LINE_H }}
       transition={{ duration: 0.26, ease: EASE }}
       style={regionStyle}
     >
@@ -297,7 +309,7 @@ function TabsStatusLine() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 14,
+              gap: "0.875rem",
               minWidth: 0,
               flexShrink: 1,
               overflow: "hidden",
@@ -339,12 +351,12 @@ function GridStatusLine() {
   }).length;
 
   return (
-    <div style={{ ...lineStyle, gap: 12 }}>
-      <span style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+    <div style={{ ...lineStyle, gap: "0.75rem" }}>
+      <span style={{ display: "flex", alignItems: "center", gap: "0.625rem", flexShrink: 0 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3125rem" }}>
           <StatusDot status="live" /> <span className="tnum">{runningCount}</span> running
         </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3125rem" }}>
           <StatusDot status="wait" /> <span className="tnum">{awaitingCount}</span> awaiting
         </span>
       </span>

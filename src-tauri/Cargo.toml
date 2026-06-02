@@ -20,7 +20,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-shell = "2"
 # Native OS folder picker for the Tier-2 workspace/repo chooser (pick_directory).
 tauri-plugin-dialog = "2"
@@ -67,6 +67,9 @@ devserver = ["dep:axum"]
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
+# Global/local NSEvent mouse monitors (island hover while CodeHub is inactive)
+# need an ObjC block handler; block2 ships with the objc2 0.6 ecosystem.
+block2 = "0.6"
 # CALayer feature enables the layer setters (corner radius / masking) used to
 # round the island; the crate itself is already pulled in transitively.
 objc2-quartz-core = { version = "0.3", features = ["CALayer"] }

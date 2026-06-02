@@ -232,8 +232,8 @@ function DiffToolbar({
         zIndex: 2,
         display: "flex",
         alignItems: "center",
-        gap: 8,
-        padding: "5px 12px",
+        gap: "0.5rem",
+        padding: "0.3125rem 0.75rem",
         background: "var(--bg-1)",
         borderBottom: "1px solid var(--bd-soft)",
         color: "var(--fg-3)",
@@ -255,8 +255,8 @@ function DiffToolbar({
           cursor: "pointer",
           fontFamily: "var(--mono)",
           fontSize: "var(--fs-11)",
-          padding: "1px 6px",
-          borderRadius: 4,
+          padding: "0.0625rem 0.375rem",
+          borderRadius: "0.25rem",
         }}
       >
         {allCollapsed ? "Expand all" : "Collapse all"}
@@ -293,10 +293,10 @@ function FileSection({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 7,
+            gap: "0.4375rem",
             width: "100%",
             textAlign: "left",
-            padding: "7px 12px",
+            padding: "0.4375rem 0.75rem",
             fontWeight: 500,
             color: "var(--fg-1)",
             background: "var(--bg-1)",
@@ -424,7 +424,7 @@ function FoldStub({ count, onClick }: { count: number; onClick: () => void }) {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 8,
+        gap: "0.5rem",
         width: "100%",
         textAlign: "left",
         border: "none",
@@ -435,7 +435,7 @@ function FoldStub({ count, onClick }: { count: number; onClick: () => void }) {
         cursor: "pointer",
         fontFamily: "var(--mono)",
         fontSize: "var(--fs-11)",
-        padding: "3px 12px 3px 60px",
+        padding: "0.1875rem 0.75rem 0.1875rem 3.75rem",
       }}
     >
       <span style={{ color: "var(--fg-2)" }}>⋯</span>
@@ -451,7 +451,7 @@ function DiffRow({ row, lang }: { row: Row; lang: Lang | null }) {
         className="mono"
         data-file={row.text}
         style={{
-          padding: "8px 12px",
+          padding: "0.5rem 0.75rem",
           fontWeight: 500,
           color: "var(--fg-1)",
           background: "var(--bg-1)",
@@ -472,7 +472,7 @@ function DiffRow({ row, lang }: { row: Row; lang: Lang | null }) {
     return (
       <div
         style={{
-          padding: "3px 12px",
+          padding: "0.1875rem 0.75rem",
           color: "var(--fg-3)",
           background: "var(--bg-2)",
           borderTop: "1px solid var(--bd-soft)",
@@ -497,10 +497,12 @@ function DiffRow({ row, lang }: { row: Row; lang: Lang | null }) {
   // signal add/del, so the text color yields to the syntax palette.
   const code = lang && row.text ? highlight(row.text, lang) : null;
   return (
-    <div style={{ display: "flex", background: bg, minHeight: 18 }}>
+    <div style={{ display: "flex", background: bg, minHeight: "1.125rem" }}>
       <Gutter n={row.kind === "add" ? null : row.oldNo} />
       <Gutter n={row.kind === "del" ? null : row.newNo} />
-      <span style={{ width: 16, color: tone, flexShrink: 0, textAlign: "center" }}>{marker}</span>
+      <span style={{ width: "1rem", color: tone, flexShrink: 0, textAlign: "center" }}>
+        {marker}
+      </span>
       {code ? (
         <span
           style={{ color: "var(--fg-1)", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1 }}
@@ -613,7 +615,7 @@ function SplitDiffRow({ row, lang }: { row: SplitRow; lang: Lang | null }) {
         className="mono"
         data-file={row.text}
         style={{
-          padding: "8px 12px",
+          padding: "0.5rem 0.75rem",
           fontWeight: 500,
           color: "var(--fg-1)",
           background: "var(--bg-1)",
@@ -634,7 +636,7 @@ function SplitDiffRow({ row, lang }: { row: SplitRow; lang: Lang | null }) {
     return (
       <div
         style={{
-          padding: "3px 12px",
+          padding: "0.1875rem 0.75rem",
           color: "var(--fg-3)",
           background: "var(--bg-2)",
           borderTop: "1px solid var(--bd-soft)",
@@ -646,7 +648,7 @@ function SplitDiffRow({ row, lang }: { row: SplitRow; lang: Lang | null }) {
     );
   }
   return (
-    <div style={{ display: "flex", minHeight: 18 }}>
+    <div style={{ display: "flex", minHeight: "1.125rem" }}>
       <SplitCell side={row.left} lang={lang} />
       <span style={{ width: 1, flexShrink: 0, background: "var(--bd-soft)" }} />
       <SplitCell side={row.right} lang={lang} />
@@ -670,7 +672,9 @@ function SplitCell({ side, lang }: { side: SplitSide; lang: Lang | null }) {
   return (
     <div style={{ display: "flex", flex: 1, minWidth: 0, background: bg }}>
       <Gutter n={side.no} />
-      <span style={{ width: 14, color: tone, flexShrink: 0, textAlign: "center" }}>{marker}</span>
+      <span style={{ width: "0.875rem", color: tone, flexShrink: 0, textAlign: "center" }}>
+        {marker}
+      </span>
       {code ? (
         <span
           style={{
@@ -705,10 +709,10 @@ function Gutter({ n }: { n: number | null }) {
     <span
       className="tnum"
       style={{
-        width: 44,
+        width: "2.75rem",
         flexShrink: 0,
         textAlign: "right",
-        paddingRight: 8,
+        paddingRight: "0.5rem",
         color: "var(--fg-3)",
         userSelect: "none",
       }}
@@ -720,7 +724,7 @@ function Gutter({ n }: { n: number | null }) {
 
 function Msg({ children }: { children: string }) {
   return (
-    <div style={{ padding: "28px 16px", textAlign: "center", color: "var(--fg-3)" }}>
+    <div style={{ padding: "1.75rem 1rem", textAlign: "center", color: "var(--fg-3)" }}>
       {children}
     </div>
   );

@@ -46,11 +46,5 @@ export type { IcoKey } from "./icons";
 export { PaneTypeChip } from "./PaneTypeChip";
 export type { PaneKind, PaneTypeChipProps } from "./PaneTypeChip";
 
-export { CompanionAvatar } from "./CompanionAvatar";
-export type { CompanionAvatarProps } from "./CompanionAvatar";
-
-export { Character } from "./Character";
-export type { CharacterProps } from "./Character";
-
 export { KV } from "./KV";
 export type { KVProps } from "./KV";

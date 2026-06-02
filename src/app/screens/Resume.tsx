@@ -182,7 +182,7 @@ export function ResumeDrawer() {
     <motion.aside
       {...(side === "left" ? slideLeft : slideRight)}
       style={{
-        width: 350,
+        width: "min(21.875rem, calc(100vw - 3.25rem))",
         flexShrink: 0,
         background: "var(--bg-1)",
         ...(side === "left"
@@ -197,11 +197,11 @@ export function ResumeDrawer() {
       {/* header */}
       <div
         style={{
-          padding: "10px 14px",
+          padding: "0.625rem 0.875rem",
           borderBottom: "1px solid var(--bd-soft)",
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: "0.5rem",
         }}
       >
         <span style={{ display: "inline-flex", color: "var(--fg-1)" }}>{Ico.clock}</span>
@@ -215,7 +215,7 @@ export function ResumeDrawer() {
               fontSize: "var(--fs-10)",
               color: "var(--fg-3)",
               background: "var(--bg-3)",
-              padding: "1px 6px",
+              padding: "0.0625rem 0.375rem",
               borderRadius: 999,
             }}
           >
@@ -228,7 +228,7 @@ export function ResumeDrawer() {
           style={{
             display: "inline-flex",
             border: "1px solid var(--bd-soft)",
-            borderRadius: 4,
+            borderRadius: "0.25rem",
             overflow: "hidden",
           }}
         >
@@ -257,12 +257,12 @@ export function ResumeDrawer() {
       </div>
 
       {/* search */}
-      <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--bd-soft)" }}>
+      <div style={{ padding: "0.5rem 0.75rem", borderBottom: "1px solid var(--bd-soft)" }}>
         <SearchInput value={query} onChange={setQuery} placeholder="filter sessions…" />
 
         {/* Time-bucket pills (design resume.jsx). Counts are real — derived from
             each transcript's lastActive over the current text-filtered set. */}
-        <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "0.25rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
           <Pill active={bucket === "all"} onClick={() => setBucket("all")}>
             All · {bucketCounts.all}
           </Pill>
@@ -279,7 +279,7 @@ export function ResumeDrawer() {
       </div>
 
       {/* body — sessions grouped by agent */}
-      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "4px 0 12px" }}>
+      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "0.25rem 0 0.75rem" }}>
         {!running ? (
           <Note>Runtime not running — no transcripts to read.</Note>
         ) : loading ? (
@@ -344,13 +344,13 @@ function AgentSection({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ marginTop: 8 }}>
+    <div style={{ marginTop: "0.5rem" }}>
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 7,
-          padding: "6px 14px 5px",
+          gap: "0.4375rem",
+          padding: "0.375rem 0.875rem 0.3125rem",
         }}
       >
         <AgentGlyph agent={agent} size={12} color={`var(--a-${agent})`} />
@@ -389,17 +389,17 @@ function DrawerRow({
     <div
       className="rail-file"
       style={{
-        padding: "8px 14px 8px 10px",
+        padding: "0.5rem 0.875rem 0.5rem 0.625rem",
         display: "flex",
         flexDirection: "column",
-        gap: 4,
+        gap: "0.25rem",
         borderLeft: `2px solid ${accent}`,
-        marginLeft: 8,
+        marginLeft: "0.5rem",
         borderBottom: "1px solid var(--bd-soft)",
       }}
     >
       {/* row 1 — agent glyph + branch + age */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
         <AgentGlyph agent={row.agent} size={12} color={accent} />
         {row.branch ? (
           <Tip text={row.branch}>
@@ -410,7 +410,7 @@ function DrawerRow({
                 color: "var(--fg-2)",
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 3,
+                gap: "0.1875rem",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -465,7 +465,7 @@ function DrawerRow({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: "0.5rem",
           fontFamily: "var(--mono)",
           fontSize: "var(--fs-11)",
           color: "var(--fg-3)",
@@ -514,8 +514,8 @@ function Pill({
       onClick={onClick}
       className="mono"
       style={{
-        padding: "3px 9px",
-        borderRadius: 5,
+        padding: "0.1875rem 0.5625rem",
+        borderRadius: "0.3125rem",
         fontSize: "var(--fs-11)",
         background: active ? "var(--bg-3)" : "transparent",
         border: `1px solid ${active ? "var(--bd-soft)" : "transparent"}`,
@@ -533,7 +533,7 @@ function Note({ children }: { children: React.ReactNode }) {
     <div
       className="mono"
       style={{
-        padding: "32px 16px",
+        padding: "2rem 1rem",
         textAlign: "center",
         fontSize: "var(--fs-12)",
         color: "var(--fg-3)",

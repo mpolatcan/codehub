@@ -34,9 +34,9 @@ export function WorkspaceTab({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 8,
-        padding: "0 12px",
-        height: 34,
+        gap: "0.5rem",
+        padding: "0 0.75rem",
+        height: "2.125rem",
         borderRight: "1px solid var(--bd-soft)",
         cursor: "pointer",
         background: active ? "var(--bg-1)" : "transparent",
@@ -49,12 +49,12 @@ export function WorkspaceTab({
     >
       {/* Agent glyphs stacked horizontally */}
       {agents.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.125rem" }}>
           {agents.map((a) => {
             const meta = AGENT_META[a.agent];
             const accent = meta?.accent ?? "var(--fg-2)";
             return (
-              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: "0.1875rem" }}>
                 <AgentGlyph agent={a.agent} size={12} color={active ? accent : undefined} />
                 <StatusDot status={a.status} pulse={a.status === "live"} />
               </div>

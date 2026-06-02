@@ -130,18 +130,18 @@ export function Settings({ initialAgentDetail }: SettingsProps) {
       {/* settings nav */}
       <nav
         style={{
-          width: 220,
+          width: "clamp(10.5rem, 18vw, 13.75rem)",
           flexShrink: 0,
           background: "var(--bg-1)",
           borderRight: "1px solid var(--bd-soft)",
-          padding: "20px 12px",
+          padding: "1.25rem 0.75rem",
           overflow: "auto",
         }}
         className="scroll"
       >
         <h2
           style={{
-            margin: "0 6px 14px",
+            margin: "0 0.375rem 0.875rem",
             fontSize: "var(--fs-16)",
             fontWeight: 600,
             color: "var(--fg-0)",
@@ -150,8 +150,8 @@ export function Settings({ initialAgentDetail }: SettingsProps) {
           Settings
         </h2>
         {NAV_GROUPS.map((group) => (
-          <div key={group.label} style={{ marginBottom: 14 }}>
-            <div className="lbl" style={{ padding: "0 6px 4px" }}>
+          <div key={group.label} style={{ marginBottom: "0.875rem" }}>
+            <div className="lbl" style={{ padding: "0 0.375rem 0.25rem" }}>
               {group.label}
             </div>
             {group.items.map((item) => (
@@ -163,11 +163,11 @@ export function Settings({ initialAgentDetail }: SettingsProps) {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: "0.375rem",
                   width: "100%",
                   textAlign: "left",
-                  padding: "7px 10px",
-                  borderRadius: 6,
+                  padding: "0.4375rem 0.625rem",
+                  borderRadius: "0.375rem",
                   border: "none",
                   fontSize: "var(--fs-13)",
                   fontFamily: "var(--sans)",
@@ -201,7 +201,7 @@ export function Settings({ initialAgentDetail }: SettingsProps) {
         style={{
           flex: 1,
           overflow: active === "agents" ? "hidden" : "auto",
-          padding: active === "agents" ? "24px 32px 0" : "24px 32px",
+          padding: active === "agents" ? "1.5rem 2rem 0" : "1.5rem 2rem",
           display: "flex",
           flexDirection: "column",
         }}
@@ -230,7 +230,7 @@ function PaneHead({ title, children }: { title: string; children: ReactNode }) {
     <>
       <h1
         style={{
-          margin: "0 0 4px",
+          margin: "0 0 0.25rem",
           fontSize: "var(--fs-20)",
           fontWeight: 600,
           letterSpacing: "-0.01em",
@@ -239,7 +239,7 @@ function PaneHead({ title, children }: { title: string; children: ReactNode }) {
       >
         {title}
       </h1>
-      <p style={{ margin: "0 0 28px", color: "var(--fg-2)", fontSize: "var(--fs-13)" }}>
+      <p style={{ margin: "0 0 1.75rem", color: "var(--fg-2)", fontSize: "var(--fs-13)" }}>
         {children}
       </p>
     </>
@@ -624,8 +624,8 @@ function AgentsPane({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 14,
-            padding: "11px 14px 11px 16px",
+            gap: "0.875rem",
+            padding: "0.6875rem 0.875rem 0.6875rem 1rem",
             borderBottom:
               i === list.length - 1 && !isManaging ? "none" : "1px solid var(--bd-soft)",
             borderLeft: `3px solid color-mix(in oklab, ${color} ${off ? 22 : 50}%, var(--bd))`,
@@ -634,8 +634,8 @@ function AgentsPane({
         >
           <div
             style={{
-              width: 36,
-              height: 36,
+              width: "2.25rem",
+              height: "2.25rem",
               borderRadius: "50%",
               background: `color-mix(in oklab, ${color} 25%, var(--bg-3))`,
               display: "flex",
@@ -656,7 +656,7 @@ function AgentsPane({
                 fontSize: "var(--fs-13)",
                 fontWeight: 500,
                 color: "var(--fg-0)",
-                marginBottom: 2,
+                marginBottom: "0.125rem",
               }}
             >
               {p.label}
@@ -685,7 +685,7 @@ function AgentsPane({
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 5,
+              gap: "0.3125rem",
               fontSize: "var(--fs-12)",
               color: st.c,
               whiteSpace: "nowrap",
@@ -706,12 +706,12 @@ function AgentsPane({
         {isManaging && (
           <div
             style={{
-              padding: "10px 16px 12px",
+              padding: "0.625rem 1rem 0.75rem",
               background: "var(--bg-1)",
               borderBottom: i === list.length - 1 ? "none" : "1px solid var(--bd-soft)",
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              gap: "0.625rem",
             }}
           >
             <label
@@ -734,9 +734,9 @@ function AgentsPane({
               }}
               style={{
                 flex: 1,
-                padding: "5px 10px",
+                padding: "0.3125rem 0.625rem",
                 border: "1px solid var(--bd)",
-                borderRadius: 6,
+                borderRadius: "0.375rem",
                 background: "var(--bg-0)",
                 color: "var(--fg-0)",
                 fontSize: "var(--fs-13)",
@@ -773,7 +773,7 @@ function AgentsPane({
       }}
     >
       {/* ── Agent tab bar ────────────────────────────────────────────── */}
-      <TabBar style={{ marginBottom: 24 }}>
+      <TabBar style={{ marginBottom: "1.5rem" }}>
         {CLIS.map((c) => {
           const sel = selectedAgent === c.id;
           return (
@@ -794,8 +794,8 @@ function AgentsPane({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 14,
-          marginBottom: 24,
+          gap: "0.875rem",
+          marginBottom: "1.5rem",
           flexShrink: 0,
         }}
       >
@@ -804,9 +804,9 @@ function AgentsPane({
             type="button"
             onClick={() => setDetail(selectedAgent)}
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 12,
+              width: "2.75rem",
+              height: "2.75rem",
+              borderRadius: "0.75rem",
               background: `color-mix(in oklab, ${meta.accent} 14%, var(--bg-1))`,
               border: `1px solid color-mix(in oklab, ${meta.accent} 30%, var(--bd))`,
               display: "flex",
@@ -822,7 +822,7 @@ function AgentsPane({
           </button>
         </Tip>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <span style={{ fontSize: "var(--fs-16)", fontWeight: 600, color: "var(--fg-0)" }}>
               {cliSpec.label}
             </span>
@@ -831,8 +831,8 @@ function AgentsPane({
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 5,
-                padding: "2px 9px",
+                gap: "0.3125rem",
+                padding: "0.125rem 0.5625rem",
                 borderRadius: 999,
                 fontSize: "var(--fs-11)",
                 fontWeight: 600,
@@ -856,7 +856,7 @@ function AgentsPane({
           </div>
           <p
             style={{
-              margin: "3px 0 0",
+              margin: "0.1875rem 0 0",
               fontSize: "var(--fs-12)",
               color: "var(--fg-2)",
               lineHeight: 1.45,
@@ -869,18 +869,22 @@ function AgentsPane({
 
       {/* ── Three sections ───────────────────────────────────────────
           One card per credential method — Subscription Sign In, API Keys,
-          Custom Model Providers — equally sized (flex 1 1 0), each with its own
-          scrollable body. Empty sections render a centered empty state with a
-          CTA; populated ones list rows + an "add another" row. */}
+          Custom Model Providers. Cards grow to fill when the pane is tall
+          (flex 1 1 auto) but never shrink below their content — the pane itself
+          scrolls when space is tight, so a CTA can NEVER clip (regressed: a
+          fixed flex-1-1-0 third clipped the bottom button on short windows).
+          Empty sections render a centered empty state with a CTA; populated
+          ones list rows + an "add another" row. */}
       <div
+        className="scroll"
         style={{
           flex: 1,
           minHeight: 0,
-          overflow: "hidden",
+          overflow: "auto",
           display: "flex",
           flexDirection: "column",
-          gap: 14,
-          paddingBottom: 24,
+          gap: "0.875rem",
+          paddingBottom: "1.5rem",
         }}
       >
         {/* 1 · Subscription Sign In (OAuth) */}
@@ -921,19 +925,19 @@ function AgentsPane({
             <div
               className="mono"
               style={{
-                padding: "10px 14px",
-                margin: "0 14px 10px",
+                padding: "0.625rem 0.875rem",
+                margin: "0 0.875rem 0.625rem",
                 fontSize: "var(--fs-12)",
                 color: loginProgress.stage === "error" ? "var(--err)" : "var(--fg-1)",
                 display: "flex",
                 flexDirection: "column",
-                gap: 6,
+                gap: "0.375rem",
                 background: "var(--bg-2)",
                 border: "1px solid var(--bd-soft)",
-                borderRadius: 8,
+                borderRadius: "0.5rem",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 {loginProgress.stage === "starting" && (
                   <span style={{ color: "var(--fg-2)" }}>Starting...</span>
                 )}
@@ -949,10 +953,10 @@ function AgentsPane({
               {loginProgress.userCode && (
                 <div
                   style={{
-                    padding: "6px 12px",
+                    padding: "0.375rem 0.75rem",
                     background: "var(--bg-0)",
                     border: "1px solid var(--bd)",
-                    borderRadius: 6,
+                    borderRadius: "0.375rem",
                     fontSize: "var(--fs-20)",
                     fontWeight: 700,
                     letterSpacing: "0.15em",
@@ -980,9 +984,9 @@ function AgentsPane({
             <div
               className="mono"
               style={{
-                margin: "0 14px 10px",
-                padding: "8px 12px",
-                borderRadius: 6,
+                margin: "0 0.875rem 0.625rem",
+                padding: "0.5rem 0.75rem",
+                borderRadius: "0.375rem",
                 background: "color-mix(in oklab, var(--live) 8%, var(--bg-2))",
                 border: "1px solid color-mix(in oklab, var(--live) 30%, var(--bd))",
                 fontSize: "var(--fs-12)",
@@ -997,9 +1001,9 @@ function AgentsPane({
             <div
               className="mono"
               style={{
-                margin: "0 14px 10px",
-                padding: "8px 12px",
-                borderRadius: 6,
+                margin: "0 0.875rem 0.625rem",
+                padding: "0.5rem 0.75rem",
+                borderRadius: "0.375rem",
                 background: "color-mix(in oklab, var(--err) 8%, var(--bg-2))",
                 border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
                 fontSize: "var(--fs-12)",
@@ -1148,10 +1152,10 @@ function AddRow({
       onMouseLeave={() => setHov(false)}
       style={{
         width: "100%",
-        padding: "12px 14px",
+        padding: "0.75rem 0.875rem",
         display: "flex",
         alignItems: "center",
-        gap: 11,
+        gap: "0.6875rem",
         border: "none",
         background: lit ? "var(--bg-hover)" : "transparent",
         cursor: live ? "pointer" : "default",
@@ -1162,9 +1166,9 @@ function AddRow({
     >
       <span
         style={{
-          width: 30,
-          height: 30,
-          borderRadius: 8,
+          width: "1.875rem",
+          height: "1.875rem",
+          borderRadius: "0.5rem",
           border: `1px dashed ${lit ? accent : "var(--bd)"}`,
           background: lit ? `color-mix(in oklab, ${accent} 12%, transparent)` : "transparent",
           display: "flex",
@@ -1220,14 +1224,14 @@ function RowActions({
   deleteTitle?: string;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "0.1875rem", flexShrink: 0 }}>
       {showToggle && (
         <Tip text={toggleTitle ?? ""}>
           <span
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             role="presentation"
-            style={{ display: "inline-flex", marginRight: 5 }}
+            style={{ display: "inline-flex", marginRight: "0.3125rem" }}
           >
             <Switch checked={enabled} disabled={toggleDisabled} onCheckedChange={onToggle} />
           </span>
@@ -1280,8 +1284,8 @@ function SectionCard({
     <section
       className="ch-card"
       style={{
-        flex: "1 1 0",
-        minHeight: 0,
+        flex: "1 1 auto",
+        minHeight: "min-content",
         display: "flex",
         flexDirection: "column",
         padding: 0,
@@ -1292,8 +1296,8 @@ function SectionCard({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 9,
-          padding: "11px 16px",
+          gap: "0.5625rem",
+          padding: "0.6875rem 1rem",
           borderBottom: "1px solid var(--bd-soft)",
           flexShrink: 0,
         }}
@@ -1310,8 +1314,8 @@ function SectionCard({
             background: "var(--bg-3)",
             border: "1px solid var(--bd-soft)",
             borderRadius: 999,
-            padding: "1px 7px",
-            minWidth: 20,
+            padding: "0.0625rem 0.4375rem",
+            minWidth: "1.25rem",
             textAlign: "center",
           }}
         >
@@ -1359,16 +1363,16 @@ function EmptyState({
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 7,
-        padding: "14px 20px",
+        gap: "0.4375rem",
+        padding: "0.875rem 1.25rem",
         textAlign: "center",
       }}
     >
       <div
         style={{
-          width: 40,
-          height: 40,
-          borderRadius: 11,
+          width: "2.5rem",
+          height: "2.5rem",
+          borderRadius: "0.6875rem",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1381,14 +1385,19 @@ function EmptyState({
       </div>
       <div style={{ fontSize: "var(--fs-13)", fontWeight: 600, color: "var(--fg-0)" }}>{title}</div>
       <div
-        style={{ fontSize: "var(--fs-11)", color: "var(--fg-2)", maxWidth: 280, lineHeight: 1.45 }}
+        style={{
+          fontSize: "var(--fs-11)",
+          color: "var(--fg-2)",
+          maxWidth: "min(17.5rem, 100%)",
+          lineHeight: 1.45,
+        }}
       >
         {hint}
       </div>
       {cta && onCta && (
         // Filled (primary) so the section's main action reads as clearly
         // actionable — an outline button on this dark surface looked disabled.
-        <Button size="sm" onClick={onCta} disabled={busy} style={{ marginTop: 3 }}>
+        <Button size="sm" onClick={onCta} disabled={busy} style={{ marginTop: "0.1875rem" }}>
           {ctaIcon}
           {busy ? "Working…" : cta}
         </Button>
@@ -1449,8 +1458,8 @@ function ProviderRow({
         textAlign: "left",
         display: "flex",
         alignItems: "center",
-        gap: 12,
-        padding: "11px 14px",
+        gap: "0.75rem",
+        padding: "0.6875rem 0.875rem",
         borderBottom: last ? "none" : "1px solid var(--bd-soft)",
         borderLeft: `3px solid color-mix(in oklab, ${color} ${hov ? 90 : 50}%, var(--bd))`,
         background: hov ? "var(--bg-hover)" : rest,
@@ -1461,9 +1470,9 @@ function ProviderRow({
     >
       <div
         style={{
-          width: 30,
-          height: 30,
-          borderRadius: 8,
+          width: "1.875rem",
+          height: "1.875rem",
+          borderRadius: "0.5rem",
           background: `color-mix(in oklab, ${color} 25%, var(--bg-3))`,
           display: "flex",
           alignItems: "center",
@@ -1498,13 +1507,20 @@ function ProviderRow({
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 5,
+          gap: "0.3125rem",
           fontSize: "var(--fs-11)",
           color: status.c,
           whiteSpace: "nowrap",
         }}
       >
-        <span style={{ width: 6, height: 6, borderRadius: "50%", background: status.c }} />
+        <span
+          style={{
+            width: "0.375rem",
+            height: "0.375rem",
+            borderRadius: "50%",
+            background: status.c,
+          }}
+        />
         {status.t}
       </span>
       {/* Toggle only when the provider can actually launch (a disabled switch
@@ -1542,21 +1558,21 @@ function ProviderCatalogCard({
       className="ch-card-interactive"
       style={{
         textAlign: "left",
-        padding: "10px 12px",
+        padding: "0.625rem 0.75rem",
         display: "flex",
         flexDirection: "column",
-        gap: 7,
+        gap: "0.4375rem",
         cursor: "pointer",
         boxShadow: selected ? "inset 0 0 0 1.5px var(--pri)" : undefined,
         background: selected ? "var(--pri-dim)" : undefined,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <div
           style={{
-            width: 24,
-            height: 24,
-            borderRadius: 6,
+            width: "1.5rem",
+            height: "1.5rem",
+            borderRadius: "0.375rem",
             background: preset.custom
               ? "transparent"
               : `color-mix(in oklab, ${color} 25%, var(--bg-3))`,
@@ -1595,8 +1611,8 @@ function ProviderCatalogCard({
               textTransform: "uppercase",
               color: "var(--wait)",
               background: "color-mix(in oklab, var(--wait) 14%, transparent)",
-              padding: "1px 6px",
-              borderRadius: 4,
+              padding: "0.0625rem 0.375rem",
+              borderRadius: "0.25rem",
               flexShrink: 0,
             }}
           >
@@ -1608,8 +1624,8 @@ function ProviderCatalogCard({
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              width: 16,
-              height: 16,
+              width: "1rem",
+              height: "1rem",
               borderRadius: "50%",
               background: "var(--pri)",
               color: "var(--bg-0)",
@@ -1750,21 +1766,21 @@ function ProviderConfigDialog({
   };
 
   const FieldLabel = ({ children }: { children: ReactNode }) => (
-    <Label className="lbl" style={{ marginBottom: 6, display: "block" }}>
+    <Label className="lbl" style={{ marginBottom: "0.375rem", display: "block" }}>
       {children}
     </Label>
   );
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[560px]">
+      <DialogContent className="w-[min(35rem,calc(100vw-2rem))] sm:max-w-none">
         <DialogHeader>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <div
               style={{
-                width: 38,
-                height: 38,
-                borderRadius: 10,
+                width: "2.375rem",
+                height: "2.375rem",
+                borderRadius: "0.625rem",
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
@@ -1782,7 +1798,7 @@ function ProviderConfigDialog({
               <DialogTitle>
                 {editing ? `Configure ${editing.name}` : "Add model provider"}
               </DialogTitle>
-              <DialogDescription style={{ marginTop: 2 }}>
+              <DialogDescription style={{ marginTop: "0.125rem" }}>
                 Route {AGENT_META[agent].name} to a token-plan endpoint — the token stays in your OS
                 keychain.
               </DialogDescription>
@@ -1795,13 +1811,13 @@ function ProviderConfigDialog({
         <div
           className="scroll"
           style={{
-            maxHeight: "min(58vh, 540px)",
+            maxHeight: "min(58vh, 33.75rem)",
             overflowY: "auto",
-            margin: "0 -2px",
-            padding: "2px 2px",
+            margin: "0 -0.125rem",
+            padding: "0.125rem 0.125rem",
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             {/* preset picker — add flow only (editing has a fixed kind) */}
             {!editing && catalog.length > 0 && (
               <div>
@@ -1809,8 +1825,8 @@ function ProviderConfigDialog({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: 8,
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(12rem, 100%), 1fr))",
+                    gap: "0.5rem",
                   }}
                 >
                   {catalog.map((p) => (
@@ -1829,9 +1845,9 @@ function ProviderConfigDialog({
               <div
                 style={{
                   display: "flex",
-                  gap: 10,
-                  padding: "12px 14px",
-                  borderRadius: 8,
+                  gap: "0.625rem",
+                  padding: "0.75rem 0.875rem",
+                  borderRadius: "0.5rem",
                   background: "color-mix(in oklab, var(--wait) 9%, var(--bg-1))",
                   border: "1px solid color-mix(in oklab, var(--wait) 35%, var(--bd))",
                 }}
@@ -1845,7 +1861,7 @@ function ProviderConfigDialog({
                       fontSize: "var(--fs-13)",
                       fontWeight: 600,
                       color: "var(--fg-0)",
-                      marginBottom: 3,
+                      marginBottom: "0.1875rem",
                     }}
                   >
                     Not one-click yet
@@ -1856,7 +1872,11 @@ function ProviderConfigDialog({
                   {docsUrl && (
                     <div
                       className="mono"
-                      style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginTop: 6 }}
+                      style={{
+                        fontSize: "var(--fs-11)",
+                        color: "var(--fg-3)",
+                        marginTop: "0.375rem",
+                      }}
                     >
                       {docsUrl}
                     </div>
@@ -1870,7 +1890,7 @@ function ProviderConfigDialog({
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: 16,
+                gap: "1rem",
                 opacity: gated ? 0.55 : 1,
                 pointerEvents: gated ? "none" : "auto",
               }}
@@ -1934,7 +1954,14 @@ function ProviderConfigDialog({
                   spellCheck={false}
                   autoComplete="off"
                 />
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    marginTop: "0.25rem",
+                  }}
+                >
                   <span
                     className="mono"
                     style={{
@@ -1950,7 +1977,7 @@ function ProviderConfigDialog({
                     <Button
                       variant="link"
                       onClick={() => void clearToken()}
-                      className="h-auto p-0 text-[11px] text-[var(--err)]"
+                      className="h-auto p-0 text-[0.6875rem] text-[var(--err)]"
                     >
                       Remove token
                     </Button>
@@ -1968,15 +1995,22 @@ function ProviderConfigDialog({
                   spellCheck={false}
                 />
                 {presetModels.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "0.3125rem",
+                      marginTop: "0.375rem",
+                    }}
+                  >
                     {presetModels.map((m) => (
                       <button
                         key={m}
                         type="button"
                         onClick={() => setModel(m)}
                         style={{
-                          padding: "2px 8px",
-                          borderRadius: 4,
+                          padding: "0.125rem 0.5rem",
+                          borderRadius: "0.25rem",
                           border: model === m ? "1px solid var(--pri)" : "1px solid var(--bd)",
                           background: model === m ? "var(--pri-dim)" : "var(--bg-1)",
                           color: "var(--fg-1)",
@@ -2012,8 +2046,8 @@ function ProviderConfigDialog({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 14,
-                  paddingTop: 14,
+                  gap: "0.875rem",
+                  paddingTop: "0.875rem",
                   borderTop: "1px solid var(--bd-soft)",
                 }}
               >
@@ -2033,8 +2067,8 @@ function ProviderConfigDialog({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
-                  padding: "10px 14px",
+                  gap: "0.5rem",
+                  padding: "0.625rem 0.875rem",
                   borderBottom: "1px solid var(--bd-soft)",
                 }}
               >
@@ -2047,7 +2081,7 @@ function ProviderConfigDialog({
                   {gated ? "not wired" : tokenReady ? "ready" : "needs token"}
                 </span>
               </div>
-              <div style={{ padding: "12px 14px" }}>
+              <div style={{ padding: "0.75rem 0.875rem" }}>
                 {env.length === 0 ? (
                   <div className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                     Nothing — this kind isn't launch-wired.
@@ -2058,13 +2092,13 @@ function ProviderConfigDialog({
                     style={{
                       display: "flex",
                       flexDirection: "column",
-                      gap: 4,
+                      gap: "0.25rem",
                       fontSize: "var(--fs-11)",
                       lineHeight: 1.5,
                       background: "var(--bg-0)",
                       border: "1px solid var(--bd-soft)",
-                      borderRadius: 6,
-                      padding: "10px 12px",
+                      borderRadius: "0.375rem",
+                      padding: "0.625rem 0.75rem",
                       overflowX: "auto",
                     }}
                   >
@@ -2198,9 +2232,9 @@ const PLATFORM_MATRIX: MatrixRow[] = [
   { name: "In-app notifications (right rail)", d: "full", w: "full" },
   {
     name: "Dynamic Island · live activity",
-    d: "full",
-    w: "degraded",
-    note: "macOS only on desktop · pinned top-center widget in the tab on web",
+    d: "degraded",
+    w: "none",
+    note: "macOS only — a transparent notch window; no equivalent on Win/Linux or web",
   },
   {
     name: "OS-native toast (macOS / Win / GNOME)",
@@ -2214,12 +2248,6 @@ const PLATFORM_MATRIX: MatrixRow[] = [
     w: "full",
     note: "Web Push API via the server",
   },
-  {
-    name: "Companion · floating monitor window",
-    d: "full",
-    w: "none",
-    note: "Requires an always-on-top window — not possible in a browser",
-  },
   { name: "Menu bar tray icon", d: "planned", w: "none" },
 
   { group: "Shortcuts & interactions" },
@@ -2228,7 +2256,7 @@ const PLATFORM_MATRIX: MatrixRow[] = [
     name: "Global shortcuts (when not focused)",
     d: "full",
     w: "none",
-    note: "⌘⇧J toggles the companion / island from any app",
+    note: "⌘⇧J toggles the Dynamic Island from any app (macOS)",
   },
   {
     name: "Drag-and-drop files into container",
@@ -2285,7 +2313,8 @@ const SUPPORT_META: Record<Support, { color: string; icon: string; label: string
   none: { color: "var(--err)", icon: "×", label: "no" },
 };
 
-const MATRIX_COLS = "1fr 104px 104px 1.1fr";
+const MATRIX_COLS =
+  "minmax(10rem, 1fr) minmax(4.5rem, 6.5rem) minmax(4.5rem, 6.5rem) minmax(10rem, 1.1fr)";
 
 function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
   return (
@@ -2294,14 +2323,14 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
         style={{
           display: "flex",
           alignItems: "flex-start",
-          gap: 16,
-          marginBottom: 26,
+          gap: "1rem",
+          marginBottom: "1.625rem",
         }}
       >
         <div style={{ minWidth: 0 }}>
           <h1
             style={{
-              margin: "0 0 6px",
+              margin: "0 0 0.375rem",
               fontSize: "var(--fs-20)",
               fontWeight: 600,
               letterSpacing: "-0.01em",
@@ -2315,7 +2344,7 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
               margin: 0,
               color: "var(--fg-2)",
               fontSize: "var(--fs-13)",
-              maxWidth: 540,
+              maxWidth: "min(33.75rem, 100%)",
               lineHeight: 1.5,
             }}
           >
@@ -2333,12 +2362,12 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 14,
-          marginBottom: 16,
-          padding: "10px 14px",
+          gap: "0.875rem",
+          marginBottom: "1rem",
+          padding: "0.625rem 0.875rem",
           background: "var(--bg-2)",
           border: "1px solid var(--bd)",
-          borderRadius: 8,
+          borderRadius: "0.5rem",
           flexWrap: "wrap",
         }}
       >
@@ -2353,7 +2382,10 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
       </div>
 
       {/* matrix */}
-      <div className="ch-card" style={{ padding: 0, overflow: "hidden" }}>
+      <div
+        className="ch-card scroll"
+        style={{ padding: 0, overflowX: "auto", overflowY: "hidden" }}
+      >
         <div
           className="mono"
           style={{
@@ -2361,8 +2393,8 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
             gridTemplateColumns: MATRIX_COLS,
             background: "var(--bg-1)",
             borderBottom: "1px solid var(--bd-soft)",
-            padding: "10px 16px",
-            gap: 12,
+            padding: "0.625rem 1rem",
+            gap: "0.75rem",
             fontSize: "var(--fs-11)",
             color: "var(--fg-2)",
             letterSpacing: "0.08em",
@@ -2380,7 +2412,7 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
               key={r.group}
               className="mono"
               style={{
-                padding: "14px 16px 6px",
+                padding: "0.875rem 1rem 0.375rem",
                 fontSize: "var(--fs-11)",
                 color: "var(--fg-3)",
                 textTransform: "uppercase",
@@ -2397,8 +2429,8 @@ function PlatformPane({ appInfo }: { appInfo: AppInfo | null }) {
               style={{
                 display: "grid",
                 gridTemplateColumns: MATRIX_COLS,
-                gap: 12,
-                padding: "10px 16px",
+                gap: "0.75rem",
+                padding: "0.625rem 1rem",
                 borderBottom: "1px solid var(--bd-soft)",
                 alignItems: "center",
                 fontSize: "var(--fs-12)",
@@ -2433,8 +2465,8 @@ function PlatformPill({ version }: { version: string | null }) {
     <div
       style={{
         display: "inline-flex",
-        gap: 2,
-        padding: 3,
+        gap: "0.125rem",
+        padding: "0.1875rem",
         background: "var(--bg-2)",
         border: "1px solid var(--bd)",
         borderRadius: 999,
@@ -2445,7 +2477,7 @@ function PlatformPill({ version }: { version: string | null }) {
           key={c.id}
           className="mono"
           style={{
-            padding: "6px 14px",
+            padding: "0.375rem 0.875rem",
             borderRadius: 999,
             fontSize: "var(--fs-12)",
             background: c.on ? "var(--bg-0)" : "transparent",
@@ -2453,14 +2485,14 @@ function PlatformPill({ version }: { version: string | null }) {
             border: c.on ? "1px solid var(--bd)" : "1px solid transparent",
             display: "inline-flex",
             alignItems: "center",
-            gap: 7,
+            gap: "0.4375rem",
             fontWeight: c.on ? 500 : 400,
           }}
         >
           <span
             style={{
-              width: 7,
-              height: 7,
+              width: "0.4375rem",
+              height: "0.4375rem",
               borderRadius: "50%",
               background: c.on ? "var(--live)" : "var(--fg-3)",
             }}
@@ -2479,16 +2511,16 @@ function Legend({ tone, label }: { tone: Support; label: string }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 6,
+        gap: "0.375rem",
         fontSize: "var(--fs-12)",
         color: "var(--fg-1)",
       }}
     >
       <span
         style={{
-          width: 10,
-          height: 10,
-          borderRadius: 3,
+          width: "0.625rem",
+          height: "0.625rem",
+          borderRadius: "0.1875rem",
           background: `color-mix(in oklab, ${color} 25%, transparent)`,
           border: `1px solid ${color}`,
         }}
@@ -2506,9 +2538,9 @@ function SupportChip({ tone }: { tone: Support }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 5,
-        padding: "3px 8px",
-        borderRadius: 4,
+        gap: "0.3125rem",
+        padding: "0.1875rem 0.5rem",
+        borderRadius: "0.25rem",
         fontSize: "var(--fs-11)",
         fontWeight: 500,
         color: m.color,
@@ -2530,25 +2562,43 @@ function SupportChip({ tone }: { tone: Support }) {
 // bridge (`make dev-web`) has no Tauri window so it persists the choice but emits
 // no toast — that's the one place a saved toggle won't fire.
 function NotificationsPane() {
+  // The Dynamic Island is macOS-only — gate its section on the host OS so it
+  // doesn't advertise a feature that isn't there on Windows/Linux.
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    ipc
+      .appInfo()
+      .then((i) => alive && setIsMac(i.os === "macos"))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
     <div>
       <PaneHead title="Notifications">
         How CodeHub should alert you when an agent needs attention while its window isn't focused.
       </PaneHead>
 
-      <SectionHead label="Ambient surface" />
-      <SettingRow
-        label="Dynamic Island · live activity"
-        desc="macOS: a notch widget that auto-pops when an agent awaits input, finishes, or fails. Other platforms: a floating companion window. On by default; ⌘⇧J toggles it anytime."
-        control={<CompanionToggle />}
-        live
-        last
-      />
+      {isMac ? (
+        <>
+          <SectionHead label="Dynamic Island" />
+          <SettingRow
+            label="Dynamic Island · live activity"
+            desc="A notch widget that auto-pops when an agent awaits input, finishes, or fails, then auto-dismisses. On by default; ⌘⇧J toggles it anytime."
+            control={<IslandToggle />}
+            live
+            last
+          />
+        </>
+      ) : null}
 
       <SectionHead label="Desktop notifications" />
       <p
         style={{
-          margin: "0 0 8px",
+          margin: "0 0 0.5rem",
           fontSize: "var(--fs-12)",
           color: "var(--fg-2)",
           lineHeight: 1.5,
@@ -2577,23 +2627,6 @@ function NotificationsPane() {
         live
         last
       />
-
-      <SectionHead label="Live activity preview" />
-      <LiveActivityPreview />
-      <LiveActivityStateGrid />
-
-      <SectionHead label="Cross-platform toasts" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-        <NotificationPreview os="macOS">
-          <MacNotificationPreview />
-        </NotificationPreview>
-        <NotificationPreview os="Windows 11">
-          <WindowsNotificationPreview />
-        </NotificationPreview>
-        <NotificationPreview os="Linux · GNOME">
-          <LinuxNotificationPreview />
-        </NotificationPreview>
-      </div>
     </div>
   );
 }
@@ -2604,10 +2637,10 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
     <div
       style={{
         position: "relative",
-        height: screen ? 420 : 336,
+        height: screen ? "clamp(20rem, 58vh, 26.25rem)" : "clamp(16rem, 52vh, 21rem)",
         overflow: "hidden",
         border: screen ? "none" : "1px solid var(--bd)",
-        borderRadius: screen ? 0 : 10,
+        borderRadius: screen ? 0 : "0.625rem",
         background:
           "radial-gradient(ellipse at 26% 16%, oklch(0.35 0.06 30), oklch(0.18 0.04 230) 58%, oklch(0.12 0.03 250))",
         flexShrink: 0,
@@ -2629,23 +2662,23 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
           top: 0,
           left: 0,
           right: 0,
-          height: 28,
+          height: "1.75rem",
           background: "rgba(0,0,0,0.55)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
           borderBottom: "1px solid rgba(255,255,255,0.06)",
           display: "flex",
           alignItems: "center",
-          padding: "0 14px",
+          padding: "0 0.875rem",
           fontSize: "var(--fs-12)",
           color: "rgba(255,255,255,0.85)",
         }}
       >
-        <span style={{ fontWeight: 600, marginRight: 18 }}>CodeHub</span>
-        <span style={{ marginRight: 14 }}>Session</span>
-        <span style={{ marginRight: 14 }}>Agent</span>
-        <span style={{ marginRight: 14 }}>View</span>
-        {screen && <span style={{ marginRight: 14 }}>Help</span>}
+        <span style={{ fontWeight: 600, marginRight: "1.125rem" }}>CodeHub</span>
+        <span style={{ marginRight: "0.875rem" }}>Session</span>
+        <span style={{ marginRight: "0.875rem" }}>Agent</span>
+        <span style={{ marginRight: "0.875rem" }}>View</span>
+        {screen && <span style={{ marginRight: "0.875rem" }}>Help</span>}
         <span style={{ flex: 1 }} />
         <MenuBarActivity />
         <span className="mono" style={{ fontSize: "var(--fs-11)" }}>
@@ -2656,14 +2689,14 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
       <div
         style={{
           position: "absolute",
-          top: screen ? 0 : 40,
+          top: screen ? 0 : "2.5rem",
           left: screen ? "50%" : "39%",
           transform: screen ? "translateX(-50%)" : "translateX(-50%) scale(0.9)",
           transformOrigin: "top center",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          gap: 8,
+          gap: "0.5rem",
           zIndex: 2,
         }}
       >
@@ -2679,27 +2712,27 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
       <div
         style={{
           position: "absolute",
-          top: screen ? 36 : 42,
-          right: 16,
-          bottom: screen ? 60 : 18,
-          width: screen ? 304 : 268,
-          padding: 8,
+          top: screen ? "2.25rem" : "2.625rem",
+          right: "1rem",
+          bottom: screen ? "3.75rem" : "1.125rem",
+          width: screen ? "min(19rem, calc(100% - 2rem))" : "min(16.75rem, calc(100% - 2rem))",
+          padding: "0.5rem",
           display: "flex",
           flexDirection: "column",
           background: "rgba(28,28,32,0.58)",
           backdropFilter: "blur(40px) saturate(140%)",
           WebkitBackdropFilter: "blur(40px) saturate(140%)",
           border: "0.5px solid rgba(255,255,255,0.08)",
-          borderRadius: 14,
-          boxShadow: "0 24px 80px rgba(0,0,0,0.48)",
+          borderRadius: "0.875rem",
+          boxShadow: "0 1.5rem 5rem rgba(0,0,0,0.48)",
         }}
       >
         <div
           style={{
-            padding: "4px 8px 8px",
+            padding: "0.25rem 0.5rem 0.5rem",
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: "0.5rem",
             color: "rgba(255,255,255,0.62)",
           }}
         >
@@ -2732,7 +2765,7 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
             <div
               className="mono"
               style={{
-                padding: "6px 8px 5px",
+                padding: "0.375rem 0.5rem 0.3125rem",
                 fontSize: "var(--fs-11)",
                 letterSpacing: "0.08em",
                 color: "rgba(255,255,255,0.48)",
@@ -2759,13 +2792,13 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
         <div
           style={{
             position: "absolute",
-            bottom: 18,
+            bottom: "1.125rem",
             left: "50%",
             transform: "translateX(-50%)",
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            padding: "5px 10px",
+            gap: "0.5rem",
+            padding: "0.3125rem 0.625rem",
             borderRadius: 999,
             background: "rgba(0,0,0,0.45)",
             backdropFilter: "blur(10px)",
@@ -2775,15 +2808,22 @@ export function LiveActivityPreview({ variant = "panel" }: { variant?: "panel" |
             whiteSpace: "nowrap",
           }}
         >
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff" }} />
+          <span
+            style={{
+              width: "0.3125rem",
+              height: "0.3125rem",
+              borderRadius: "50%",
+              background: "#fff",
+            }}
+          />
           <span>
             macOS notch · menu bar widget · Notification Center ·{" "}
             <span
               className="mono"
               style={{
                 background: "rgba(255,255,255,0.12)",
-                padding: "1px 5px",
-                borderRadius: 3,
+                padding: "0.0625rem 0.3125rem",
+                borderRadius: "0.1875rem",
               }}
             >
               ⌘⇧J
@@ -2804,10 +2844,10 @@ function MenuBarActivity() {
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 7,
-          height: 22,
-          padding: "2px 10px",
-          marginRight: 14,
+          gap: "0.4375rem",
+          height: "1.375rem",
+          padding: "0.125rem 0.625rem",
+          marginRight: "0.875rem",
           borderRadius: 999,
           background: "rgba(255,255,255,0.10)",
           border: "0.5px solid rgba(255,255,255,0.08)",
@@ -2848,8 +2888,15 @@ function MenuBarActivity() {
 
 export function LiveActivityStateGrid() {
   return (
-    <div style={{ marginTop: 10, marginBottom: 24 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+    <div style={{ marginTop: "0.625rem", marginBottom: "1.5rem" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: "0.625rem",
+          marginBottom: "0.625rem",
+        }}
+      >
         <span style={{ fontSize: "var(--fs-13)", fontWeight: 600, color: "var(--fg-0)" }}>
           States
         </span>
@@ -2858,7 +2905,13 @@ export function LiveActivityStateGrid() {
         </span>
         <span style={{ flex: 1, height: 1, background: "var(--bd-soft)" }} />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(13rem, 100%), 1fr))",
+          gap: "0.625rem",
+        }}
+      >
         <IslandStateCard title="Idle" detail="compact summary">
           <LiveIsland state="idle" />
         </IslandStateCard>
@@ -2881,7 +2934,14 @@ export function LiveActivityStateGrid() {
           <LiveIsland state="multi" />
         </IslandStateCard>
         <IslandStateCard title="Stack" detail="priority ordered queue" tone="wait">
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "0.375rem",
+            }}
+          >
             <LiveIsland state="wait" />
             <div style={{ transform: "scale(0.92)", transformOrigin: "top center" }}>
               <LiveIsland state="live" />
@@ -2924,8 +2984,8 @@ function IslandStateCard({
     <div className="ch-card" style={{ padding: 0, overflow: "hidden", background: "var(--bg-2)" }}>
       <div
         style={{
-          minHeight: 92,
-          padding: 14,
+          minHeight: "5.75rem",
+          padding: "0.875rem",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2937,9 +2997,23 @@ function IslandStateCard({
       >
         {children}
       </div>
-      <div style={{ padding: "10px 12px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 2 }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
+      <div style={{ padding: "0.625rem 0.75rem" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.4375rem",
+            marginBottom: "0.125rem",
+          }}
+        >
+          <span
+            style={{
+              width: "0.375rem",
+              height: "0.375rem",
+              borderRadius: "50%",
+              background: color,
+            }}
+          />
           <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
             {title}
           </span>
@@ -2961,7 +3035,7 @@ function LiveIsland({
     fontFamily: "var(--mono)",
     display: "flex",
     alignItems: "center",
-    boxShadow: "0 6px 22px rgba(0,0,0,0.55)",
+    boxShadow: "0 0.375rem 1.375rem rgba(0,0,0,0.55)",
     overflow: "hidden",
     border: "1px solid rgba(255,255,255,0.04)",
   };
@@ -2970,20 +3044,20 @@ function LiveIsland({
       <div
         style={{
           ...base,
-          height: 28,
-          padding: "0 14px",
+          height: "1.75rem",
+          padding: "0 0.875rem",
           borderRadius: 999,
-          gap: 9,
+          gap: "0.5625rem",
           fontSize: "var(--fs-12)",
         }}
       >
         <span
           style={{
-            width: 6,
-            height: 6,
+            width: "0.375rem",
+            height: "0.375rem",
             borderRadius: "50%",
             background: "oklch(0.80 0.17 145)",
-            boxShadow: "0 0 8px oklch(0.80 0.17 145)",
+            boxShadow: "0 0 0.5rem oklch(0.80 0.17 145)",
           }}
         />
         <span>2 agents</span>
@@ -2997,21 +3071,21 @@ function LiveIsland({
       <div
         style={{
           ...base,
-          width: 326,
-          height: 52,
-          padding: "0 6px 0 14px",
-          borderRadius: 26,
-          gap: 10,
+          width: "min(100%, 20.375rem)",
+          height: "3.25rem",
+          padding: "0 0.375rem 0 0.875rem",
+          borderRadius: "1.625rem",
+          gap: "0.625rem",
           boxSizing: "border-box",
         }}
       >
         <span
           style={{
-            width: 8,
-            height: 8,
+            width: "0.5rem",
+            height: "0.5rem",
             borderRadius: "50%",
             background: "oklch(0.83 0.14 80)",
-            boxShadow: "0 0 10px oklch(0.83 0.14 80)",
+            boxShadow: "0 0 0.625rem oklch(0.83 0.14 80)",
           }}
         />
         <AgentGlyph agent="codex" size={13} color="oklch(0.78 0.10 265)" />
@@ -3042,21 +3116,21 @@ function LiveIsland({
       <div
         style={{
           ...base,
-          width: 290,
-          height: 46,
-          padding: "0 7px 0 14px",
-          borderRadius: 23,
-          gap: 10,
+          width: "min(100%, 18.125rem)",
+          height: "2.875rem",
+          padding: "0 0.4375rem 0 0.875rem",
+          borderRadius: "1.4375rem",
+          gap: "0.625rem",
           boxSizing: "border-box",
         }}
       >
         <span
           style={{
-            width: 7,
-            height: 7,
+            width: "0.4375rem",
+            height: "0.4375rem",
             borderRadius: "50%",
             background: "oklch(0.68 0.18 25)",
-            boxShadow: "0 0 10px oklch(0.68 0.18 25)",
+            boxShadow: "0 0 0.625rem oklch(0.68 0.18 25)",
           }}
         />
         <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
@@ -3075,14 +3149,16 @@ function LiveIsland({
       <div
         style={{
           ...base,
-          height: 38,
+          height: "2.375rem",
           padding: 0,
-          borderRadius: 19,
+          borderRadius: "1.1875rem",
           fontSize: "var(--fs-12)",
           alignItems: "stretch",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px" }}>
+        <div
+          style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 0.875rem" }}
+        >
           <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
           <span>refactor auth</span>
           <span
@@ -3093,14 +3169,16 @@ function LiveIsland({
           </span>
         </div>
         <span style={{ width: 1, background: "rgba(255,255,255,0.10)" }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px" }}>
+        <div
+          style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 0.875rem" }}
+        >
           <span
             style={{
-              width: 6,
-              height: 6,
+              width: "0.375rem",
+              height: "0.375rem",
               borderRadius: "50%",
               background: "oklch(0.83 0.14 80)",
-              boxShadow: "0 0 8px oklch(0.83 0.14 80)",
+              boxShadow: "0 0 0.5rem oklch(0.83 0.14 80)",
             }}
           />
           <AgentGlyph agent="codex" size={13} color="oklch(0.78 0.10 265)" />
@@ -3114,24 +3192,24 @@ function LiveIsland({
       <div
         style={{
           ...base,
-          height: 34,
-          padding: "0 14px",
-          borderRadius: 17,
-          gap: 9,
+          height: "2.125rem",
+          padding: "0 0.875rem",
+          borderRadius: "1.0625rem",
+          gap: "0.5625rem",
           fontSize: "var(--fs-12)",
         }}
       >
-        <span style={{ display: "inline-flex", marginRight: -4 }}>
+        <span style={{ display: "inline-flex", marginRight: "-0.25rem" }}>
           <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
         </span>
-        <span style={{ display: "inline-flex", marginLeft: -3 }}>
+        <span style={{ display: "inline-flex", marginLeft: "-0.1875rem" }}>
           <AgentGlyph agent="codex" size={13} color="oklch(0.78 0.10 265)" />
         </span>
         <span>5 updates</span>
         <span
           className="tnum"
           style={{
-            padding: "1px 7px",
+            padding: "0.0625rem 0.4375rem",
             borderRadius: 999,
             background: "rgba(255,255,255,0.12)",
             color: "#fff",
@@ -3148,16 +3226,21 @@ function LiveIsland({
       <div
         style={{
           ...base,
-          width: 288,
-          height: 48,
-          padding: "0 6px 0 14px",
-          borderRadius: 24,
-          gap: 10,
+          width: "min(100%, 18rem)",
+          height: "3rem",
+          padding: "0 0.375rem 0 0.875rem",
+          borderRadius: "1.5rem",
+          gap: "0.625rem",
           boxSizing: "border-box",
         }}
       >
         <span
-          style={{ width: 7, height: 7, borderRadius: "50%", background: "oklch(0.78 0.08 200)" }}
+          style={{
+            width: "0.4375rem",
+            height: "0.4375rem",
+            borderRadius: "50%",
+            background: "oklch(0.78 0.08 200)",
+          }}
         />
         <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
         <span
@@ -3185,15 +3268,15 @@ function LiveIsland({
     <div
       style={{
         ...base,
-        height: 38,
-        padding: "0 14px",
-        borderRadius: 19,
-        gap: 10,
+        height: "2.375rem",
+        padding: "0 0.875rem",
+        borderRadius: "1.1875rem",
+        gap: "0.625rem",
         position: "relative",
       }}
     >
       <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
-      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1, gap: 2 }}>
+      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1, gap: "0.125rem" }}>
         <span style={{ fontSize: "var(--fs-12)" }}>Claude · refactor auth</span>
         <span style={{ fontSize: "var(--fs-10)", color: "rgba(255,255,255,0.55)" }}>
           turn 04:12 · tests passing
@@ -3202,10 +3285,10 @@ function LiveIsland({
       <span
         style={{
           position: "absolute",
-          left: 14,
-          right: 14,
-          bottom: 4,
-          height: 2,
+          left: "0.875rem",
+          right: "0.875rem",
+          bottom: "0.25rem",
+          height: "0.125rem",
           background: "rgba(255,255,255,0.1)",
           borderRadius: 999,
         }}
@@ -3228,23 +3311,30 @@ function ExpandedIslandPreview() {
   return (
     <div
       style={{
-        width: "min(100%, 460px)",
+        width: "min(100%, 28.75rem)",
         background: "#000",
         color: "#fff",
-        borderRadius: 22,
-        boxShadow: "0 18px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05)",
+        borderRadius: "1.375rem",
+        boxShadow: "0 1.125rem 3.75rem rgba(0,0,0,0.7), 0 0 0 0.0625rem rgba(255,255,255,0.05)",
         border: "1px solid rgba(255,255,255,0.06)",
         overflow: "hidden",
       }}
     >
-      <div style={{ padding: "12px 14px 8px", display: "flex", alignItems: "center", gap: 10 }}>
+      <div
+        style={{
+          padding: "0.75rem 0.875rem 0.5rem",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.625rem",
+        }}
+      >
         <span
           style={{
-            width: 7,
-            height: 7,
+            width: "0.4375rem",
+            height: "0.4375rem",
             borderRadius: "50%",
             background: "oklch(0.80 0.17 145)",
-            boxShadow: "0 0 10px oklch(0.80 0.17 145)",
+            boxShadow: "0 0 0.625rem oklch(0.80 0.17 145)",
           }}
         />
         <AgentGlyph agent="claude" size={13} color="oklch(0.78 0.13 35)" />
@@ -3266,11 +3356,11 @@ function ExpandedIslandPreview() {
       <div
         className="mono"
         style={{
-          margin: "0 12px",
-          padding: "10px 12px",
+          margin: "0 0.75rem",
+          padding: "0.625rem 0.75rem",
           background: "rgba(255,255,255,0.04)",
           border: "1px solid rgba(255,255,255,0.06)",
-          borderRadius: 8,
+          borderRadius: "0.5rem",
           fontSize: "var(--fs-12)",
           lineHeight: 1.55,
           color: "rgba(255,255,255,0.84)",
@@ -3285,7 +3375,14 @@ function ExpandedIslandPreview() {
         </div>
         <div style={{ color: "rgba(255,255,255,0.56)" }}>Running final typecheck…</div>
       </div>
-      <div style={{ padding: "12px 14px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+      <div
+        style={{
+          padding: "0.75rem 0.875rem 0.875rem",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+        }}
+      >
         <IslandButton tone="white">Jump to terminal</IslandButton>
         <IslandButton>View diff</IslandButton>
         <IslandButton>Dismiss</IslandButton>
@@ -3303,7 +3400,7 @@ function IslandButton({ children, tone }: { children: ReactNode; tone?: "ok" | "
         cursor: "default",
         fontSize: "var(--fs-12)",
         fontWeight: 600,
-        padding: "7px 10px",
+        padding: "0.4375rem 0.625rem",
         borderRadius: 999,
         background:
           tone === "ok"
@@ -3344,19 +3441,26 @@ function NotificationCenterCard({
   return (
     <div
       style={{
-        marginBottom: 6,
-        padding: "10px 12px",
-        borderRadius: 10,
+        marginBottom: "0.375rem",
+        padding: "0.625rem 0.75rem",
+        borderRadius: "0.625rem",
         background: "rgba(50,50,55,0.62)",
         border: "0.5px solid rgba(255,255,255,0.06)",
         color: "#fff",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.4375rem",
+          marginBottom: "0.1875rem",
+        }}
+      >
         <span
           style={{
-            width: 6,
-            height: 6,
+            width: "0.375rem",
+            height: "0.375rem",
             borderRadius: "50%",
             background: color,
             boxShadow: live ? `0 0 8px ${color}` : "none",
@@ -3369,7 +3473,7 @@ function NotificationCenterCard({
           {meta.split(" · ").at(-1)}
         </span>
       </div>
-      <div style={{ fontSize: "var(--fs-12)", marginBottom: 2 }}>{title}</div>
+      <div style={{ fontSize: "var(--fs-12)", marginBottom: "0.125rem" }}>{title}</div>
       <div className="mono" style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.56)" }}>
         {meta}
       </div>
@@ -3382,16 +3486,16 @@ export function NotificationPreview({ os, children }: { os: string; children: Re
     <div
       style={{
         border: "1px solid var(--bd)",
-        borderRadius: 10,
-        padding: 12,
+        borderRadius: "0.625rem",
+        padding: "0.75rem",
         background: "var(--bg-2)",
       }}
     >
       <div
         style={{
-          minHeight: 124,
-          borderRadius: 7,
-          padding: "18px 12px",
+          minHeight: "clamp(6rem, 20vh, 7.75rem)",
+          borderRadius: "0.4375rem",
+          padding: "1.125rem 0.75rem",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -3402,7 +3506,7 @@ export function NotificationPreview({ os, children }: { os: string; children: Re
       >
         {children}
       </div>
-      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ marginTop: "0.625rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <span className="lbl" style={{ fontSize: "var(--fs-11)" }}>
           {os}
         </span>
@@ -3420,22 +3524,22 @@ export function MacNotificationPreview() {
     <div
       style={{
         width: "100%",
-        maxWidth: 280,
-        padding: "11px 12px",
-        borderRadius: 14,
+        maxWidth: "min(17.5rem, 100%)",
+        padding: "0.6875rem 0.75rem",
+        borderRadius: "0.875rem",
         background: "rgba(28,28,32,0.92)",
         border: "0.5px solid rgba(255,255,255,0.06)",
         color: "#fff",
         display: "flex",
-        gap: 10,
-        boxShadow: "0 10px 40px rgba(0,0,0,0.45)",
+        gap: "0.625rem",
+        boxShadow: "0 0.625rem 2.5rem rgba(0,0,0,0.45)",
       }}
     >
       <div
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 7,
+          width: "2rem",
+          height: "2rem",
+          borderRadius: "0.4375rem",
           background: "var(--bg-0)",
           display: "flex",
           alignItems: "center",
@@ -3446,7 +3550,7 @@ export function MacNotificationPreview() {
         <Logo size={18} withText={false} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 1 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "0.375rem", marginBottom: 1 }}>
           <span style={{ fontSize: "var(--fs-13)", fontWeight: 600 }}>CodeHub</span>
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.5)" }}>now</span>
@@ -3467,12 +3571,12 @@ export function WindowsNotificationPreview() {
     <div
       style={{
         width: "100%",
-        maxWidth: 280,
-        padding: 12,
-        borderRadius: 8,
+        maxWidth: "min(17.5rem, 100%)",
+        padding: "0.75rem",
+        borderRadius: "0.5rem",
         background: "rgba(28,28,30,0.94)",
         color: "#fff",
-        boxShadow: "0 12px 32px rgba(0,0,0,0.50)",
+        boxShadow: "0 0.75rem 2rem rgba(0,0,0,0.50)",
         border: "1px solid rgba(255,255,255,0.05)",
         position: "relative",
       }}
@@ -3482,19 +3586,19 @@ export function WindowsNotificationPreview() {
           position: "absolute",
           top: 0,
           left: 0,
-          width: 3,
+          width: "0.1875rem",
           bottom: 0,
           background: "oklch(0.78 0.10 265)",
-          borderRadius: "8px 0 0 8px",
+          borderRadius: "0.5rem 0 0 0.5rem",
         }}
       />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
         <Logo size={13} withText={false} />
         <span style={{ fontSize: "var(--fs-12)", color: "rgba(255,255,255,0.70)" }}>CodeHub</span>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: "var(--fs-11)", color: "rgba(255,255,255,0.5)" }}>1m ago</span>
       </div>
-      <div style={{ fontSize: "var(--fs-13)", fontWeight: 600, marginBottom: 2 }}>
+      <div style={{ fontSize: "var(--fs-13)", fontWeight: 600, marginBottom: "0.125rem" }}>
         Claude finished refactor
       </div>
       <div style={{ fontSize: "var(--fs-12)", color: "rgba(255,255,255,0.75)" }}>
@@ -3509,21 +3613,21 @@ export function LinuxNotificationPreview() {
     <div
       style={{
         width: "100%",
-        maxWidth: 296,
-        padding: "10px 12px",
-        borderRadius: 10,
+        maxWidth: "min(18.5rem, 100%)",
+        padding: "0.625rem 0.75rem",
+        borderRadius: "0.625rem",
         background: "rgba(20,22,26,0.96)",
         color: "#fff",
         display: "flex",
         alignItems: "center",
-        gap: 12,
-        boxShadow: "0 10px 36px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.06)",
+        gap: "0.75rem",
+        boxShadow: "0 0.625rem 2.25rem rgba(0,0,0,0.50), 0 0 0 0.0625rem rgba(255,255,255,0.06)",
       }}
     >
       <div
         style={{
-          width: 28,
-          height: 28,
+          width: "1.75rem",
+          height: "1.75rem",
           borderRadius: "50%",
           background: "oklch(0.72 0.18 25)",
           display: "flex",
@@ -3567,9 +3671,9 @@ function AppearancePane() {
       </PaneHead>
 
       <SectionHead label="Theme" />
-      <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "14px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "1.25rem", padding: "0.875rem 0" }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", marginBottom: 2 }}>
+          <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", marginBottom: "0.125rem" }}>
             Color theme
           </div>
           <div style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
@@ -3653,19 +3757,19 @@ function LiveToggle({ field, disabled }: { field: BoolSettingKey; disabled?: boo
   );
 }
 
-// Master enable for the ambient surface (macOS Dynamic Island / companion
-// window). Persists `showCompanion` AND shows/hides immediately — the macOS
-// island feed also reacts to the setting within ~1s, but the explicit open/close
-// makes the toggle feel instant on every platform.
-function CompanionToggle() {
-  const on = useStore((s) => Boolean(s.config?.showCompanion));
+// Master enable for the macOS Dynamic Island (macOS-only). Persists `showIsland`
+// AND builds/destroys the notch window immediately so the toggle feels instant:
+// on → `openIsland` (ensure the hidden window so its route starts polling),
+// off → `closeIsland` (tear it down).
+function IslandToggle() {
+  const on = useStore((s) => Boolean(s.config?.showIsland));
   const updateConfig = useStore((s) => s.updateConfig);
   return (
     <Switch
       checked={on}
       onCheckedChange={(checked) => {
-        void updateConfig({ showCompanion: checked } as Partial<AppSettings>);
-        void (checked ? ipc.openCompanion() : ipc.closeCompanion()).catch(() => {});
+        void updateConfig({ showIsland: checked } as Partial<AppSettings>);
+        void (checked ? ipc.openIsland() : ipc.closeIsland()).catch(() => {});
       }}
     />
   );
@@ -3684,8 +3788,8 @@ function FontSizeInput() {
       onClick={() => set(size + d)}
       disabled={d < 0 ? size <= 10 : size >= 20}
       style={{
-        width: 24,
-        height: 28,
+        width: "1.5rem",
+        height: "1.75rem",
         border: "none",
         background: "transparent",
         color: "var(--fg-1)",
@@ -3702,7 +3806,7 @@ function FontSizeInput() {
         display: "inline-flex",
         alignItems: "center",
         border: "1px solid var(--bd)",
-        borderRadius: 6,
+        borderRadius: "0.375rem",
         background: "var(--bg-1)",
         overflow: "hidden",
       }}
@@ -3711,7 +3815,7 @@ function FontSizeInput() {
       <span
         className="mono tnum"
         style={{
-          minWidth: 40,
+          minWidth: "2.5rem",
           textAlign: "center",
           fontSize: "var(--fs-12)",
           color: "var(--fg-0)",
@@ -3726,7 +3830,9 @@ function FontSizeInput() {
 
 function SectionHead({ label, tone }: { label: string; tone?: "err" }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "24px 0 12px" }}>
+    <div
+      style={{ display: "flex", alignItems: "center", gap: "0.625rem", margin: "1.5rem 0 0.75rem" }}
+    >
       <span
         className="lbl"
         style={{ color: tone === "err" ? "var(--err)" : "var(--fg-1)", fontSize: "var(--fs-11)" }}
@@ -3758,13 +3864,13 @@ function SettingRow({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 20,
-        padding: "14px 0",
+        gap: "1.25rem",
+        padding: "0.875rem 0",
         borderBottom: last ? "none" : "1px solid var(--bd-soft)",
       }}
     >
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", marginBottom: 2 }}>
+        <div style={{ fontSize: "var(--fs-13)", color: "var(--fg-0)", marginBottom: "0.125rem" }}>
           {label}
         </div>
         <div style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>{desc}</div>

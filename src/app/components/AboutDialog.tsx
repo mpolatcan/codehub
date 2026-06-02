@@ -33,7 +33,7 @@ const CHANGELOG: { version: string; entries: { tone: "add" | "fix" | "chore"; te
       version: "0.1.2",
       entries: [
         { tone: "add", text: "Runtime container start / stop / restart controls" },
-        { tone: "add", text: "macOS native Dynamic Island companion" },
+        { tone: "add", text: "macOS Dynamic Island — notch agent-event announcements" },
         {
           tone: "add",
           text: "Tier-2 workspace picker and Tier-3 account profiles in the spawn dialog",
@@ -192,13 +192,13 @@ export function AboutDialog() {
         style={{
           position: "relative",
           zIndex: 1,
-          width: "40rem",
-          maxWidth: "calc(100vw - 48px)",
+          width: "min(40rem, calc(100vw - 2rem))",
+          maxHeight: "calc(100vh - 2rem)",
           background: "var(--bg-2)",
           border: "1px solid var(--bd-strong)",
-          borderRadius: 14,
-          overflow: "hidden",
-          boxShadow: "0 30px 80px rgba(0,0,0,.6)",
+          borderRadius: "0.875rem",
+          overflow: "auto",
+          boxShadow: "0 1.875rem 5rem rgba(0,0,0,.6)",
           color: "var(--fg-1)",
         }}
         onClick={(e) => e.stopPropagation()}
@@ -206,19 +206,20 @@ export function AboutDialog() {
         {/* hero */}
         <div
           style={{
-            padding: "26px 28px 22px",
+            padding: "1.625rem 1.75rem 1.375rem",
             background:
               "linear-gradient(135deg, color-mix(in oklab, var(--pri) 16%, var(--bg-2)), var(--bg-2))",
             display: "flex",
             alignItems: "center",
-            gap: 18,
+            gap: "1.125rem",
+            flexWrap: "wrap",
           }}
         >
           <div
             style={{
-              width: 56,
-              height: 56,
-              borderRadius: 14,
+              width: "3.5rem",
+              height: "3.5rem",
+              borderRadius: "0.875rem",
               background: "var(--bg-0)",
               border: "1px solid var(--bd)",
               display: "flex",
@@ -245,10 +246,10 @@ export function AboutDialog() {
               style={{
                 fontSize: "var(--fs-12)",
                 color: "var(--fg-2)",
-                marginTop: 3,
+                marginTop: "0.1875rem",
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
+                gap: "0.5rem",
                 flexWrap: "wrap",
               }}
             >
@@ -259,8 +260,8 @@ export function AboutDialog() {
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 5,
-                  padding: "2px 8px",
+                  gap: "0.3125rem",
+                  padding: "0.125rem 0.5rem",
                   borderRadius: 999,
                   background: "color-mix(in oklab, var(--live) 12%, transparent)",
                   border: "1px solid color-mix(in oklab, var(--live) 30%, transparent)",
@@ -269,7 +270,12 @@ export function AboutDialog() {
                 }}
               >
                 <span
-                  style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--live)" }}
+                  style={{
+                    width: "0.3125rem",
+                    height: "0.3125rem",
+                    borderRadius: "50%",
+                    background: "var(--live)",
+                  }}
                 />
                 desktop
               </span>
@@ -279,8 +285,8 @@ export function AboutDialog() {
             <div
               style={{
                 alignSelf: "flex-start",
-                padding: "6px 10px",
-                borderRadius: 6,
+                padding: "0.375rem 0.625rem",
+                borderRadius: "0.375rem",
                 background: "color-mix(in oklab, var(--live) 12%, transparent)",
                 border: "1px solid color-mix(in oklab, var(--live) 35%, transparent)",
                 color: "var(--live)",
@@ -303,16 +309,16 @@ export function AboutDialog() {
         </div>
 
         {/* environment — every field is real */}
-        <div style={{ padding: "16px 28px", borderBottom: "1px solid var(--bd-soft)" }}>
-          <div className="lbl" style={{ fontSize: "var(--fs-11)", marginBottom: 10 }}>
+        <div style={{ padding: "1rem 1.75rem", borderBottom: "1px solid var(--bd-soft)" }}>
+          <div className="lbl" style={{ fontSize: "var(--fs-11)", marginBottom: "0.625rem" }}>
             Environment
           </div>
           <div
             className="mono"
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "6px 24px",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(13rem, 100%), 1fr))",
+              gap: "0.375rem 1.5rem",
               fontSize: "var(--fs-12)",
             }}
           >
@@ -326,16 +332,16 @@ export function AboutDialog() {
         </div>
 
         {/* agents — real versions from the runtime probe */}
-        <div style={{ padding: "16px 28px", borderBottom: "1px solid var(--bd-soft)" }}>
-          <div className="lbl" style={{ fontSize: "var(--fs-11)", marginBottom: 10 }}>
+        <div style={{ padding: "1rem 1.75rem", borderBottom: "1px solid var(--bd-soft)" }}>
+          <div className="lbl" style={{ fontSize: "var(--fs-11)", marginBottom: "0.625rem" }}>
             Agents
           </div>
           <div
             className="mono"
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "6px 24px",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(13rem, 100%), 1fr))",
+              gap: "0.375rem 1.5rem",
               fontSize: "var(--fs-12)",
             }}
           >
@@ -348,21 +354,25 @@ export function AboutDialog() {
         {/* changelog — curated, real shipped changes (newest release first) */}
         <div
           style={{
-            padding: "16px 28px",
+            padding: "1rem 1.75rem",
             borderBottom: "1px solid var(--bd-soft)",
-            maxHeight: 220,
+            maxHeight: "min(13.75rem, 36vh)",
             overflow: "auto",
           }}
         >
-          <div className="lbl" style={{ fontSize: "var(--fs-11)", marginBottom: 10 }}>
+          <div className="lbl" style={{ fontSize: "var(--fs-11)", marginBottom: "0.625rem" }}>
             Changelog
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
             {CHANGELOG.map((rel) => (
               <div key={rel.version}>
                 <div
                   className="mono tnum"
-                  style={{ fontSize: "var(--fs-12)", color: "var(--fg-1)", marginBottom: 6 }}
+                  style={{
+                    fontSize: "var(--fs-12)",
+                    color: "var(--fg-1)",
+                    marginBottom: "0.375rem",
+                  }}
                 >
                   v{rel.version}
                 </div>
@@ -373,7 +383,7 @@ export function AboutDialog() {
                     listStyle: "none",
                     display: "flex",
                     flexDirection: "column",
-                    gap: 5,
+                    gap: "0.3125rem",
                     fontSize: "var(--fs-12)",
                     color: "var(--fg-1)",
                   }}
@@ -392,10 +402,10 @@ export function AboutDialog() {
         {/* credits */}
         <div
           style={{
-            padding: "14px 28px",
+            padding: "0.875rem 1.75rem",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: "0.625rem",
             fontSize: "var(--fs-12)",
             color: "var(--fg-2)",
             flexWrap: "wrap",
@@ -422,12 +432,13 @@ export function AboutDialog() {
             the BE updater lands → "up to date"). Releases link is selectable. */}
         <div
           style={{
-            padding: "12px 28px",
+            padding: "0.75rem 1.75rem",
             borderTop: "1px solid var(--bd-soft)",
             background: "var(--bg-1)",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: "0.625rem",
+            flexWrap: "wrap",
           }}
         >
           <span
@@ -436,7 +447,7 @@ export function AboutDialog() {
               fontSize: "var(--fs-11)",
               color: "var(--fg-3)",
               flexShrink: 0,
-              whiteSpace: "nowrap",
+              whiteSpace: "normal",
             }}
           >
             {updateState === "checking"
@@ -503,13 +514,13 @@ function ChangelogLine({
 }) {
   const color = tone === "add" ? "var(--live)" : tone === "fix" ? "var(--wait)" : "var(--idle)";
   return (
-    <li style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+    <li style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
       <span
         className="mono"
         style={{
           fontSize: "var(--fs-10)",
           color,
-          minWidth: 34,
+          minWidth: "2.125rem",
           textTransform: "uppercase",
           letterSpacing: "0.05em",
         }}
@@ -524,7 +535,7 @@ function ChangelogLine({
 // Mono key/value row: dim key left, bright value right, truncated.
 function Kv({ k, v }: { k: string; v: string }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem" }}>
       <span style={{ color: "var(--fg-3)" }}>{k}</span>
       <span
         style={{

@@ -26,15 +26,15 @@ export function BusyOverlay() {
             style={{
               background: "var(--bg-2)",
               border: "1px solid var(--bd)",
-              borderRadius: 10,
-              padding: "16px 24px",
+              borderRadius: "0.625rem",
+              padding: "1rem 1.5rem",
               display: "flex",
               alignItems: "center",
-              gap: 12,
+              gap: "0.75rem",
               fontFamily: "var(--mono)",
               fontSize: "var(--fs-13)",
               color: "var(--fg-1)",
-              boxShadow: "0 12px 40px rgba(0,0,0,0.4)",
+              boxShadow: "0 0.75rem 2.5rem rgba(0,0,0,0.4)",
             }}
           >
             <Spinner />
@@ -52,8 +52,8 @@ function Spinner() {
       animate={{ rotate: 360 }}
       transition={{ duration: 0.8, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
       style={{
-        width: 16,
-        height: 16,
+        width: "1rem",
+        height: "1rem",
         border: "2px solid var(--bd)",
         borderTop: "2px solid var(--fg-0)",
         borderRadius: "50%",

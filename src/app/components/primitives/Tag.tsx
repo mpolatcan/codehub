@@ -15,7 +15,7 @@ export function Tag({ children, color, style }: TagProps) {
   return (
     <Badge
       variant="outline"
-      className="gap-1 rounded-[4px] px-1.5 py-[2px] font-mono text-[11px] tracking-[0.03em]"
+      className="gap-1 rounded-[0.25rem] px-1.5 py-[0.125rem] font-mono text-[0.6875rem] tracking-[0.03em]"
       style={{
         color: color ?? "var(--fg-1)",
         background: color ? `color-mix(in oklab, ${color} 14%, transparent)` : "var(--bg-3)",

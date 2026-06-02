@@ -9,8 +9,9 @@ export interface IconBtnProps {
   active?: boolean;
   danger?: boolean;
   disabled?: boolean;
-  // Square edge length in px (default 26). Use this instead of style width/height
-  // — e.g. <IconBtn size={22}> for the compact 22px controls in tabs/footers.
+  // Square edge length (default 26). Authored in px-at-base but rendered in rem
+  // (px ÷ 16) so the control scales with the fluid root like the rest of the
+  // chrome — e.g. <IconBtn size={22}> for the compact controls in tabs/footers.
   size?: number;
   style?: CSSProperties;
   // Foreground/hover overrides for use on a colored surface (e.g. a tinted pane
@@ -60,11 +61,14 @@ export function IconBtn({
       variant="ghostIcon"
       onClick={onClick}
       disabled={disabled}
-      // Layout (size/radius) stays inline so callers can override width/height;
-      // !w-auto/!h-auto restores the icon's intrinsic 14px (the base variant
-      // forces svg → size-4). disabled opacity matches the old 0.4.
-      className="rounded-md p-0 disabled:opacity-40 [&_svg]:!h-auto [&_svg]:!w-auto"
-      style={{ width: size, height: size, ...vars, ...style } as CSSProperties}
+      // Layout (size/radius) stays inline so callers can override width/height.
+      // The icon is pinned to 0.875rem (14px at base, scales with the root)
+      // instead of the variant's size-4, so box + glyph grow together. disabled
+      // opacity matches the old 0.4.
+      className="rounded-md p-0 disabled:opacity-40 [&_svg]:!size-[0.875rem]"
+      style={
+        { width: `${size / 16}rem`, height: `${size / 16}rem`, ...vars, ...style } as CSSProperties
+      }
     >
       {children}
     </Button>

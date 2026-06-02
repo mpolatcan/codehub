@@ -56,8 +56,8 @@ export function PaneFoot({ session }: { session: string }) {
         flex: "0 0 auto",
         display: "flex",
         alignItems: "center",
-        gap: 10,
-        padding: "5px 12px",
+        gap: "0.625rem",
+        padding: "0.3125rem 0.75rem",
         background: tint ? `color-mix(in oklab, ${tint} 22%, var(--bg-1))` : "var(--bg-1)",
         borderTop: tint
           ? `1px solid color-mix(in oklab, ${tint} 40%, var(--bd-soft))`
@@ -70,9 +70,9 @@ export function PaneFoot({ session }: { session: string }) {
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: 5,
+            gap: "0.3125rem",
             minWidth: 0,
-            maxWidth: 160,
+            maxWidth: "min(10rem, 100%)",
             fontFamily: "var(--mono)",
             fontSize: "var(--fs-11)",
             color: "var(--fg-2)",
@@ -86,9 +86,9 @@ export function PaneFoot({ session }: { session: string }) {
           </span>
         </span>
       </Tip>
-      <span className="vr" style={{ height: 14 }} />
+      <span className="vr" style={{ height: "0.875rem" }} />
       <ContextGauge used={u.contextUsed} max={u.contextWindow} width={64} />
-      <span className="vr" style={{ height: 14 }} />
+      <span className="vr" style={{ height: "0.875rem" }} />
       <MetricStat label="turn" value={String(u.turns)} />
       <MetricStat label="tok" value={fmtTokens(u.tokensIn + u.tokensOut)} />
     </div>

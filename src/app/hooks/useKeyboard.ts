@@ -38,8 +38,8 @@ export function autoSplitDir(session: string): SplitDir {
 //   ⌘⇧L       — cycle theme (dark → gray → light)
 //   ⌘/Ctrl /  — keyboard-shortcuts cheat sheet
 //   ?          — cheat sheet when focus is outside an editor/terminal
-//   (⌘⇧J — expand the companion — is a process-global shortcut, registered in the
-//    Rust backend, not here.)
+//   (⌘⇧J — toggle the macOS Dynamic Island — is a process-global shortcut,
+//    registered in the Rust backend, not here.)
 //
 // Attached at the capture phase so they win over xterm.js, which installs its
 // own keydown handler on the pane textarea. Skipped while the inline rename

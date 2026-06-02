@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { CLIS, SPEC_BY_CLI } from "../../lib/catalog";
-import { type Cli, ipc } from "../../lib/ipc";
+import type { Cli } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
 import { type HubView, activeWorkspace, useStore } from "../../lib/store";
 import { workspaceTitle } from "../../lib/tree";
@@ -213,7 +213,7 @@ export function CommandPalette() {
         setPalette(v);
       }}
       onValueChange={setSelected}
-      className="w-[min(680px,calc(100vw-32px))] max-w-[calc(100vw-32px)] gap-0 rounded-xl border-[var(--bd-strong)] bg-[var(--bg-2)] p-0 shadow-[0_30px_80px_rgba(0,0,0,.6)] sm:max-w-none"
+      className="w-[min(42.5rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] gap-0 rounded-xl border-[var(--bd-strong)] bg-[var(--bg-2)] p-0 shadow-[0_30px_80px_rgba(0,0,0,.6)] sm:max-w-none"
       showCloseButton={false}
       title="Command palette"
     >
@@ -226,7 +226,7 @@ export function CommandPalette() {
         <Kbd>esc</Kbd>
       </CommandInput>
 
-      <CommandList className="max-h-[520px]">
+      <CommandList className="max-h-[min(32.5rem,calc(100vh-10rem))]">
         <CommandEmpty>No matches.</CommandEmpty>
 
         {/* ── Agents ────────────────────────────────────────────────────── */}
@@ -245,12 +245,12 @@ export function CommandPalette() {
 
               return (
                 <CommandItem key={session} value={itemValue} onSelect={() => goSession(session)}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
                     <span
                       aria-hidden="true"
                       style={{
-                        width: 6,
-                        height: 6,
+                        width: "0.375rem",
+                        height: "0.375rem",
                         borderRadius: "50%",
                         background: statusDotColor(sStatus),
                         boxShadow: dotShadow(sStatus),
@@ -277,7 +277,7 @@ export function CommandPalette() {
                       flexShrink: 0,
                       display: "inline-flex",
                       alignItems: "center",
-                      gap: 6,
+                      gap: "0.375rem",
                     }}
                   >
                     {SPEC_BY_CLI[meta.cli].label}
@@ -322,7 +322,14 @@ export function CommandPalette() {
               <span style={{ flex: 1 }}>
                 <Hi text="Review all changes" q={query} />
               </span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.375rem",
+                  flexShrink: 0,
+                }}
+              >
                 <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
                   workspace diff
                 </span>
@@ -377,27 +384,6 @@ export function CommandPalette() {
           </CommandGroup>
         )}
 
-        {/* ── Window ────────────────────────────────────────────────────── */}
-        {show("cmd") && (
-          <CommandGroup heading="Window">
-            <CommandItem
-              value="open companion floating window monitor"
-              onSelect={() => {
-                setPalette(false);
-                void ipc.openCompanion();
-              }}
-            >
-              <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.bell}</span>
-              <span style={{ flex: 1 }}>
-                <Hi text="Open companion window" q={query} />
-              </span>
-              <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
-                always on top
-              </span>
-            </CommandItem>
-          </CommandGroup>
-        )}
-
         {/* ── Repos ─────────────────────────────────────────────────────── */}
         {show("repo") && (recents.length > 0 || githubRepos.length > 0) && (
           <CommandGroup
@@ -445,8 +431,8 @@ export function CommandPalette() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 14,
-          padding: "6px 14px",
+          gap: "0.875rem",
+          padding: "0.375rem 0.875rem",
           borderTop: "1px solid var(--bd-soft)",
           background: "var(--bg-1)",
           fontSize: "var(--fs-11)",
@@ -455,14 +441,14 @@ export function CommandPalette() {
       >
         <span>
           <Kbd>↑</Kbd>
-          <Kbd style={{ marginLeft: 2 }}>↓</Kbd> navigate
+          <Kbd style={{ marginLeft: "0.125rem" }}>↓</Kbd> navigate
         </span>
         <span>
           <Kbd>⏎</Kbd> open
         </span>
         <span>
           <Kbd>⌘</Kbd>
-          <Kbd style={{ marginLeft: 2 }}>⏎</Kbd> open in new pane
+          <Kbd style={{ marginLeft: "0.125rem" }}>⏎</Kbd> open in new pane
         </span>
         <span style={{ flex: 1 }} />
         <span className="mono" style={{ color: "var(--fg-3)" }}>
@@ -481,7 +467,7 @@ function ScopeChips({ scope, setScope }: { scope: Scope; setScope: (s: Scope) =>
       {SCOPES.map((s, i) => (
         <Fragment key={s.id}>
           {i > 0 && (
-            <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-10)", margin: "0 4px" }}>
+            <span style={{ color: "var(--fg-3)", fontSize: "var(--fs-10)", margin: "0 0.25rem" }}>
               ·
             </span>
           )}
@@ -494,13 +480,13 @@ function ScopeChips({ scope, setScope }: { scope: Scope; setScope: (s: Scope) =>
             style={{
               background: scope === s.id ? "var(--bg-3)" : "none",
               border: "none",
-              padding: "1px 4px",
+              padding: "0.0625rem 0.25rem",
               cursor: "pointer",
               fontFamily: "var(--mono)",
               fontSize: "var(--fs-11)",
               color: scope === s.id ? "var(--fg-0)" : "var(--fg-3)",
               transition: "color 0.1s, background 0.1s",
-              borderRadius: 3,
+              borderRadius: "0.1875rem",
             }}
           >
             {s.label}
@@ -525,9 +511,9 @@ function Hi({ text, q }: { text: string; q: string }) {
         style={{
           background: "var(--wait-dim)",
           color: "var(--wait)",
-          borderRadius: 3,
-          padding: "1px 3px",
-          margin: "0 -1px",
+          borderRadius: "0.1875rem",
+          padding: "0.0625rem 0.1875rem",
+          margin: "0 -0.0625rem",
           fontWeight: 600,
         }}
       >
@@ -548,10 +534,10 @@ function Kbd({ children, style }: { children: ReactNode; style?: CSSProperties }
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        minWidth: 16,
-        height: 16,
-        padding: "0 4px",
-        borderRadius: 4,
+        minWidth: "1rem",
+        height: "1rem",
+        padding: "0 0.25rem",
+        borderRadius: "0.25rem",
         background: "var(--bg-3)",
         border: "1px solid var(--bd-soft)",
         color: "var(--fg-2)",

@@ -30,16 +30,16 @@ export function LiveActivities() {
     >
       <LiveActivityPreview variant="screen" />
 
-      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
+      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "1.5rem 2rem" }}>
         <LiveActivityStateGrid />
 
         <div
           style={{
             display: "flex",
             alignItems: "baseline",
-            gap: 14,
-            marginBottom: 14,
-            marginTop: 8,
+            gap: "0.875rem",
+            marginBottom: "0.875rem",
+            marginTop: "0.5rem",
           }}
         >
           <h2 style={{ margin: 0, fontSize: "var(--fs-16)", fontWeight: 600 }}>
@@ -50,7 +50,13 @@ export function LiveActivities() {
           </span>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(12rem, 100%), 1fr))",
+            gap: "0.875rem",
+          }}
+        >
           <NotificationPreview os="macOS">
             <MacNotificationPreview />
           </NotificationPreview>

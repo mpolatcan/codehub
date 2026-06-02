@@ -54,7 +54,7 @@ export const SHORTCUT_GROUPS: { title: string; items: Sc[] }[] = [
     items: [
       { keys: ["⌘", ","], desc: "Settings" },
       { keys: ["⌘", "⇧", "L"], desc: "Cycle theme (dark / gray / light)" },
-      { keys: ["⌘", "⇧", "J"], desc: "Expand companion" },
+      { keys: ["⌘", "⇧", "J"], desc: "Toggle Dynamic Island (macOS)" },
       { keys: ["⌘", "/"], desc: "This help" },
       { keys: ["?"], desc: "This help" },
     ],
@@ -92,18 +92,19 @@ export function Shortcuts() {
   return (
     <Dialog open={open} onOpenChange={setShortcuts}>
       <DialogContent
-        className="w-[min(70rem,calc(100vw-32px))] max-w-[calc(100vw-32px)] gap-0 overflow-hidden rounded-[14px] border-[var(--bd-strong)] bg-[var(--bg-2)] p-0 shadow-[0_30px_80px_rgba(0,0,0,.6)] sm:max-w-none"
+        className="w-[min(70rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] gap-0 overflow-hidden rounded-[0.875rem] border-[var(--bd-strong)] bg-[var(--bg-2)] p-0 shadow-[0_30px_80px_rgba(0,0,0,.6)] sm:max-w-none"
         showCloseButton={false}
-        style={{ maxHeight: "min(47.5rem, calc(100vh - 48px))" }}
+        style={{ maxHeight: "min(47.5rem, calc(100vh - 3rem))" }}
       >
         <DialogHeader className="gap-0">
           <div
             style={{
-              padding: "14px 22px",
+              padding: "0.875rem 1.375rem",
               borderBottom: "1px solid var(--bd-soft)",
               display: "flex",
               alignItems: "center",
-              gap: 14,
+              gap: "0.875rem",
+              flexWrap: "wrap",
             }}
           >
             <DialogTitle style={{ fontSize: "var(--fs-16)" }}>Keyboard shortcuts</DialogTitle>
@@ -121,7 +122,7 @@ export function Shortcuts() {
               onChange={(e) => setFilter(e.target.value)}
               placeholder="filter shortcuts…"
               spellCheck={false}
-              className="mono h-auto w-[220px] rounded-md px-2.5 py-1 text-xs"
+              className="mono h-auto w-full max-w-[13.75rem] rounded-md px-2.5 py-1 text-xs"
             />
           </div>
         </DialogHeader>
@@ -130,11 +131,11 @@ export function Shortcuts() {
           className="scroll"
           style={{
             overflow: "auto",
-            padding: 22,
+            padding: "1.375rem",
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: "28px 22px",
-            minHeight: 80,
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(12rem, 100%), 1fr))",
+            gap: "1.75rem 1.375rem",
+            minHeight: "5rem",
           }}
         >
           {groups.length === 0 ? (
@@ -154,22 +155,26 @@ export function Shortcuts() {
               <div key={g.title}>
                 <div
                   className="lbl"
-                  style={{ marginBottom: 10, color: "var(--fg-1)", fontSize: "var(--fs-11)" }}
+                  style={{
+                    marginBottom: "0.625rem",
+                    color: "var(--fg-1)",
+                    fontSize: "var(--fs-11)",
+                  }}
                 >
                   {g.title}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
                   {g.items.map((sc) => (
                     <div
                       key={`${sc.keys.join("+")} ${sc.desc}`}
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 10,
-                        padding: "3px 0",
+                        gap: "0.625rem",
+                        padding: "0.1875rem 0",
                       }}
                     >
-                      <span style={{ display: "inline-flex", gap: 3 }}>
+                      <span style={{ display: "inline-flex", gap: "0.1875rem" }}>
                         {sc.keys.map((k) => (
                           <span key={k} className="kbd">
                             {k}
@@ -198,8 +203,8 @@ export function Shortcuts() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 10,
-            padding: "10px 22px",
+            gap: "0.625rem",
+            padding: "0.625rem 1.375rem",
             borderTop: "1px solid var(--bd-soft)",
             background: "var(--bg-1)",
           }}

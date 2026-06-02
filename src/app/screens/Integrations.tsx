@@ -54,7 +54,7 @@ export function IntegrationsPane() {
     <>
       <h1
         style={{
-          margin: "0 0 4px",
+          margin: "0 0 0.25rem",
           fontSize: "var(--fs-20)",
           fontWeight: 600,
           letterSpacing: "-0.01em",
@@ -65,10 +65,10 @@ export function IntegrationsPane() {
       </h1>
       <p
         style={{
-          margin: "0 0 28px",
+          margin: "0 0 1.75rem",
           color: "var(--fg-2)",
           fontSize: "var(--fs-13)",
-          maxWidth: 640,
+          maxWidth: "min(40rem, 100%)",
           lineHeight: 1.55,
         }}
       >
@@ -149,8 +149,8 @@ function GitHubCard({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 14,
-          padding: "16px 18px",
+          gap: "0.875rem",
+          padding: "1rem 1.125rem",
           borderBottom: "1px solid var(--bd-soft)",
           background: connected
             ? "linear-gradient(180deg, color-mix(in oklab, var(--live) 5%, var(--bg-2)), var(--bg-2))"
@@ -159,7 +159,14 @@ function GitHubCard({
       >
         <GitHubMark connected={connected} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              marginBottom: "0.1875rem",
+            }}
+          >
             <span style={{ fontSize: "var(--fs-16)", fontWeight: 600, color: "var(--fg-0)" }}>
               GitHub
             </span>
@@ -205,8 +212,8 @@ function GitHubCard({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                padding: "10px 18px",
+                gap: "0.5rem",
+                padding: "0.625rem 1.125rem",
                 borderBottom: "1px solid var(--bd-soft)",
                 background: "color-mix(in oklab, var(--wait) 8%, var(--bg-2))",
                 fontSize: "var(--fs-11)",
@@ -222,12 +229,12 @@ function GitHubCard({
           <GitHubCapabilities status={status} />
 
           {/* scopes granted — only those the API reported; never fabricated */}
-          <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--bd-soft)" }}>
-            <div className="lbl" style={{ marginBottom: 8, fontSize: "var(--fs-11)" }}>
+          <div style={{ padding: "0.875rem 1.125rem", borderBottom: "1px solid var(--bd-soft)" }}>
+            <div className="lbl" style={{ marginBottom: "0.5rem", fontSize: "var(--fs-11)" }}>
               Scopes granted
             </div>
             {status && status.scopes.length > 0 ? (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
                 {status.scopes.map((s) => (
                   <ScopeChip key={s} label={s} />
                 ))}
@@ -241,7 +248,7 @@ function GitHubCard({
             )}
             <div
               className="mono"
-              style={{ marginTop: 8, fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+              style={{ marginTop: "0.5rem", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
             >
               Edit scopes on the token at github.com/settings/tokens — CodeHub never reads the
               value, only its presence.
@@ -265,9 +272,9 @@ function GitHubMark({ connected }: { connected: boolean }) {
     <div
       className="mono"
       style={{
-        width: 46,
-        height: 46,
-        borderRadius: 10,
+        width: "2.875rem",
+        height: "2.875rem",
+        borderRadius: "0.625rem",
         flexShrink: 0,
         background: "var(--bg-0)",
         border: connected
@@ -296,8 +303,8 @@ function ConnPill({ connected }: { connected: boolean }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 5,
-        padding: "2px 9px",
+        gap: "0.3125rem",
+        padding: "0.125rem 0.5625rem",
         borderRadius: 999,
         fontSize: "var(--fs-11)",
         fontWeight: 600,
@@ -410,10 +417,10 @@ function GitHubNotConnected({ varName }: { varName: string }) {
   };
 
   return (
-    <div style={{ padding: "18px" }}>
+    <div style={{ padding: "1.125rem" }}>
       <p
         style={{
-          margin: "0 0 14px",
+          margin: "0 0 0.875rem",
           fontSize: "var(--fs-13)",
           color: "var(--fg-1)",
           lineHeight: 1.6,
@@ -422,7 +429,7 @@ function GitHubNotConnected({ varName }: { varName: string }) {
         Connect GitHub so agents can clone, push, and open PRs. Choose one method:
       </p>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.875rem" }}>
         <Button size="sm" disabled={oauthBusy} onClick={() => void startGithubOAuth()}>
           {oauthBusy ? "Opening browser…" : "Sign in with GitHub"}
         </Button>
@@ -435,9 +442,9 @@ function GitHubNotConnected({ varName }: { varName: string }) {
         <div
           className="mono"
           style={{
-            marginBottom: 10,
-            padding: "8px 12px",
-            borderRadius: 6,
+            marginBottom: "0.625rem",
+            padding: "0.5rem 0.75rem",
+            borderRadius: "0.375rem",
             background: "color-mix(in oklab, var(--err) 8%, var(--bg-2))",
             border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
             fontSize: "var(--fs-12)",
@@ -450,22 +457,22 @@ function GitHubNotConnected({ varName }: { varName: string }) {
 
       <div
         style={{
-          padding: "12px 14px",
+          padding: "0.75rem 0.875rem",
           background: "var(--bg-1)",
           border: "1px solid var(--bd-soft)",
-          borderRadius: 8,
+          borderRadius: "0.5rem",
         }}
       >
-        <div className="lbl" style={{ marginBottom: 6, fontSize: "var(--fs-10)" }}>
+        <div className="lbl" style={{ marginBottom: "0.375rem", fontSize: "var(--fs-10)" }}>
           or use an environment variable
         </div>
         <div
           className="mono"
           style={{
-            padding: "6px 10px",
+            padding: "0.375rem 0.625rem",
             background: "var(--bg-0)",
             border: "1px solid var(--bd)",
-            borderRadius: 5,
+            borderRadius: "0.3125rem",
             fontSize: "var(--fs-11)",
             color: "var(--fg-1)",
           }}
@@ -474,7 +481,7 @@ function GitHubNotConnected({ varName }: { varName: string }) {
         </div>
         <p
           className="mono"
-          style={{ margin: "8px 0 0", fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
+          style={{ margin: "0.5rem 0 0", fontSize: "var(--fs-10)", color: "var(--fg-3)" }}
         >
           Export it in your shell before launching CodeHub. Fine-grained PAT with repo + PR access.
         </p>
@@ -519,21 +526,21 @@ function GitHubCapabilities({ status }: { status: GithubStatus | null }) {
   return (
     <div
       style={{
-        padding: "14px 18px",
+        padding: "0.875rem 1.125rem",
         borderBottom: "1px solid var(--bd-soft)",
         display: "flex",
         alignItems: "center",
-        gap: 8,
+        gap: "0.5rem",
         flexWrap: "wrap",
       }}
     >
-      <span className="lbl" style={{ fontSize: "var(--fs-11)", marginRight: 4 }}>
+      <span className="lbl" style={{ fontSize: "var(--fs-11)", marginRight: "0.25rem" }}>
         agents can
       </span>
       {caps.map((c) => (
         <CapabilityChip key={c.label} label={c.label} ok={c.ok} />
       ))}
-      <span style={{ flex: 1, minWidth: 12 }} />
+      <span style={{ flex: 1, minWidth: "0.75rem" }} />
       <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
         writes depend on scopes
       </span>
@@ -548,8 +555,8 @@ function CapabilityChip({ label, ok }: { label: string; ok: boolean }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 5,
-        padding: "3px 9px",
+        gap: "0.3125rem",
+        padding: "0.1875rem 0.5625rem",
         borderRadius: 999,
         fontSize: "var(--fs-11)",
         color: ok ? "var(--fg-1)" : "var(--fg-3)",
@@ -575,16 +582,23 @@ function ScopeChip({ label }: { label: string }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 5,
-        padding: "3px 8px",
-        borderRadius: 4,
+        gap: "0.3125rem",
+        padding: "0.1875rem 0.5rem",
+        borderRadius: "0.25rem",
         fontSize: "var(--fs-11)",
         color: "var(--live)",
         background: "color-mix(in oklab, var(--live) 10%, transparent)",
         border: "1px solid color-mix(in oklab, var(--live) 30%, transparent)",
       }}
     >
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--live)" }} />
+      <span
+        style={{
+          width: "0.3125rem",
+          height: "0.3125rem",
+          borderRadius: "50%",
+          background: "var(--live)",
+        }}
+      />
       {label}
     </span>
   );
@@ -631,9 +645,11 @@ function ReposPanel({
   }, [repos, q, vis, sort]);
 
   return (
-    <div style={{ padding: "14px 18px" }}>
+    <div style={{ padding: "0.875rem 1.125rem" }}>
       {/* header row: title + stats + sync */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.625rem" }}
+      >
         <span className="lbl" style={{ fontSize: "var(--fs-11)" }}>
           Repositories
         </span>
@@ -663,17 +679,23 @@ function ReposPanel({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            marginBottom: 4,
+            gap: "0.5rem",
+            marginBottom: "0.25rem",
             flexWrap: "wrap",
           }}
         >
-          <div style={{ position: "relative", flex: "1 1 200px", minWidth: 160 }}>
+          <div
+            style={{
+              position: "relative",
+              flex: "1 1 min(12.5rem, 100%)",
+              minWidth: 0,
+            }}
+          >
             <span
               aria-hidden="true"
               style={{
                 position: "absolute",
-                left: 9,
+                left: "0.5625rem",
                 top: "50%",
                 transform: "translateY(-50%)",
                 color: "var(--fg-3)",
@@ -689,7 +711,7 @@ function ReposPanel({
               placeholder="Filter repositories…"
               spellCheck={false}
               className="font-mono h-auto"
-              style={{ paddingLeft: 30, fontSize: "var(--fs-12)" }}
+              style={{ paddingLeft: "1.875rem", fontSize: "var(--fs-12)" }}
             />
           </div>
           <Segmented<Vis>
@@ -716,7 +738,7 @@ function ReposPanel({
       {repos.length === 0 ? (
         <div
           className="mono"
-          style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "8px 0" }}
+          style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "0.5rem 0" }}
         >
           No repositories returned for this token (it may lack repo scope, or the org has none
           visible).
@@ -724,12 +746,12 @@ function ReposPanel({
       ) : filtered.length === 0 ? (
         <div
           className="mono"
-          style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "8px 0" }}
+          style={{ fontSize: "var(--fs-12)", color: "var(--fg-3)", padding: "0.5rem 0" }}
         >
           No repositories match “{q}”.
         </div>
       ) : (
-        <div style={{ marginTop: 4 }}>
+        <div style={{ marginTop: "0.25rem" }}>
           {filtered.map((r, i) => (
             <RepoRow key={r.nameWithOwner} repo={r} last={i === filtered.length - 1} />
           ))}
@@ -749,18 +771,18 @@ function RepoRow({ repo, last }: { repo: GithubRepo; last: boolean }) {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 14,
-        padding: "10px 8px",
-        margin: "0 -8px",
-        borderRadius: 6,
+        gap: "0.875rem",
+        padding: "0.625rem 0.5rem",
+        margin: "0 -0.5rem",
+        borderRadius: "0.375rem",
         borderBottom: last ? "none" : "1px solid var(--bd-soft)",
       }}
     >
       <span
         style={{
-          width: 22,
-          height: 22,
-          borderRadius: 4,
+          width: "1.375rem",
+          height: "1.375rem",
+          borderRadius: "0.25rem",
           background: "var(--bg-3)",
           color: "var(--fg-1)",
           display: "inline-flex",
@@ -772,7 +794,7 @@ function RepoRow({ repo, last }: { repo: GithubRepo; last: boolean }) {
         {Ico.files}
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "0.375rem", minWidth: 0 }}>
           {owner && (
             <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
               {owner}/
@@ -801,7 +823,7 @@ function RepoRow({ repo, last }: { repo: GithubRepo; last: boolean }) {
               color: "var(--fg-3)",
               display: "inline-flex",
               alignItems: "center",
-              gap: 4,
+              gap: "0.25rem",
             }}
           >
             <span style={{ display: "inline-flex", transform: "scale(0.85)" }}>{Ico.branch}</span>

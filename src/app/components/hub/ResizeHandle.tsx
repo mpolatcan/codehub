@@ -18,10 +18,10 @@ export function ResizeHandle({
   const isRow = edge === "top"; // resizes height
   const pos: React.CSSProperties =
     edge === "right"
-      ? { right: -3, top: 0, bottom: 0, width: 7 }
+      ? { right: "-0.1875rem", top: 0, bottom: 0, width: "0.4375rem" }
       : edge === "left"
-        ? { left: -3, top: 0, bottom: 0, width: 7 }
-        : { top: -3, left: 0, right: 0, height: 7 };
+        ? { left: "-0.1875rem", top: 0, bottom: 0, width: "0.4375rem" }
+        : { top: "-0.1875rem", left: 0, right: 0, height: "0.4375rem" };
   return (
     <Tip text="Drag to resize · double-click to reset">
       <div

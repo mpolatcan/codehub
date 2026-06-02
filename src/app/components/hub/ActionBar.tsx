@@ -25,12 +25,12 @@ export function ActionBar() {
   return (
     <div
       style={{
-        height: 36,
+        height: "2.25rem",
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
-        gap: 6,
-        padding: "0 12px",
+        gap: "0.375rem",
+        padding: "0 0.75rem",
         background: "var(--bg-1)",
         borderTop: "1px solid var(--bd-soft)",
       }}

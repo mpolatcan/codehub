@@ -146,13 +146,36 @@ printf '%s\n' "$(
     --arg thread "$CODEX_THREAD" \
     --argjson at "$NOW_MS" \
     --argjson payload "$PAYLOAD_JSON" \
-    '{
+    'def trunc($n): if (.|length) > $n then .[0:$n] + "…" else . end;
+    {
       session: $session,
       kind: $kind,
       at: $at,
       message: ($payload.message // null),
       notification_type: (if $nt != "" then $nt else ($payload.notification_type // null) end),
       tool_name: ($payload.tool_name // $payload.tool_use.name // null),
+      # Short, TRUNCATED tool summaries for the island output block — the Bash
+      # command / file path / pattern / url on PreToolUse, the first non-blank
+      # result line on PostToolUse. Never the full output (kept ≤160 chars).
+      tool_arg: (
+        ( $payload.tool_input.command
+          // $payload.tool_input.file_path
+          // $payload.tool_input.path
+          // $payload.tool_input.pattern
+          // $payload.tool_input.url
+          // $payload.tool_input.description
+          // $payload.tool_input.prompt
+          // "" )
+        | if (type=="string" and . != "") then trunc(160) else null end
+      ),
+      tool_result: (
+        ( $payload.tool_response.stdout
+          // $payload.tool_response.output
+          // ($payload.tool_response | strings)
+          // "" )
+        | if type=="string" then (split("\n") | map(select(test("\\S"))) | (.[0] // "")) else "" end
+        | if . == "" then null else trunc(160) end
+      ),
       codex_thread_id: (if $thread != "" then $thread else null end)
     }'
 )" >> "$EVENTS_FILE"

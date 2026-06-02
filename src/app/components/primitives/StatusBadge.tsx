@@ -13,14 +13,14 @@ export function StatusBadge({ status = "idle", children }: StatusBadgeProps) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 6,
+        gap: "0.375rem",
         fontFamily: "var(--mono)",
         fontSize: "var(--fs-11)",
         letterSpacing: "0.05em",
         textTransform: "uppercase",
         color: s.color,
-        padding: "3px 7px",
-        borderRadius: 4,
+        padding: "0.1875rem 0.4375rem",
+        borderRadius: "0.25rem",
         background: `color-mix(in oklab, ${s.color} 12%, transparent)`,
       }}
     >

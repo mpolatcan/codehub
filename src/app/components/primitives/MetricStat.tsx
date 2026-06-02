@@ -30,8 +30,8 @@ export function MetricStat({
         // vertically-centers its text around the gauge bar — keeps every label and
         // value on one line (pane footer).
         alignItems: "center",
-        gap: 6,
-        height: 18,
+        gap: "0.375rem",
+        height: "1.125rem",
         lineHeight: 1,
         whiteSpace: "nowrap",
       }}
@@ -53,7 +53,10 @@ export function MetricStat({
         {value}
       </span>
       {delta && (
-        <span className="mono" style={{ fontSize: "var(--fs-11)", color: dtone, marginLeft: -2 }}>
+        <span
+          className="mono"
+          style={{ fontSize: "var(--fs-11)", color: dtone, marginLeft: "-0.125rem" }}
+        >
           {delta}
         </span>
       )}

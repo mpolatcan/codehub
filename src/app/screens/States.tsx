@@ -39,7 +39,7 @@ export function Sk({ w, h }: { w: string | number; h: number }) {
         display: "block",
         width: typeof w === "number" ? `${w}px` : w,
         height: h,
-        borderRadius: 4,
+        borderRadius: "0.25rem",
         background: "linear-gradient(90deg, var(--bg-3), var(--bg-hover), var(--bg-3))",
         backgroundSize: "200% 100%",
         animation: "state-shimmer 1.4s ease-in-out infinite",
@@ -58,14 +58,16 @@ export function SkeletonPane({
   turns,
 }: { caption?: string; turns?: number }) {
   return (
-    <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+    <div
+      style={{ flex: 1, padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}
+    >
       <Sk w="65%" h={11} />
       <Sk w="40%" h={10} />
-      <div style={{ height: 8 }} />
+      <div style={{ height: "0.5rem" }} />
       <Sk w="80%" h={9} />
       <Sk w="92%" h={9} />
       <Sk w="55%" h={9} />
-      <div style={{ height: 4 }} />
+      <div style={{ height: "0.25rem" }} />
       <Sk w="74%" h={9} />
       <Sk w="60%" h={9} />
       <div
@@ -95,15 +97,15 @@ function BootStep({ state, text, detail }: BootStepSpec) {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 8,
+        gap: "0.5rem",
         fontSize: "var(--fs-12)",
         fontFamily: "var(--mono)",
       }}
     >
       <span
         style={{
-          width: 14,
-          height: 14,
+          width: "0.875rem",
+          height: "0.875rem",
           borderRadius: "50%",
           display: "inline-flex",
           alignItems: "center",
@@ -130,7 +132,14 @@ function BootStep({ state, text, detail }: BootStepSpec) {
           </svg>
         )}
         {active && (
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--live)" }} />
+          <span
+            style={{
+              width: "0.3125rem",
+              height: "0.3125rem",
+              borderRadius: "50%",
+              background: "var(--live)",
+            }}
+          />
         )}
       </span>
       <span style={{ color: done ? "var(--fg-2)" : active ? "var(--fg-0)" : "var(--fg-3)" }}>
@@ -160,15 +169,23 @@ export function ContainerBootingPane({
 }) {
   const width = pct == null ? "0%" : `${Math.min(100, Math.max(0, pct * 100))}%`;
   return (
-    <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div
+      style={{
+        flex: 1,
+        padding: "1rem",
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.625rem",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <span
           style={{
-            width: 8,
-            height: 8,
+            width: "0.5rem",
+            height: "0.5rem",
             borderRadius: "50%",
             background: "var(--live)",
-            boxShadow: "0 0 12px var(--live)",
+            boxShadow: "0 0 0.75rem var(--live)",
           }}
         />
         <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-0)" }}>
@@ -186,8 +203,8 @@ export function ContainerBootingPane({
       ))}
       <div
         style={{
-          marginTop: 4,
-          height: 2,
+          marginTop: "0.25rem",
+          height: "0.125rem",
           background: "var(--bg-3)",
           borderRadius: 999,
           overflow: "hidden",
@@ -225,15 +242,17 @@ export function CrashPane({
   restartLabel?: string;
 }) {
   return (
-    <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div
+      style={{ flex: 1, padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <span
           style={{
-            width: 8,
-            height: 8,
+            width: "0.5rem",
+            height: "0.5rem",
             borderRadius: "50%",
             background: "var(--err)",
-            boxShadow: "0 0 12px var(--err)",
+            boxShadow: "0 0 0.75rem var(--err)",
           }}
         />
         <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--err)" }}>
@@ -247,10 +266,10 @@ export function CrashPane({
       {body && (
         <div
           style={{
-            padding: "10px 12px",
+            padding: "0.625rem 0.75rem",
             background: "color-mix(in oklab, var(--err) 8%, var(--bg-0))",
             border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
-            borderRadius: 6,
+            borderRadius: "0.375rem",
             fontFamily: "var(--mono)",
             fontSize: "var(--fs-12)",
             color: "var(--fg-1)",
@@ -260,7 +279,7 @@ export function CrashPane({
           {body}
         </div>
       )}
-      <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
+      <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto" }}>
         <Button size="sm" style={{ flex: 1, justifyContent: "center" }} onClick={onRestart}>
           {restartLabel}
         </Button>
@@ -291,15 +310,17 @@ export function ApiKeyError({
   onSwitch?: () => void;
 }) {
   return (
-    <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div
+      style={{ flex: 1, padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <span
           style={{
-            width: 8,
-            height: 8,
+            width: "0.5rem",
+            height: "0.5rem",
             borderRadius: "50%",
             background: "var(--wait)",
-            boxShadow: "0 0 12px var(--wait)",
+            boxShadow: "0 0 0.75rem var(--wait)",
           }}
         />
         <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--wait)" }}>
@@ -309,10 +330,10 @@ export function ApiKeyError({
       {body && (
         <div
           style={{
-            padding: "10px 12px",
+            padding: "0.625rem 0.75rem",
             background: "color-mix(in oklab, var(--wait) 8%, var(--bg-0))",
             border: "1px solid color-mix(in oklab, var(--wait) 30%, var(--bd))",
-            borderRadius: 6,
+            borderRadius: "0.375rem",
             fontSize: "var(--fs-12)",
             color: "var(--fg-1)",
             lineHeight: 1.55,
@@ -321,7 +342,7 @@ export function ApiKeyError({
           {body}
         </div>
       )}
-      <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
+      <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto" }}>
         <Button size="sm" style={{ flex: 1, justifyContent: "center" }} onClick={onReauthorize}>
           Reauthorize
         </Button>
@@ -357,9 +378,18 @@ export function RateLimited({
 }) {
   const width = pct == null ? "100%" : `${Math.min(100, Math.max(0, pct))}%`;
   return (
-    <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--wait)" }} />
+    <div
+      style={{ flex: 1, padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <span
+          style={{
+            width: "0.5rem",
+            height: "0.5rem",
+            borderRadius: "50%",
+            background: "var(--wait)",
+          }}
+        />
         <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--wait)" }}>
           {title}
         </span>
@@ -372,10 +402,10 @@ export function RateLimited({
       </div>
       <div
         style={{
-          padding: "10px 12px",
+          padding: "0.625rem 0.75rem",
           background: "var(--bg-1)",
           border: "1px solid var(--bd)",
-          borderRadius: 6,
+          borderRadius: "0.375rem",
         }}
       >
         <div
@@ -383,7 +413,7 @@ export function RateLimited({
             display: "flex",
             alignItems: "baseline",
             justifyContent: "space-between",
-            marginBottom: 6,
+            marginBottom: "0.375rem",
           }}
         >
           <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
@@ -397,20 +427,25 @@ export function RateLimited({
           </span>
         </div>
         <div
-          style={{ height: 4, background: "var(--bg-3)", borderRadius: 999, overflow: "hidden" }}
+          style={{
+            height: "0.25rem",
+            background: "var(--bg-3)",
+            borderRadius: 999,
+            overflow: "hidden",
+          }}
         >
           <div style={{ width, height: "100%", background: "var(--wait)" }} />
         </div>
         {usedLabel && (
           <div
             className="mono tnum"
-            style={{ marginTop: 6, fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+            style={{ marginTop: "0.375rem", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
           >
             {usedLabel}
           </div>
         )}
       </div>
-      <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
+      <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto" }}>
         <Button
           variant="outline"
           size="sm"
@@ -440,19 +475,19 @@ export function OfflineBanner({
   return (
     <div
       style={{
-        padding: "10px 14px",
+        padding: "0.625rem 0.875rem",
         background: "color-mix(in oklab, var(--err) 10%, var(--bg-1))",
         border: "1px solid color-mix(in oklab, var(--err) 35%, var(--bd))",
-        borderRadius: 8,
+        borderRadius: "0.5rem",
         display: "flex",
         alignItems: "center",
-        gap: 12,
+        gap: "0.75rem",
       }}
     >
       <span
         style={{
-          width: 22,
-          height: 22,
+          width: "1.375rem",
+          height: "1.375rem",
           borderRadius: "50%",
           background: "var(--err)",
           color: "var(--bg-0)",
@@ -474,7 +509,7 @@ export function OfflineBanner({
         {sub && (
           <div
             className="mono"
-            style={{ marginTop: 4, fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+            style={{ marginTop: "0.25rem", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
           >
             {sub}
           </div>
@@ -504,8 +539,10 @@ export function SuspendedBanner({
   onRemove?: () => void;
 }) {
   return (
-    <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div
+      style={{ flex: 1, padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <span style={{ fontSize: "var(--fs-13)", fontWeight: 500, color: "var(--fg-0)" }}>
           {account}
         </span>
@@ -515,10 +552,10 @@ export function SuspendedBanner({
       {body && (
         <div
           style={{
-            padding: "10px 12px",
+            padding: "0.625rem 0.75rem",
             background: "color-mix(in oklab, var(--err) 8%, var(--bg-0))",
             border: "1px solid color-mix(in oklab, var(--err) 30%, var(--bd))",
-            borderRadius: 6,
+            borderRadius: "0.375rem",
             fontSize: "var(--fs-12)",
             color: "var(--fg-1)",
             lineHeight: 1.55,
@@ -527,7 +564,7 @@ export function SuspendedBanner({
           {body}
         </div>
       )}
-      <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
+      <div style={{ display: "flex", gap: "0.375rem", marginTop: "auto" }}>
         <Button
           variant="outline"
           size="sm"
@@ -573,15 +610,15 @@ export function EmptyPanel({
         flexDirection: "column",
         justifyContent: "center",
         alignItems: "center",
-        gap: 10,
+        gap: "0.625rem",
         textAlign: "center",
       }}
     >
       <div
         style={{
-          width: 36,
-          height: 36,
-          borderRadius: 8,
+          width: "2.25rem",
+          height: "2.25rem",
+          borderRadius: "0.5rem",
           background: "var(--bg-3)",
           color: "var(--fg-2)",
           display: "inline-flex",
@@ -593,12 +630,17 @@ export function EmptyPanel({
       </div>
       <div style={{ fontSize: "var(--fs-14)", fontWeight: 500, color: "var(--fg-0)" }}>{title}</div>
       <div
-        style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)", maxWidth: 280, lineHeight: 1.5 }}
+        style={{
+          fontSize: "var(--fs-12)",
+          color: "var(--fg-2)",
+          maxWidth: "min(17.5rem, 100%)",
+          lineHeight: 1.5,
+        }}
       >
         {hint}
       </div>
       {cta && (
-        <Button variant="outline" size="sm" style={{ marginTop: 4 }} onClick={onCta}>
+        <Button variant="outline" size="sm" style={{ marginTop: "0.25rem" }} onClick={onCta}>
           {Ico.plus}
           {cta}
         </Button>
@@ -617,9 +659,9 @@ function SectionTitle({ label, caption }: { label: string; caption: string }) {
       style={{
         display: "flex",
         alignItems: "baseline",
-        gap: 12,
-        marginBottom: 12,
-        marginTop: 4,
+        gap: "0.75rem",
+        marginBottom: "0.75rem",
+        marginTop: "0.25rem",
       }}
     >
       <h2 style={{ margin: 0, fontSize: "var(--fs-14)", fontWeight: 600, color: "var(--fg-0)" }}>
@@ -647,19 +689,19 @@ function StateCard({
       style={{
         background: "var(--bg-2)",
         border: "1px solid var(--bd)",
-        borderRadius: 10,
-        padding: 14,
+        borderRadius: "0.625rem",
+        padding: "0.875rem",
         display: "flex",
         flexDirection: "column",
-        gap: 10,
+        gap: "0.625rem",
       }}
     >
       <div
         style={{
           background: "var(--bg-0)",
-          borderRadius: 7,
+          borderRadius: "0.4375rem",
           border: "1px solid var(--bd-soft)",
-          minHeight: 160,
+          minHeight: "clamp(7rem, 22vh, 10rem)",
           overflow: "hidden",
           display: "flex",
           alignItems: "stretch",
@@ -673,7 +715,7 @@ function StateCard({
             fontSize: "var(--fs-13)",
             color: "var(--fg-0)",
             fontWeight: 500,
-            marginBottom: 2,
+            marginBottom: "0.125rem",
           }}
         >
           {caption}
@@ -701,8 +743,8 @@ export default function StatesGallery() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 14,
-          padding: "16px 28px 14px",
+          gap: "0.875rem",
+          padding: "1rem 1.75rem 0.875rem",
           borderBottom: "1px solid var(--bd-soft)",
           flexShrink: 0,
         }}
@@ -717,14 +759,14 @@ export default function StatesGallery() {
         </span>
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: "20px 28px" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: "1.25rem 1.75rem" }}>
         <SectionTitle label="Loading" caption="skeletons + spawn progress" />
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 14,
-            marginBottom: 22,
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(16rem, 100%), 1fr))",
+            gap: "0.875rem",
+            marginBottom: "1.375rem",
           }}
         >
           <StateCard
@@ -756,9 +798,9 @@ export default function StatesGallery() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 14,
-            marginBottom: 22,
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(16rem, 100%), 1fr))",
+            gap: "0.875rem",
+            marginBottom: "1.375rem",
           }}
         >
           <StateCard
@@ -773,7 +815,7 @@ export default function StatesGallery() {
                   <div style={{ color: "var(--err)" }}>
                     Memory cap exceeded during the container's last command
                   </div>
-                  <div style={{ color: "var(--fg-2)", marginTop: 4 }}>
+                  <div style={{ color: "var(--fg-2)", marginTop: "0.25rem" }}>
                     Scrollback persisted · agent context intact
                   </div>
                 </>
@@ -806,7 +848,7 @@ export default function StatesGallery() {
             />
           </StateCard>
           <StateCard caption="Network · offline" desc="App-wide banner with a degraded-mode hint.">
-            <div style={{ flex: 1, padding: 16, display: "flex" }}>
+            <div style={{ flex: 1, padding: "1rem", display: "flex" }}>
               <OfflineBanner sub="Reconnecting…" />
             </div>
           </StateCard>
@@ -816,7 +858,13 @@ export default function StatesGallery() {
           label="Empty"
           caption="quiet states with a clear next step — not blank pages"
         />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(14rem, 100%), 1fr))",
+            gap: "0.875rem",
+          }}
+        >
           <StateCard caption="No workspaces" desc="Workspaces inspector before any spawn.">
             <EmptyPanel
               icon={Ico.container}

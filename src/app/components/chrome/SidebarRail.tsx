@@ -38,16 +38,16 @@ export function SidebarRail({
   return (
     <div
       style={{
-        width: 44,
+        width: "2.75rem",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        paddingTop: 8,
-        paddingBottom: 8,
-        gap: 2,
+        paddingTop: "0.5rem",
+        paddingBottom: "0.5rem",
+        gap: "0.125rem",
       }}
     >
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.125rem" }}>
         {items.map((item) => (
           <IconBtn
             key={item.key}
@@ -60,7 +60,7 @@ export function SidebarRail({
           </IconBtn>
         ))}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem" }}>
         {bottom.map((item) => (
           <IconBtn
             key={item.key}

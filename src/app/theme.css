@@ -77,16 +77,18 @@
 :root {
   /* Type scale — JetBrains Mono throughout, one canonical step ladder. Every
      font size in the app resolves to one of these tokens: no raw px, no
-     half-steps. Token name == its px value. */
-  --fs-9: 9px; /* micro caps, tiny glyph labels, mode badges */
-  --fs-10: 10px; /* dim mono captions */
-  --fs-11: 11px; /* labels, secondary data */
-  --fs-12: 12px; /* base body / data */
-  --fs-13: 13px; /* primary rows, hints, mode rows */
-  --fs-14: 14px; /* agent names, emphasis */
-  --fs-16: 16px; /* section / panel / masthead headings */
-  --fs-20: 20px; /* view + empty-state titles */
-  --fs-26: 26px; /* display / launcher title */
+     half-steps. Token name == its px value AT THE BASE root font-size; the
+     value is rem (px ÷ 16) so the whole scale grows/shrinks with the fluid
+     `html` font-size below — responsive, never fixed. */
+  --fs-9: 0.5625rem; /* micro caps, tiny glyph labels, mode badges */
+  --fs-10: 0.625rem; /* dim mono captions */
+  --fs-11: 0.6875rem; /* labels, secondary data */
+  --fs-12: 0.75rem; /* base body / data */
+  --fs-13: 0.8125rem; /* primary rows, hints, mode rows */
+  --fs-14: 0.875rem; /* agent names, emphasis */
+  --fs-16: 1rem; /* section / panel / masthead headings */
+  --fs-20: 1.25rem; /* view + empty-state titles */
+  --fs-26: 1.625rem; /* display / launcher title */
   --fs-base: var(--fs-12);
 
   /* Motion — shared easings so every transition/animation feels related. */
@@ -100,12 +102,40 @@ body,
   height: 100%;
   margin: 0;
 }
+
+/* Fluid root font-size — the single knob that makes the whole UI responsive.
+   Every size/space token is rem (px ÷ 16), so 1rem == 16px only at the design
+   size and the entire chrome (every button, gauge, pane-chrome measure) grows/
+   shrinks with the window instead of sitting fixed in a corner.
+   BOTH axes drive the scale additively (0.3vw + 0.3vh): widening OR heightening
+   the window visibly enlarges the UI, and a wide-but-short window stays modest
+   because its small vh term holds the total down (no over-inflation/clip). At the
+   1440×900 design size this is ≈17px (identity); floored at 14px on small windows,
+   capped at 22px on large ones. A pure-min(vw,vh) form was tried first but pinned
+   the root to the height term on normal landscape windows, so widening didn't
+   scale anything — the additive form fixes that. Authored in px+vw/vh (NOT rem/em,
+   which would be self-referential on the root element). The terminal follows too:
+   xterm can't take a responsive unit, so lib/panes.ts derives a px fontSize from
+   this live root and re-applies it on resize (the glyph grid reflows). */
+html {
+  font-size: clamp(14px, 0.3vw + 0.3vh + 10px, 22px);
+}
 body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-mono);
   overflow: hidden;
-  -webkit-font-smoothing: antialiased;
+}
+
+/* Font smoothing is DISPLAY-dependent. On Retina (≥2x) grayscale AA reads
+   cleaner, so force `antialiased` there. On 1x external monitors do NOT force it:
+   `antialiased` strips macOS subpixel AA and the chrome text renders thin /
+   rasterized — let it fall back to the OS default (subpixel), matching the
+   terminal surface (panes.css uses `auto`). */
+@media (min-resolution: 2dppx) {
+  body {
+    -webkit-font-smoothing: antialiased;
+  }
 }
 
 /* Pixel labels — tiny mono caps (legacy alias; HUD face dropped in the reskin). */

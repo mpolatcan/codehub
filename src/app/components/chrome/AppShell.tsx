@@ -27,20 +27,41 @@ export function AppShell({ title = "CodeHub", rail, railFramed = true, children 
       {/* Title bar / traffic lights */}
       <div
         style={{
-          height: 32,
+          height: "2rem",
           background: "var(--bg-0)",
           borderBottom: "1px solid var(--bd-soft)",
           display: "flex",
           alignItems: "center",
-          padding: "0 12px",
-          gap: 10,
+          padding: "0 0.75rem",
+          gap: "0.625rem",
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", gap: 6 }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#3d3d3d" }} />
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#3d3d3d" }} />
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#3d3d3d" }} />
+        <div style={{ display: "flex", gap: "0.375rem" }}>
+          <div
+            style={{
+              width: "0.625rem",
+              height: "0.625rem",
+              borderRadius: "50%",
+              background: "#3d3d3d",
+            }}
+          />
+          <div
+            style={{
+              width: "0.625rem",
+              height: "0.625rem",
+              borderRadius: "50%",
+              background: "#3d3d3d",
+            }}
+          />
+          <div
+            style={{
+              width: "0.625rem",
+              height: "0.625rem",
+              borderRadius: "50%",
+              background: "#3d3d3d",
+            }}
+          />
         </div>
         <div
           style={{
@@ -54,7 +75,7 @@ export function AppShell({ title = "CodeHub", rail, railFramed = true, children 
         >
           {title}
         </div>
-        <div style={{ width: 40 }} />
+        <div style={{ width: "2.5rem" }} />
       </div>
 
       {/* Body: optional rail + main area */}

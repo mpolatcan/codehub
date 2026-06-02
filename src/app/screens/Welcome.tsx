@@ -280,15 +280,15 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
       {/* hero band — matches design welcome.jsx */}
       <div
         style={{
-          padding: "40px 48px 28px",
+          padding: "2.5rem 3rem 1.75rem",
           borderBottom: "1px solid var(--bd-soft)",
           display: "flex",
           alignItems: "flex-end",
-          gap: 24,
+          gap: "1.5rem",
         }}
       >
         <div style={{ flex: 1 }}>
-          <div className="lbl" style={{ marginBottom: 10 }}>
+          <div className="lbl" style={{ marginBottom: "0.625rem" }}>
             Workspaces
           </div>
           <h1
@@ -305,17 +305,17 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
           </h1>
           <p
             style={{
-              margin: "8px 0 0",
+              margin: "0.5rem 0 0",
               color: "var(--fg-2)",
               fontSize: "var(--fs-13)",
-              maxWidth: 512,
+              maxWidth: "min(32rem, 100%)",
               lineHeight: 1.55,
             }}
           >
             A workspace bundles repos and a container together. Open one to spawn agents inside it.
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
           <Tip text="Create a new workspace">
             <Button
               onClick={() => {
@@ -329,14 +329,14 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
         </div>
       </div>
 
-      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "24px 48px 40px" }}>
+      <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "1.5rem 3rem 2.5rem" }}>
         {/* toolbar: search + status filter (always present) */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 10,
-            marginBottom: 20,
+            gap: "0.625rem",
+            marginBottom: "1.25rem",
             flexWrap: "wrap",
           }}
         >
@@ -345,7 +345,11 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
             onChange={setQuery}
             placeholder="Filter workspaces…"
             onClear={() => setQuery("")}
-            style={{ flex: 1, minWidth: 200, maxWidth: 360 }}
+            style={{
+              flex: 1,
+              minWidth: "min(12.5rem, 100%)",
+              maxWidth: "min(22.5rem, 100%)",
+            }}
           />
           <Segmented
             value={statusFilter}
@@ -359,7 +363,7 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
 
           {/* select controls — live at the filter level, right-aligned. Entering
               select mode swaps the trigger for the bulk Open/Remove/Done actions. */}
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
             {selectMode ? (
               <>
                 <span className="mono" style={{ fontSize: "var(--fs-12)", color: "var(--fg-2)" }}>
@@ -425,7 +429,7 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
           <div
             className="mono"
             style={{
-              padding: "32px 0",
+              padding: "2rem 0",
               textAlign: "center",
               fontSize: "var(--fs-12)",
               color: "var(--fg-3)",
@@ -445,8 +449,10 @@ function CardSection({
   children,
 }: { title: string; count: number; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 28 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+    <div style={{ marginBottom: "1.75rem" }}>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}
+      >
         <span className="lbl">{title}</span>
         <span className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
           {count}
@@ -458,8 +464,8 @@ function CardSection({
           // auto-fill + minmax so cards keep a sane width and wide screens get MORE
           // columns instead of a few ultra-wide cards with dead space on the right.
           // The 0-floor inside min() lets a long repo chip ellipsize, not widen its track.
-          gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
-          gap: 12,
+          gridTemplateColumns: "repeat(auto-fill, minmax(min(20rem, 100%), 1fr))",
+          gap: "0.75rem",
         }}
       >
         {children}
@@ -699,11 +705,11 @@ function WorkspaceCard({
             : undefined
         }
         style={{
-          padding: "14px 16px 14px 18px",
+          padding: "0.875rem 1rem 0.875rem 1.125rem",
           position: "relative",
           display: "flex",
           flexDirection: "column",
-          gap: 10,
+          gap: "0.625rem",
           borderColor: isOpen ? "var(--pri)" : undefined,
         }}
       >
@@ -713,15 +719,15 @@ function WorkspaceCard({
           style={{
             position: "absolute",
             left: 0,
-            top: 8,
-            bottom: 8,
-            width: 3,
+            top: "0.5rem",
+            bottom: "0.5rem",
+            width: "0.1875rem",
             borderRadius: 999,
             background: spine,
           }}
         />
         {/* name row: select + pin + workspace mark + name + state badge + remove */}
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4375rem" }}>
           {/* Bulk-select checkbox — rendered ONLY in select mode, so it reserves no
             space by default (and never shifts the name). Stops propagation so
             ticking it doesn't also open the card. */}
@@ -781,7 +787,7 @@ function WorkspaceCard({
           {/* Live agents (only when the workspace is open in a tab) sit beside the
             identity so activity reads inline with the name. */}
           {agents.length > 0 && (
-            <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+            <div style={{ display: "flex", gap: "0.1875rem", flexShrink: 0 }}>
               {agents.slice(0, 4).map((m, i) => (
                 <AgentGlyph
                   // biome-ignore lint/suspicious/noArrayIndexKey: positional agent indicators
@@ -798,7 +804,7 @@ function WorkspaceCard({
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 4,
+                gap: "0.25rem",
                 fontFamily: "var(--mono)",
                 fontSize: "var(--fs-10)",
                 color: busy
@@ -808,7 +814,7 @@ function WorkspaceCard({
                     : dot === "live"
                       ? "var(--live)"
                       : "var(--fg-3)",
-                padding: "2px 6px",
+                padding: "0.125rem 0.375rem",
                 borderRadius: 999,
                 background: busy
                   ? "color-mix(in oklab, var(--wait) 12%, transparent)"
@@ -832,7 +838,7 @@ function WorkspaceCard({
         {/* repo pills — one row of repo NAMES (the identifier you scan for); the
           branch is detail-on-hover (title), not inline, so two long branches can't
           chop the names or bloat the card. Extras collapse into a "+N" chip. */}
-        <div style={{ display: "flex", gap: 5, overflow: "hidden" }}>
+        <div style={{ display: "flex", gap: "0.3125rem", overflow: "hidden" }}>
           {shownChips.map((r, i) => (
             <Tip
               // biome-ignore lint/suspicious/noArrayIndexKey: positional repo chips
@@ -843,9 +849,9 @@ function WorkspaceCard({
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 5,
-                  padding: "2px 9px",
-                  borderRadius: 6,
+                  gap: "0.3125rem",
+                  padding: "0.125rem 0.5625rem",
+                  borderRadius: "0.375rem",
                   background: "var(--bg-3)",
                   border: "1px solid var(--bd-soft)",
                   fontFamily: "var(--mono)",
@@ -882,8 +888,8 @@ function WorkspaceCard({
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  padding: "2px 9px",
-                  borderRadius: 6,
+                  padding: "0.125rem 0.5625rem",
+                  borderRadius: "0.375rem",
                   background: "var(--bg-3)",
                   border: "1px solid var(--bd-soft)",
                   fontFamily: "var(--mono)",
@@ -903,14 +909,14 @@ function WorkspaceCard({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: "0.5rem",
             fontFamily: "var(--mono)",
             fontSize: "var(--fs-11)",
             color: "var(--fg-2)",
           }}
         >
           {specs && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
               <span style={{ color: "var(--fg-3)", display: "inline-flex" }}>{Ico.container}</span>
               {specs}
             </span>
@@ -926,7 +932,7 @@ function WorkspaceCard({
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 6,
+              gap: "0.375rem",
               fontFamily: "var(--mono)",
               fontSize: "var(--fs-10)",
               color: "var(--fg-3)",
@@ -950,18 +956,18 @@ function WorkspaceCard({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: "0.5rem",
             borderTop: "1px solid var(--bd-soft)",
-            paddingTop: 10,
+            paddingTop: "0.625rem",
           }}
         >
           {busy ? (
             // Mid-transition: hide controls + CTA so the op can't be re-fired; the
             // spinner lives ONLY in the top state pill.
-            <span style={{ display: "inline-flex", height: 28 }} />
+            <span style={{ display: "inline-flex", height: "1.75rem" }} />
           ) : (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.125rem" }}>
                 {state === "running" && (
                   <>
                     <IconBtn

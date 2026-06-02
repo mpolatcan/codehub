@@ -56,6 +56,10 @@ export interface SessionActivity {
   bytes: number;
   cli: string | null;
   alias: string | null;
+  // Human workspace title, set at create for the "[<workspace>] <pane>" OS
+  // notification. The frontend already knows the workspace via sessionMeta, so this
+  // field exists only to keep the type in sync with the backend snapshot.
+  workspace: string | null;
   claudeId: string | null;
   // Codex conversation/rollout uuid (notify thread-id), the per-session key for
   // codexSessionUsage. Codex's analog of claudeId; null until the first turn-finish.
@@ -78,6 +82,18 @@ export interface SessionActivity {
   outcomeMsAgo: number | null;
   // True once any agent hook has fired: trust sessionStatus over byte-flow state.
   seenHooks: boolean;
+  // Recent tool interactions of the CURRENT turn (oldest→newest), for the
+  // Dynamic Island output block. Each is captured TRUNCATED in-container (never
+  // full output). Empty for hook-less CLIs or before any tool ran this turn.
+  recentTools: ToolLine[];
+}
+
+// One captured tool interaction (PreToolUse name+arg, PostToolUse result). All
+// fields TRUNCATED in-container — a glance summary, not a transcript.
+export interface ToolLine {
+  tool: string;
+  arg: string | null;
+  result: string | null;
 }
 
 // Tier-1 reads. docker_info backs the empty-state daemon pill;
@@ -165,17 +181,6 @@ export interface PromptTemplate {
   cli: string | null;
 }
 
-// Companion avatar preferences, persisted to disk via AppSettings.companion.
-export interface CompanionPrefs {
-  show: boolean;
-  hideWhenFocused: boolean;
-  clickThrough: boolean;
-  snapToEdges: boolean;
-  bubbleOnHover: boolean;
-  character: string;
-  size: string;
-}
-
 export interface AppSettings {
   // Appearance
   terminalFontSize: number;
@@ -201,8 +206,8 @@ export interface AppSettings {
   notifyAwaitInput: boolean;
   notifyTurnFinish: boolean;
   playSound: boolean;
-  // Ambient surface (macOS Dynamic Island / companion window). Default on.
-  showCompanion: boolean;
+  // macOS Dynamic Island (notch announcement window). Default on; macOS-only.
+  showIsland: boolean;
   // Container sizing
   defaultSizing: ContainerSizing;
   // Agent behaviour
@@ -221,8 +226,6 @@ export interface AppSettings {
   providers: ModelProvider[];
   // Prompt templates
   promptTemplates: PromptTemplate[];
-  // Companion avatar preferences
-  companion: CompanionPrefs;
 }
 
 // A user-saved workspace shown on the Welcome launcher (config::SavedWorkspace).
@@ -963,6 +966,9 @@ export const ipc = {
     // subdir) the agent's pane starts in. Absent → /workspace.
     cwd?: string,
     taskDescription?: string,
+    // Human workspace title, for the "[<workspace>] <pane>" OS notification.
+    // Distinct from `workspace` (the container routing key).
+    workspaceLabel?: string,
   ) =>
     invoke<void>("create_session", {
       name,
@@ -976,6 +982,7 @@ export const ipc = {
       workspaceDir,
       cwd,
       taskDescription,
+      workspaceLabel,
     }),
   killSession: (name: string, workspace?: string) =>
     invoke<void>("kill_session", { name, workspace }),
@@ -989,11 +996,16 @@ export const ipc = {
   ptyResize: (paneId: string, cols: number, rows: number) =>
     invoke<void>("pty_resize", { paneId, cols, rows }),
   detachSession: (paneId: string) => invoke<void>("detach_session", { paneId }),
-  // Always-on-top companion window (P5). open/close the floating monitor;
-  // focusSessionFromCompanion raises the main window + emits codehub://focus-session.
-  // No-ops over the dev bridge — a second OS window only exists under Tauri.
-  openCompanion: () => invoke<void>("open_companion"),
-  closeCompanion: () => invoke<void>("close_companion"),
+  // macOS Dynamic Island — a transparent webview window at the notch (P5,
+  // macOS-only). open/close is the master enable (build/destroy the hidden
+  // window); present/dismiss announce + hide it; resizeIsland matches the window
+  // to the React card; focusSessionFromCompanion raises the main window + emits
+  // codehub://focus-session. All no-op off macOS / over the dev bridge.
+  openIsland: () => invoke<void>("open_island"),
+  closeIsland: () => invoke<void>("close_island"),
+  islandPresent: () => invoke<void>("island_present"),
+  islandDismiss: () => invoke<void>("island_dismiss"),
+  resizeIsland: (width: number, height: number) => invoke<void>("resize_island", { width, height }),
   focusSessionFromCompanion: (name: string) =>
     invoke<void>("focus_session_from_companion", { name }),
   // ── Phase-0 completion contract (stubs until the BE track lands) ──────────

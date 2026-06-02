@@ -123,12 +123,12 @@ export function PaneHead({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
-          padding: "7px 12px",
+          gap: "0.5rem",
+          padding: "0.4375rem 0.75rem",
           cursor: draggable ? "grab" : undefined,
         }}
       >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4375rem" }}>
           {/* The status dot IS the color picker: it carries live state
               (pulse/ring) and clicking it recolors the whole pane. On a colored
               bar it shows the contrast ink (not the agent accent) so it never
@@ -155,7 +155,8 @@ export function PaneHead({
           />
           {editing ? (
             <Input
-              className="pane-name-input h-auto w-[12ch]"
+              className="pane-name-input h-auto"
+              style={{ width: "min(12ch, 100%)" }}
               defaultValue={meta.alias}
               maxLength={32}
               autoFocus

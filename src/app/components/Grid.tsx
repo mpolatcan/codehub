@@ -81,19 +81,21 @@ function EmptyGroup({ ws, group }: { ws: Workspace; group: Group }) {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 16,
+        gap: "1rem",
         background: "var(--bg-0)",
         minHeight: 0,
         width: "100%",
-        padding: 32,
+        padding: "2rem",
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <div
+        style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}
+      >
         <div
           style={{
-            width: 48,
-            height: 48,
-            borderRadius: 12,
+            width: "3rem",
+            height: "3rem",
+            borderRadius: "0.75rem",
             border: "1.5px dashed var(--bd)",
             display: "flex",
             alignItems: "center",
@@ -103,8 +105,15 @@ function EmptyGroup({ ws, group }: { ws: Workspace; group: Group }) {
         >
           {Ico.plus}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: group.color }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4375rem" }}>
+          <span
+            style={{
+              width: "0.5rem",
+              height: "0.5rem",
+              borderRadius: "50%",
+              background: group.color,
+            }}
+          />
           <span style={{ fontSize: "var(--fs-14)", color: "var(--fg-0)", fontWeight: 500 }}>
             Empty group
           </span>
@@ -114,30 +123,45 @@ function EmptyGroup({ ws, group }: { ws: Workspace; group: Group }) {
             fontSize: "var(--fs-12)",
             color: "var(--fg-2)",
             textAlign: "center",
-            maxWidth: 384,
+            maxWidth: "min(24rem, 100%)",
           }}
         >
           Add an agent to {group.name}. Right-click anywhere to see all options.
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "center" }}>
         <Button size="sm" onClick={() => spawn("claude")}>
           <span
-            style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--a-claude)" }}
+            style={{
+              width: "0.5rem",
+              height: "0.5rem",
+              borderRadius: "50%",
+              background: "var(--a-claude)",
+            }}
           />
           Claude
           <span className="kbd">⌘1</span>
         </Button>
         <Button size="sm" onClick={() => spawn("codex")}>
           <span
-            style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--a-codex)" }}
+            style={{
+              width: "0.5rem",
+              height: "0.5rem",
+              borderRadius: "50%",
+              background: "var(--a-codex)",
+            }}
           />
           Codex
           <span className="kbd">⌘2</span>
         </Button>
         <Button size="sm" onClick={() => spawn("antigravity")}>
           <span
-            style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--a-antigravity)" }}
+            style={{
+              width: "0.5rem",
+              height: "0.5rem",
+              borderRadius: "50%",
+              background: "var(--a-antigravity)",
+            }}
           />
           Antigravity
           <span className="kbd">⌘3</span>
@@ -208,8 +232,8 @@ function ConfiguringLeaf({ id, group }: { id: string; group: Group }) {
           flex: "0 0 auto",
           display: "flex",
           alignItems: "center",
-          gap: 8,
-          padding: "7px 12px",
+          gap: "0.5rem",
+          padding: "0.4375rem 0.75rem",
           // No fill, no divider — the dashed frame is the only boundary, so the
           // title reads as inside one complete box (not a separate title bar).
           background: "transparent",
@@ -221,8 +245,8 @@ function ConfiguringLeaf({ id, group }: { id: string; group: Group }) {
         <span
           aria-hidden
           style={{
-            width: 12,
-            height: 12,
+            width: "0.75rem",
+            height: "0.75rem",
             flexShrink: 0,
             borderRadius: "50%",
             background: `var(--a-${agent})`,
@@ -422,7 +446,7 @@ function DropQuadrants({ active }: { active: DropZone | null }) {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      gap: 5,
+      gap: "0.3125rem",
       fontFamily: "var(--mono)",
       fontSize: "var(--fs-11)",
       color: "var(--pri)",
@@ -456,15 +480,15 @@ function DropQuadrants({ active }: { active: DropZone | null }) {
           transform: "translate(-50%, -50%)",
           background: "var(--bg-2)",
           border: "1.5px solid var(--pri)",
-          borderRadius: 8,
-          padding: "9px 13px",
+          borderRadius: "0.5rem",
+          padding: "0.5625rem 0.8125rem",
           display: "flex",
           alignItems: "center",
-          gap: 7,
+          gap: "0.4375rem",
           fontSize: "var(--fs-13)",
           color: active === "center" ? "var(--fg-0)" : "var(--fg-2)",
           opacity: active === "center" ? 1 : 0.6,
-          boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
+          boxShadow: "0 0.375rem 1.25rem rgba(0,0,0,0.4)",
           pointerEvents: "none",
         }}
       >
@@ -573,7 +597,8 @@ function FocusLayout({ group, leaves }: { group: Group; leaves: string[] }) {
       </div>
       <div
         style={{
-          width: 208,
+          width: "clamp(9.5rem, 18vw, 13rem)",
+          maxWidth: "35%",
           flexShrink: 0,
           background: "var(--bg-1)",
           display: "flex",
@@ -581,14 +606,14 @@ function FocusLayout({ group, leaves }: { group: Group; leaves: string[] }) {
           borderLeft: "1px solid var(--bd-soft)",
         }}
       >
-        <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--bd-soft)" }}>
+        <div style={{ padding: "0.625rem 0.75rem", borderBottom: "1px solid var(--bd-soft)" }}>
           <span className="lbl">Minimized · {others.length}</span>
         </div>
         {others.map((s) => (
           <MiniPane key={s} session={s} index={leaves.indexOf(s)} onClick={() => focusSession(s)} />
         ))}
         <div style={{ flex: 1 }} />
-        <div style={{ padding: "8px 12px", borderTop: "1px solid var(--bd-soft)" }}>
+        <div style={{ padding: "0.5rem 0.75rem", borderTop: "1px solid var(--bd-soft)" }}>
           <button
             type="button"
             onClick={() => setFocusMode(false)}
@@ -597,9 +622,9 @@ function FocusLayout({ group, leaves }: { group: Group; leaves: string[] }) {
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 6,
-              padding: "6px 10px",
-              borderRadius: 6,
+              gap: "0.375rem",
+              padding: "0.375rem 0.625rem",
+              borderRadius: "0.375rem",
               border: "1px solid var(--bd-soft)",
               background: "var(--bg-2)",
               color: "var(--fg-1)",
@@ -636,11 +661,11 @@ function MiniPane({
       onClick={onClick}
       style={{
         textAlign: "left",
-        padding: "8px 12px",
+        padding: "0.5rem 0.75rem",
         borderBottom: "1px solid var(--bd-soft)",
         display: "flex",
         flexDirection: "column",
-        gap: 4,
+        gap: "0.25rem",
         cursor: "pointer",
         background: "transparent",
         border: "none",
@@ -650,16 +675,16 @@ function MiniPane({
         width: "100%",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.4375rem" }}>
         <span
           className="mono"
           style={{
             fontSize: "var(--fs-10)",
             color: "var(--fg-3)",
             background: "var(--bg-3)",
-            padding: "0 4px",
-            borderRadius: 3,
-            minWidth: 14,
+            padding: "0 0.25rem",
+            borderRadius: "0.1875rem",
+            minWidth: "0.875rem",
             textAlign: "center",
           }}
         >

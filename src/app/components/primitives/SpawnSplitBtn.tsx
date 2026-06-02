@@ -121,25 +121,26 @@ function SpawnPlacementMenu({
     <div
       style={{
         position: "absolute",
-        bottom: "calc(100% + 7px)",
+        bottom: "calc(100% + 0.4375rem)",
         right: 0,
-        minWidth: 240,
+        minWidth: "min(15rem, calc(100vw - 1rem))",
+        maxWidth: "calc(100vw - 1rem)",
         zIndex: 30,
         background: "var(--bg-2)",
         border: "1px solid var(--bd)",
-        borderRadius: 6,
-        boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
-        padding: 5,
+        borderRadius: "0.375rem",
+        boxShadow: "0 0.5rem 1.5rem rgba(0,0,0,0.45)",
+        padding: "0.3125rem",
         fontSize: "var(--fs-13)",
         color: "var(--fg-1)",
       }}
     >
       <div
         style={{
-          padding: "4px 8px",
+          padding: "0.25rem 0.5rem",
           display: "flex",
           borderBottom: "1px solid var(--bd-soft)",
-          marginBottom: 4,
+          marginBottom: "0.25rem",
         }}
       >
         <span className="lbl" style={{ fontSize: "var(--fs-10)" }}>
@@ -163,12 +164,12 @@ function SpawnPlacementMenu({
       {groupFull && (
         <div
           className="mono"
-          style={{ padding: "5px 8px", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
+          style={{ padding: "0.3125rem 0.5rem", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}
         >
           Active group is full ({MAX_GROUP_PANES}/{MAX_GROUP_PANES}).
         </div>
       )}
-      <div style={{ height: 1, background: "var(--bd-soft)", margin: "4px 0" }} />
+      <div style={{ height: 1, background: "var(--bd-soft)", margin: "0.25rem 0" }} />
       <SpawnMenuRow
         icon={Ico.grid}
         label="In new group"
@@ -200,7 +201,9 @@ function SpawnMenuRow({
       aria-disabled={disabled || undefined}
       onClick={disabled ? undefined : onClick}
     >
-      <span style={{ display: "inline-flex", color: "var(--fg-2)", width: 14 }}>{icon}</span>
+      <span style={{ display: "inline-flex", color: "var(--fg-2)", width: "0.875rem" }}>
+        {icon}
+      </span>
       <span style={{ flex: 1 }}>{label}</span>
       <span className="kbd">{kbd}</span>
     </div>

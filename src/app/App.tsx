@@ -23,7 +23,6 @@ import { useContainerStatsPoll } from "./hooks/useContainerStatsPoll";
 import { useGitStatusPoll } from "./hooks/useGitStatusPoll";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { listen } from "./lib/bridge";
-import { ipc } from "./lib/ipc";
 import { useOverlay } from "./lib/overlay";
 import { activeWorkspace, initLifecycle, useStore } from "./lib/store";
 import { Dashboard } from "./screens/Dashboard";
@@ -52,14 +51,10 @@ export function App() {
     void initLifecycle();
   }, []);
 
-  // The always-on-top companion (its own window / the macOS native island)
-  // reaches the app through two backend events:
-  //   - codehub://focus-session → raise this window + focus that session
-  //   - codehub://island-approve / codehub://island-deny → the native island's
-  //     inline ✓/✕ on an awaiting row relays the tmux session name here; we call
-  //     respond_prompt (the island can't invoke a Tauri command from an AppKit
-  //     click). The in-app toasts stay notify-only — this affordance is the
-  //     island's alone. Subscribes exactly once.
+  // The macOS Dynamic Island's "Jump" action raises this window + focuses the
+  // session: `focus_session_from_companion` (Rust) emits codehub://focus-session
+  // with the tmux session name. (Allow/Deny are handled in the island's own
+  // React route via respond_prompt — no backend relay needed.) Subscribes once.
   useEffect(() => {
     const uns: Array<() => void> = [];
     void listen<string>("codehub://focus-session", (e) => {
@@ -67,15 +62,6 @@ export function App() {
       s.focusSession(e.payload);
       s.setView("hub");
     }).then((u) => uns.push(u));
-    const respondFromIsland = (allow: boolean) => (e: { payload: string }) => {
-      ipc.respondPrompt(e.payload, allow).catch((err) => {
-        console.warn(`island-${allow ? "approve" : "deny"}: respond_prompt failed`, err);
-      });
-    };
-    void listen<string>("codehub://island-approve", respondFromIsland(true)).then((u) =>
-      uns.push(u),
-    );
-    void listen<string>("codehub://island-deny", respondFromIsland(false)).then((u) => uns.push(u));
     return () => {
       for (const un of uns) un();
     };

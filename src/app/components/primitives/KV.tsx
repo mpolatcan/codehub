@@ -22,8 +22,8 @@ export function KV({ label, value, mono = false, style }: KVProps) {
         display: "flex",
         alignItems: "baseline",
         justifyContent: "space-between",
-        gap: 12,
-        padding: "4px 0",
+        gap: "0.75rem",
+        padding: "0.25rem 0",
         ...style,
       }}
     >

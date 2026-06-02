@@ -21,7 +21,7 @@ export function GroupsBar({ ws }: { ws: Workspace }) {
   return (
     <div
       style={{
-        height: 30,
+        height: "1.875rem",
         flexShrink: 0,
         display: "flex",
         alignItems: "stretch",
@@ -29,7 +29,7 @@ export function GroupsBar({ ws }: { ws: Workspace }) {
         background: "var(--bg-1)",
         // Recessed into the workspace bar above — a subtle "carved in" cue
         // (no window-spanning colored frame).
-        boxShadow: "inset 0 4px 6px -4px rgba(0,0,0,0.55)",
+        boxShadow: "inset 0 0.25rem 0.375rem -0.25rem rgba(0,0,0,0.55)",
       }}
     >
       {groups.map((g) => (
@@ -45,7 +45,7 @@ export function GroupsBar({ ws }: { ws: Workspace }) {
         title="Add group"
         onClick={() => addGroup(ws.id)}
         size={22}
-        style={{ alignSelf: "center", marginLeft: 6 }}
+        style={{ alignSelf: "center", marginLeft: "0.375rem" }}
       >
         {Ico.plus}
       </IconBtn>
@@ -57,7 +57,7 @@ export function GroupsBar({ ws }: { ws: Workspace }) {
             alignSelf: "center",
             fontSize: "var(--fs-10)",
             color: "var(--fg-3)",
-            padding: "0 10px",
+            padding: "0 0.625rem",
           }}
         >
           {groups.length} groups
@@ -105,8 +105,8 @@ function GroupTab({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 9,
-        padding: "0 8px",
+        gap: "0.5625rem",
+        padding: "0 0.5rem",
         height: "100%",
         borderRight: "1px solid var(--bd-soft)",
         ...(active ? { background: "var(--bg-2)", boxShadow: `inset 0 3px 0 ${accent}` } : {}),
@@ -143,13 +143,13 @@ function GroupTab({
             }
           }}
           style={{
-            width: 90,
+            width: "5.625rem",
             background: "var(--bg-0)",
             border: "1px solid var(--bd)",
-            borderRadius: 4,
+            borderRadius: "0.25rem",
             color: "var(--fg-0)",
             font: "inherit",
-            padding: "1px 4px",
+            padding: "0.0625rem 0.25rem",
           }}
         />
       ) : (

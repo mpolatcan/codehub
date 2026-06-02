@@ -15,9 +15,10 @@ use crate::lifecycle::{
 use bollard::container::ListContainersOptions;
 use bollard::Docker;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Docker label keys that mark a container as a CodeHub-managed per-workspace
 /// container and record its original workspace key. Written at create-time in
@@ -329,6 +330,65 @@ impl LifecycleManager {
     /// when the container is already gone.
     pub async fn remove_workspace(&self, key: &str) -> Result<(), LifecycleError> {
         self.workspace_container(key).remove().await
+    }
+}
+
+/// Periodically drop `ActivityTracker` entries whose session no longer has a
+/// live tmux session in any running container. Closed panes and replayed event
+/// files otherwise linger forever in the `session_activity` feed (the count bug
+/// that read "17 idle"); the Dynamic-Island LIST would render each ghost as a
+/// phantom row. Self-healing: it also clears ghosts already present at launch.
+///
+/// Safety: a real daemon error (`list_workspace_containers`) skips the whole
+/// cycle so a transient outage can't reap live agents; a session must be MISSING
+/// for two consecutive cycles before removal so a one-off tmux hiccup is
+/// tolerated. An empty container list legitimately means zero live sessions.
+/// Tauri-only — spawned in `setup` on the Tauri runtime (CLAUDE.md spawner rule).
+pub async fn prune_stale_activity_loop(
+    manager: Arc<LifecycleManager>,
+    activity: Arc<crate::activity::ActivityTracker>,
+) {
+    const PRUNE_AFTER_MISSES: u32 = 2;
+    let mut misses: HashMap<String, u32> = HashMap::new();
+    loop {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        let workspaces = match manager.list_workspace_containers().await {
+            Ok(w) => w,
+            Err(_) => continue, // daemon error → don't reap on a transient outage
+        };
+        let mut live: HashSet<String> = HashSet::new();
+        for wc in workspaces {
+            if wc.status.state != ContainerState::Running {
+                continue;
+            }
+            // A racing not-running container errors here; its sessions simply
+            // won't join `live` this cycle (the miss counter guards the prune).
+            if let Ok(sessions) = manager
+                .workspace_container(&wc.key)
+                .docker_client()
+                .list_tmux_sessions()
+                .await
+            {
+                live.extend(sessions.into_iter().map(|s| s.name));
+            }
+        }
+
+        for session in activity.sessions() {
+            if live.contains(&session) {
+                misses.remove(&session);
+                continue;
+            }
+            let n = misses.entry(session.clone()).or_insert(0);
+            *n += 1;
+            if *n >= PRUNE_AFTER_MISSES {
+                activity.remove(&session);
+                misses.remove(&session);
+            }
+        }
+        // Forget counters for sessions no longer tracked (removed or recovered).
+        let tracked: HashSet<String> = activity.sessions().into_iter().collect();
+        misses.retain(|k, _| tracked.contains(k));
     }
 }
 

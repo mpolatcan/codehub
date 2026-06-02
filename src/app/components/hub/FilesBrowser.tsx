@@ -4,7 +4,7 @@ import { FileGlyph, FolderGlyph } from "../../components/primitives/FileGlyph";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Tip } from "../../components/primitives/Tip";
 import { Ico } from "../../components/primitives/icons";
-import { useResizableDock } from "../../hooks/useResizableDock";
+import { rootPx, useResizableDock } from "../../hooks/useResizableDock";
 import { EASE } from "../../hooks/useSlideIn";
 import { fmtBytes, joinPath as join, orderEntries as order } from "../../lib/fs";
 import { type FileEntry, type GitStatus, type MountInfo, ipc } from "../../lib/ipc";
@@ -23,8 +23,8 @@ import { ResizeHandle } from "./ResizeHandle";
 // pre-expanded; the tree resets when the active container changes.
 
 const ROOT = "/workspace";
-const WIDTH = 256;
-const INDENT = 14;
+const WIDTH = 16; // rem (scales with the fluid root)
+const INDENT = 0.875; // rem per depth level (tree indent)
 // Silent re-poll of the currently-expanded dirs so externally-created files (an
 // agent writing, a background clone landing) appear without a manual app reload.
 const FILES_POLL_MS = 4000;
@@ -95,9 +95,9 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
   const setFilePreview = useOverlay((s) => s.setFilePreview);
   const selected = useOverlay((s) => s.filePreview);
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
-  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.files.w", WIDTH, {
-    min: 200,
-    max: 520,
+  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.files.wr2", WIDTH, {
+    min: 10,
+    max: () => Math.max(10, Math.min(window.innerWidth * 0.42, 32.5 * rootPx()) / rootPx()),
     edge: "right",
   });
 
@@ -206,16 +206,16 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
   return (
     <motion.aside
       ref={ref}
-      initial={{ width: 0 }}
-      animate={{ width: size }}
-      exit={{ width: 0 }}
+      initial={{ width: "0rem" }}
+      animate={{ width: `${size}rem` }}
+      exit={{ width: "0rem" }}
       transition={{ duration: dragging ? 0 : 0.28, ease: EASE }}
       style={{ flexShrink: 0, overflow: "hidden", position: "relative" }}
     >
-      {/* fixed-width inner so content doesn't reflow while the outer width animates */}
+      {/* sized inner so content doesn't reflow while the outer width animates */}
       <div
         style={{
-          width: size,
+          width: `${size}rem`,
           height: "100%",
           background: "var(--bg-1)",
           borderRight: "1px solid var(--bd-soft)",
@@ -227,11 +227,11 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
       >
         <div
           style={{
-            padding: "8px 10px",
+            padding: "0.5rem 0.625rem",
             borderBottom: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 7,
+            gap: "0.4375rem",
           }}
         >
           <span style={{ color: "var(--idle)", display: "inline-flex" }}>{Ico.files}</span>
@@ -247,9 +247,9 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
           </IconBtn>
         </div>
 
-        <div style={{ padding: "8px 10px 6px" }}>
+        <div style={{ padding: "0.5rem 0.625rem 0.375rem" }}>
           <Input
-            className="mono h-auto rounded-[5px] px-2 py-1 text-[12px]"
+            className="mono h-auto rounded-[0.3125rem] px-2 py-1 text-[0.75rem]"
             placeholder="filter by name…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -257,7 +257,10 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
           />
         </div>
 
-        <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "2px 6px 8px" }}>
+        <div
+          className="scroll"
+          style={{ flex: 1, overflow: "auto", padding: "0.125rem 0.375rem 0.5rem" }}
+        >
           {root === undefined || root === "loading" ? (
             <Note>Reading /workspace…</Note>
           ) : root === "error" ? (
@@ -273,15 +276,15 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
 
         <div
           style={{
-            padding: "7px 10px",
+            padding: "0.4375rem 0.625rem",
             borderTop: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 7,
+            gap: "0.4375rem",
             fontFamily: "var(--mono)",
             fontSize: "var(--fs-10)",
             color: "var(--fg-3)",
-            minHeight: 28,
+            minHeight: "1.75rem",
           }}
         >
           {tree.query && <span style={{ color: "var(--wait)" }}>filtered</span>}
@@ -299,7 +302,7 @@ export function FilesBrowser({ onClose }: { onClose: () => void }) {
                 : ROOT
             }
           >
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
               {mounts.length > 0 && (
                 <span
                   style={{
@@ -362,11 +365,11 @@ function TreeNode({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 6,
+            gap: "0.375rem",
             width: "100%",
-            padding: "3px 6px",
-            paddingLeft: depth * INDENT + 6,
-            borderRadius: 4,
+            padding: "0.1875rem 0.375rem",
+            paddingLeft: `${depth * INDENT + 0.375}rem`,
+            borderRadius: "0.25rem",
             border: "none",
             background: active ? "var(--bg-2)" : "transparent",
             cursor: "pointer",
@@ -379,7 +382,7 @@ function TreeNode({
           <span
             style={{
               flexShrink: 0,
-              width: 12,
+              width: "0.75rem",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
@@ -438,7 +441,7 @@ function TreeNode({
                 className="tnum"
                 style={{
                   flexShrink: 0,
-                  width: 12,
+                  width: "0.75rem",
                   textAlign: "center",
                   fontSize: "var(--fs-11)",
                   fontWeight: 600,
@@ -455,8 +458,8 @@ function TreeNode({
                 aria-hidden="true"
                 style={{
                   flexShrink: 0,
-                  width: 6,
-                  height: 6,
+                  width: "0.375rem",
+                  height: "0.375rem",
                   borderRadius: "50%",
                   background: "var(--wait)",
                   opacity: 0.9,
@@ -521,7 +524,7 @@ function Leaf({ depth, children }: { depth: number; children: ReactNode }) {
     <div
       className="mono"
       style={{
-        padding: `2px 6px 2px ${depth * INDENT + 24}px`,
+        padding: `0.125rem 0.375rem 0.125rem ${depth * INDENT + 1.5}rem`,
         fontSize: "var(--fs-11)",
         color: "var(--fg-3)",
       }}
@@ -536,7 +539,7 @@ function Note({ children }: { children: ReactNode }) {
     <div
       className="mono"
       style={{
-        padding: "20px 14px",
+        padding: "1.25rem 0.875rem",
         fontSize: "var(--fs-11)",
         color: "var(--fg-3)",
         lineHeight: 1.5,

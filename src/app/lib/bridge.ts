@@ -331,6 +331,7 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
         workspace: args.workspace,
         workspace_dir: args.workspaceDir,
         cwd: args.cwd,
+        workspace_label: args.workspaceLabel,
       }) as Promise<T>;
     case "kill_session": {
       const ws = args.workspace ? `?workspace=${encodeURIComponent(String(args.workspace))}` : "";
@@ -360,12 +361,15 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       }) as Promise<T>;
     case "detach_session":
       return jsend("DELETE", `/panes/${id}`) as Promise<T>;
-    // The companion is a second always-on-top OS window — it only exists under
-    // Tauri. Over the browser dev bridge these degrade to honest no-ops so the
-    // trigger + companion route still render for inspection without a window
-    // manager.
-    case "open_companion":
-    case "close_companion":
+    // The Dynamic Island is a second transparent OS window at the notch — it
+    // only exists under Tauri on macOS. Over the browser dev bridge these
+    // window ops degrade to honest no-ops so the `#/island` route still renders
+    // for inspection without a window manager.
+    case "open_island":
+    case "close_island":
+    case "island_present":
+    case "island_dismiss":
+    case "resize_island":
     case "focus_session_from_companion":
       return undefined as T;
     default:

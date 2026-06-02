@@ -25,12 +25,12 @@ export function WorkspaceBar() {
   return (
     <div
       style={{
-        height: 26,
+        height: "1.625rem",
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
-        gap: 14,
-        padding: "0 14px",
+        gap: "0.875rem",
+        padding: "0 0.875rem",
         borderTop: "1px solid var(--bd-soft)",
         background: "var(--bg-1)",
         fontFamily: "var(--mono)",
@@ -39,7 +39,7 @@ export function WorkspaceBar() {
       }}
     >
       <Tip text={git?.isRepo ? `/workspace · ${git.branch ?? "detached"}` : "/workspace"}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3125rem" }}>
           {Ico.branch}
           {git?.isRepo ? (
             <>

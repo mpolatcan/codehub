@@ -828,6 +828,9 @@ export const useStore = create<CodeHubState>((set, get) => {
           account,
           containerKey,
           workspaceMeta?.dir,
+          undefined,
+          undefined,
+          label,
         );
         await registry.spawnPane(name, containerKey);
         prefillPrompt(name, initialPrompt);
@@ -888,6 +891,8 @@ export const useStore = create<CodeHubState>((set, get) => {
           containerKey,
           undefined,
           cwd,
+          undefined,
+          workspaceTitle(ws),
         );
         await registry.spawnPane(name, containerKey);
         prefillPrompt(name, initialPrompt);
@@ -1204,6 +1209,8 @@ export const useStore = create<CodeHubState>((set, get) => {
           ws.containerKey,
           draft.workspaceDir,
           draft.cwd,
+          undefined,
+          workspaceTitle(ws),
         );
         await registry.spawnPane(name, ws.containerKey);
         prefillPrompt(name, initialPrompt);
@@ -1520,6 +1527,8 @@ export const useStore = create<CodeHubState>((set, get) => {
         containerKey,
         undefined,
         cwd,
+        undefined,
+        workspaceTitle(ws),
       );
       await registry.spawnPane(name, containerKey);
       prefillPrompt(name, initialPrompt);
@@ -1554,10 +1563,6 @@ export const useStore = create<CodeHubState>((set, get) => {
         set({ config });
         registry.setFontSize(config.terminalFontSize);
         applyDensity(config.density);
-        if (config.companion) {
-          const { useCompanionPrefs } = await import("./overlay");
-          useCompanionPrefs.getState().hydrate(config.companion);
-        }
       } catch (e) {
         console.warn("get_config failed", e);
       }

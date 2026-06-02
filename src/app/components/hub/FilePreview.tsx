@@ -4,21 +4,21 @@ import { useEffect, useMemo, useState } from "react";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Tip } from "../../components/primitives/Tip";
 import { Ico } from "../../components/primitives/icons";
-import { useResizableDock } from "../../hooks/useResizableDock";
+import { rootPx, useResizableDock } from "../../hooks/useResizableDock";
 import { EASE } from "../../hooks/useSlideIn";
 import { highlight, langFromExt } from "../../lib/highlight";
 import { ipc } from "../../lib/ipc";
 import { activeWorkspace, useStore } from "../../lib/store";
 import { ResizeHandle } from "./ResizeHandle";
 
-const WIDTH = 360;
+const WIDTH = 22.5; // rem (scales with the fluid root)
 
 export function FilePreview({ path, onClose }: { path: string; onClose: () => void }) {
   const [body, setBody] = useState<string | null>(null);
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
-  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.filePreview.w", WIDTH, {
-    min: 300,
-    max: 700,
+  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.filePreview.wr2", WIDTH, {
+    min: 12,
+    max: () => Math.max(12, Math.min(window.innerWidth * 0.5, 43.75 * rootPx()) / rootPx()),
     edge: "left",
   });
 
@@ -44,16 +44,16 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
   return (
     <motion.aside
       ref={ref}
-      initial={{ width: 0 }}
-      animate={{ width: size }}
-      exit={{ width: 0 }}
+      initial={{ width: "0rem" }}
+      animate={{ width: `${size}rem` }}
+      exit={{ width: "0rem" }}
       transition={{ duration: dragging ? 0 : 0.28, ease: EASE }}
       style={{ flexShrink: 0, overflow: "hidden", position: "relative" }}
     >
-      {/* fixed-width inner so content doesn't reflow while the outer width animates */}
+      {/* sized inner so content doesn't reflow while the outer width animates */}
       <div
         style={{
-          width: size,
+          width: `${size}rem`,
           height: "100%",
           background: "var(--bg-1)",
           borderLeft: "1px solid var(--bd-soft)",
@@ -65,11 +65,11 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
       >
         <div
           style={{
-            padding: "8px 10px",
+            padding: "0.5rem 0.625rem",
             borderBottom: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 7,
+            gap: "0.4375rem",
           }}
         >
           <span style={{ color: "var(--idle)", display: "inline-flex" }}>{Ico.diff}</span>
@@ -98,8 +98,8 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
               style={{
                 fontSize: "var(--fs-10)",
                 color: "var(--fg-3)",
-                padding: "1px 5px",
-                borderRadius: 3,
+                padding: "0.0625rem 0.3125rem",
+                borderRadius: "0.1875rem",
                 background: "var(--bg-2)",
                 flexShrink: 0,
               }}
@@ -136,7 +136,7 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
               <pre
                 style={{
                   margin: 0,
-                  padding: "10px 12px 10px 0",
+                  padding: "0.625rem 0.75rem 0.625rem 0",
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                   color: "var(--fg-1)",
@@ -154,23 +154,23 @@ export function FilePreview({ path, onClose }: { path: string; onClose: () => vo
 
         <div
           style={{
-            padding: "7px 10px",
+            padding: "0.4375rem 0.625rem",
             borderTop: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 7,
+            gap: "0.4375rem",
             fontFamily: "var(--mono)",
             fontSize: "var(--fs-10)",
             color: "var(--fg-3)",
-            minHeight: 28,
+            minHeight: "1.75rem",
           }}
         >
           {body !== null && lineCount > 0 && <span>{lineCount} lines</span>}
           {lang && (
             <span
               style={{
-                padding: "1px 5px",
-                borderRadius: 3,
+                padding: "0.0625rem 0.3125rem",
+                borderRadius: "0.1875rem",
                 background: "var(--bg-2)",
               }}
             >
@@ -199,7 +199,7 @@ function LineNumbers({ count }: { count: number }) {
       style={{
         width,
         flexShrink: 0,
-        padding: "10px 8px 10px 10px",
+        padding: "0.625rem 0.5rem 0.625rem 0.625rem",
         textAlign: "right",
         color: "var(--fg-4, var(--fg-3))",
         opacity: 0.4,
@@ -222,7 +222,7 @@ function Note({ children }: { children: ReactNode }) {
     <div
       className="mono"
       style={{
-        padding: "20px 14px",
+        padding: "1.25rem 0.875rem",
         fontSize: "var(--fs-11)",
         color: "var(--fg-3)",
         lineHeight: 1.5,

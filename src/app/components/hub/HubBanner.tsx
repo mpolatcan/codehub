@@ -37,10 +37,10 @@ export function HubBanner({ tone = "warn", icon, title, message, actions }: HubB
         flexShrink: 0,
         background: `color-mix(in oklab, ${toneColor} 14%, var(--bg-1))`,
         borderBottom: `1px solid color-mix(in oklab, ${toneColor} 35%, var(--bd-soft))`,
-        padding: "8px 16px",
+        padding: "0.5rem 1rem",
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: "0.625rem",
         fontSize: "var(--fs-13)",
       }}
     >

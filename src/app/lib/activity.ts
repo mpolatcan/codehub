@@ -1,6 +1,6 @@
 // Single source of truth for an agent's LIVE status, shared by every surface
-// that paints it (panes, sidebar, status bar, activity rail, companion, and the
-// native macOS island's feed mirror). Before this helper each surface re-derived
+// that paints it (panes, sidebar, status bar, activity rail, and the macOS
+// Dynamic Island announce route). Before this helper each surface re-derived
 // "working" from a different signal — some from the byte-flow `state`, some from
 // the hook-driven `sessionStatus` — so a thinking agent could read "idle" in one
 // place and "working" in another. This centralizes the precedence so they agree.
@@ -13,7 +13,7 @@ import type { SessionActivity } from "./ipc";
 export type LiveStatus = "wait" | "err" | "done" | "live" | "idle";
 
 // How long a finished/failed turn lingers as a transient badge before the row
-// settles to its steady status. Mirrors the companion design's ~6s linger.
+// settles to its steady status. ~6s linger (also the island's announce window).
 export const OUTCOME_LINGER_MS = 6000;
 
 export interface LiveView {

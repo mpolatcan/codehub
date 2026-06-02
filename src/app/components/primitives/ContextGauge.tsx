@@ -12,14 +12,16 @@ export function ContextGauge({ used, max, label = "ctx", width = 110 }: ContextG
   const pct = max > 0 ? Math.min(1, used / max) : 0;
   const color = pct > 0.85 ? "var(--err)" : pct > 0.7 ? "var(--wait)" : "var(--fg-1)";
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 18 }}>
+    <span
+      style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", height: "1.125rem" }}
+    >
       <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
         {label}
       </span>
       <span
         style={{
           width,
-          height: 6,
+          height: "0.375rem",
           borderRadius: 999,
           background: "var(--bg-3)",
           overflow: "hidden",

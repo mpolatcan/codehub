@@ -5,7 +5,7 @@ import { PaneMount } from "../../components/PaneMount";
 import { IconBtn } from "../../components/primitives/IconBtn";
 import { Tip } from "../../components/primitives/Tip";
 import { Ico } from "../../components/primitives/icons";
-import { useResizableDock } from "../../hooks/useResizableDock";
+import { rootPx, useResizableDock } from "../../hooks/useResizableDock";
 import { EASE } from "../../hooks/useSlideIn";
 import { useOverlay } from "../../lib/overlay";
 import { activeWorkspace, useStore } from "../../lib/store";
@@ -41,9 +41,10 @@ export function ShellPanel() {
 
   const running = status?.state === "running";
   const containerKey = ws?.containerKey ?? null;
-  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.shell.h", 224, {
-    min: 120,
-    max: () => Math.min(window.innerHeight * 0.7, 520),
+  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.shell.hr2", 14, {
+    min: 7.5,
+    // viewport-relative cap, in rem (70% of the window, capped, ÷ root font-size)
+    max: () => Math.min(window.innerHeight * 0.7, 520) / rootPx(),
     edge: "top",
   });
 
@@ -172,9 +173,9 @@ export function ShellPanel() {
   return (
     <motion.div
       ref={ref as React.Ref<HTMLDivElement>}
-      initial={{ height: 0 }}
-      animate={{ height: size }}
-      exit={{ height: 0 }}
+      initial={{ height: "0rem" }}
+      animate={{ height: `${size}rem` }}
+      exit={{ height: "0rem" }}
       transition={{ duration: dragging ? 0 : 0.28, ease: EASE }}
       style={{ flexShrink: 0, overflow: "hidden", position: "relative" }}
     >
@@ -182,7 +183,7 @@ export function ShellPanel() {
           open/close tween; a resize drag changes it → PaneMount refits live */}
       <div
         style={{
-          height: size,
+          height: `${size}rem`,
           background: "var(--bg-0)",
           borderTop: "1px solid var(--bd-soft)",
           display: "flex",
@@ -193,14 +194,14 @@ export function ShellPanel() {
         <ResizeHandle edge="top" onMouseDown={beginResize} onDoubleClick={reset} />
         <div
           style={{
-            height: 32,
+            height: "2rem",
             flexShrink: 0,
             background: "var(--bg-1)",
             borderBottom: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 4,
-            padding: "0 8px",
+            gap: "0.25rem",
+            padding: "0 0.5rem",
           }}
         >
           <span style={{ color: "var(--live)", display: "inline-flex", flexShrink: 0 }}>
@@ -221,8 +222,8 @@ export function ShellPanel() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 2,
-              marginLeft: 4,
+              gap: "0.125rem",
+              marginLeft: "0.25rem",
               minWidth: 0,
               flex: 1,
               overflowX: "auto",
@@ -248,7 +249,11 @@ export function ShellPanel() {
             {tabs.length === 0 && !loading ? (
               <span
                 className="mono"
-                style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", padding: "2px 8px" }}
+                style={{
+                  fontSize: "var(--fs-11)",
+                  color: "var(--fg-3)",
+                  padding: "0.125rem 0.5rem",
+                }}
               >
                 workspace shell
               </span>
@@ -256,7 +261,7 @@ export function ShellPanel() {
               <IconBtn
                 title="New shell tab"
                 size={22}
-                style={{ flexShrink: 0, marginLeft: 2 }}
+                style={{ flexShrink: 0, marginLeft: "0.125rem" }}
                 onClick={addTab}
                 disabled={!running || loading}
               >
@@ -334,10 +339,10 @@ function ShellTabBtn({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 3,
-        padding: "0 4px 0 10px",
-        height: 24,
-        borderRadius: 6,
+        gap: "0.1875rem",
+        padding: "0 0.25rem 0 0.625rem",
+        height: "1.5rem",
+        borderRadius: "0.375rem",
         fontFamily: "var(--mono)",
         fontSize: "var(--fs-12)",
         background: dropTarget
@@ -378,7 +383,7 @@ function ShellTabBtn({
             }
             e.stopPropagation();
           }}
-          style={{ width: 76, fontSize: "var(--fs-12)" }}
+          style={{ width: "4.75rem", fontSize: "var(--fs-12)" }}
         />
       ) : (
         <>
@@ -445,7 +450,7 @@ function ShellEmpty({
         justifyContent: "center",
         color: err ? "var(--err)" : "var(--fg-3)",
         fontSize: "var(--fs-12)",
-        padding: 18,
+        padding: "1.125rem",
         textAlign: "center",
       }}
     >

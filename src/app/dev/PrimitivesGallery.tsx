@@ -46,20 +46,20 @@ const SPARK_DATA = [4, 8, 6, 12, 9, 14, 11, 16, 10, 18, 13, 17];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 40 }}>
+    <div style={{ marginBottom: "2.5rem" }}>
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 12,
-          marginBottom: 16,
-          paddingBottom: 8,
+          gap: "0.75rem",
+          marginBottom: "1rem",
+          paddingBottom: "0.5rem",
           borderBottom: "1px solid var(--bd-soft)",
         }}
       >
         <span className="lbl">{title}</span>
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
         {children}
       </div>
     </div>
@@ -68,7 +68,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Row({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
       {children}
     </div>
   );
@@ -76,9 +76,9 @@ function Row({ children }: { children: React.ReactNode }) {
 
 function Cell({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
       {label && <span className="lbl-soft">{label}</span>}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
         {children}
       </div>
     </div>
@@ -108,7 +108,7 @@ export default function PrimitivesGallery() {
         background: "var(--bg-1)",
         color: "var(--fg-0)",
         fontFamily: "var(--mono)",
-        padding: "32px 40px",
+        padding: "2rem 2.5rem",
         fontSize: "var(--fs-13)",
       }}
     >
@@ -118,7 +118,7 @@ export default function PrimitivesGallery() {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: 40,
+          marginBottom: "2.5rem",
         }}
       >
         <div>
@@ -134,7 +134,7 @@ export default function PrimitivesGallery() {
           </h1>
           <p
             style={{
-              margin: "4px 0 0",
+              margin: "0.25rem 0 0",
               fontSize: "var(--fs-12)",
               color: "var(--fg-2)",
               fontFamily: "var(--sans)",
@@ -172,7 +172,7 @@ export default function PrimitivesGallery() {
         <Cell label="all statuses">
           <Row>
             {STATUS_KEYS.map((s) => (
-              <div key={s} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div key={s} style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
                 <StatusDot status={s} />
                 <span className="lbl-soft">{s}</span>
               </div>
@@ -208,9 +208,9 @@ export default function PrimitivesGallery() {
         </Cell>
         {/* Mirrors PaneFoot's exact row so gauge + metric baselines can be checked. */}
         <Cell label="pane footer row">
-          <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <ContextGauge used={10800} max={258400} width={84} />
-            <span className="vr" style={{ height: 14 }} />
+            <span className="vr" style={{ height: "0.875rem" }} />
             <MetricStat label="turn" value="6" />
             <MetricStat label="tok" value="65K" />
           </span>
@@ -356,7 +356,7 @@ export default function PrimitivesGallery() {
         <Cell label="cc brief">
           <div
             style={{
-              width: 460,
+              width: "min(28.75rem, 100%)",
               border: "1px solid var(--bd)",
               borderRadius: "var(--r-3)",
               overflow: "hidden",
@@ -368,7 +368,7 @@ export default function PrimitivesGallery() {
         <Cell label="codex brief">
           <div
             style={{
-              width: 460,
+              width: "min(28.75rem, 100%)",
               border: "1px solid var(--bd)",
               borderRadius: "var(--r-3)",
               overflow: "hidden",
@@ -380,7 +380,7 @@ export default function PrimitivesGallery() {
         <Cell label="cc idle">
           <div
             style={{
-              width: 460,
+              width: "min(28.75rem, 100%)",
               border: "1px solid var(--bd)",
               borderRadius: "var(--r-3)",
               overflow: "hidden",
@@ -433,7 +433,7 @@ export default function PrimitivesGallery() {
       {/* ── Separator ── */}
       <Section title="Separator">
         <Cell label="horizontal">
-          <div style={{ width: 200 }}>
+          <div style={{ width: "min(12.5rem, 100%)" }}>
             <Separator />
           </div>
         </Cell>
@@ -443,15 +443,15 @@ export default function PrimitivesGallery() {
       <Section title="Chrome: AppShell">
         <div
           style={{
-            width: 700,
-            height: 300,
+            width: "min(43.75rem, 100%)",
+            height: "clamp(15rem, 44vh, 18.75rem)",
             border: "1px solid var(--bd)",
             borderRadius: "var(--r-4)",
             overflow: "hidden",
           }}
         >
           <AppShell title="CodeHub — demo" rail={<SidebarRail />}>
-            <div style={{ padding: 24, color: "var(--fg-1)", fontSize: "var(--fs-12)" }}>
+            <div style={{ padding: "1.5rem", color: "var(--fg-1)", fontSize: "var(--fs-12)" }}>
               Main content area
             </div>
           </AppShell>
@@ -462,7 +462,7 @@ export default function PrimitivesGallery() {
       <Section title="Chrome: Sidebar">
         <div
           style={{
-            height: 400,
+            height: "clamp(18rem, 55vh, 25rem)",
             border: "1px solid var(--bd)",
             borderRadius: "var(--r-4)",
             overflow: "hidden",
@@ -553,7 +553,7 @@ export default function PrimitivesGallery() {
       <Section title="Select — replaces every native <select>">
         <Cell label="default (interactive)">
           <Select value={provider} onValueChange={setProvider}>
-            <SelectTrigger size="sm" className="w-44">
+            <SelectTrigger size="sm" className="w-full max-w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -565,7 +565,7 @@ export default function PrimitivesGallery() {
         </Cell>
         <Cell label="default size + placeholder">
           <Select>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-full max-w-48">
               <SelectValue placeholder="Choose a model…" />
             </SelectTrigger>
             <SelectContent>
@@ -647,7 +647,7 @@ export default function PrimitivesGallery() {
             onChange={setSearch}
             placeholder="Filter workspaces…"
             onClear={() => setSearch("")}
-            style={{ width: 280 }}
+            style={{ width: "min(17.5rem, 100%)" }}
           />
         </Cell>
         <Cell label="no clear">
@@ -655,7 +655,7 @@ export default function PrimitivesGallery() {
             value=""
             onChange={() => {}}
             placeholder="filter sessions…"
-            style={{ width: 240 }}
+            style={{ width: "min(15rem, 100%)" }}
           />
         </Cell>
       </Section>
@@ -681,14 +681,14 @@ export default function PrimitivesGallery() {
               <div
                 key={t}
                 style={{
-                  width: 60,
-                  height: 40,
+                  width: "3.75rem",
+                  height: "2.5rem",
                   borderRadius: "var(--r-2)",
                   background: `var(${t})`,
                   border: "1px solid var(--bd)",
                   display: "flex",
                   alignItems: "flex-end",
-                  padding: "2px 4px",
+                  padding: "0.125rem 0.25rem",
                 }}
               >
                 <span
@@ -709,8 +709,8 @@ export default function PrimitivesGallery() {
             <div
               key={t}
               style={{
-                width: 40,
-                height: 40,
+                width: "2.5rem",
+                height: "2.5rem",
                 borderRadius: "var(--r-2)",
                 background: `var(${t})`,
               }}

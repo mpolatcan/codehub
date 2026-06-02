@@ -57,13 +57,14 @@ export function PaneContextMenu({
         position: "fixed",
         left,
         top,
-        minWidth: 216,
+        minWidth: "min(13.5rem, calc(100vw - 1rem))",
+        maxWidth: "calc(100vw - 1rem)",
         zIndex: 60,
         background: "var(--bg-2)",
         border: "1px solid var(--bd)",
-        borderRadius: 6,
-        boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
-        padding: 5,
+        borderRadius: "0.375rem",
+        boxShadow: "0 0.5rem 1.5rem rgba(0,0,0,0.45)",
+        padding: "0.3125rem",
         fontSize: "var(--fs-13)",
         color: "var(--fg-1)",
       }}
@@ -73,7 +74,7 @@ export function PaneContextMenu({
         it.label === "—" ? (
           <div
             key={`sep-${it.kbd ?? Math.random()}`}
-            style={{ height: 1, background: "var(--bd-soft)", margin: "4px 0" }}
+            style={{ height: 1, background: "var(--bd-soft)", margin: "0.25rem 0" }}
           />
         ) : (
           <div
@@ -90,7 +91,9 @@ export function PaneContextMenu({
             }
             style={{ color: it.danger ? "var(--err)" : undefined }}
           >
-            <span style={{ display: "inline-flex", color: "inherit", width: 14, opacity: 0.85 }}>
+            <span
+              style={{ display: "inline-flex", color: "inherit", width: "0.875rem", opacity: 0.85 }}
+            >
               {it.icon ?? Ico.more}
             </span>
             <span style={{ flex: 1 }}>{it.label}</span>

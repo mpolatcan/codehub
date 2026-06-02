@@ -34,11 +34,11 @@ export function SearchInput({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 8,
-        padding: "5px 10px",
+        gap: "0.5rem",
+        padding: "0.3125rem 0.625rem",
         background: "var(--bg-2)",
         border: "1px solid var(--bd-soft)",
-        borderRadius: 8,
+        borderRadius: "0.5rem",
         minWidth: 0,
         ...style,
       }}

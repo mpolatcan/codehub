@@ -68,12 +68,22 @@ Never inline raw hex colors. Use the design tokens from `src/app/tokens.css`:
 
 **One typeface: JetBrains Mono, everywhere** (chrome + terminal). `--sans` and `--mono` (`tokens.css`) and `--font-sans`/`--font-mono`/`--font-pixel` (`theme.css`) all resolve to it. Geist and Silkscreen were dropped — don't reintroduce another family. Terminal panes stay on the self-hosted SemiBold face `"JetBrainsMono Terminal"` (a distinct family name, same typeface) — don't merge the two.
 
-**One size scale — numeric `--fs-*` tokens in `theme.css`** (token name == px value): `--fs-9 --fs-10 --fs-11 --fs-12 --fs-13 --fs-14 --fs-16 --fs-20 --fs-26` (`--fs-base` = `--fs-12`). The old semantic names (`--fs-xs`/`sm`/`md`/`lg`/`xl`/`2xl`/`2xs`/`micro`/`pixel`) are gone — don't reintroduce them.
+**One size scale — `--fs-*` tokens in `theme.css`** (token name == px value AT BASE; the value is **rem** = px ÷ 16): `--fs-9 --fs-10 --fs-11 --fs-12 --fs-13 --fs-14 --fs-16 --fs-20 --fs-26` (`--fs-base` = `--fs-12`). The old semantic names (`--fs-xs`/`sm`/`md`/`lg`/`xl`/`2xl`/`2xs`/`micro`/`pixel`) are gone — don't reintroduce them.
 
-- **Every inline `fontSize` in `*.tsx` is `fontSize: "var(--fs-N)"`** — no raw px, no half-steps. Invariant: `grep -rnE 'fontSize:\s*[0-9]' --include='*.tsx' src/app` must stay empty.
-- **CSS `font-size` in `tokens.css`/`panes.css` uses `var(--fs-N)`** too; `font:` shorthand uses on-scale px (`11px`/`12px`). No half-pixels anywhere.
-- **Tailwind arbitrary sizes** use on-scale px (`text-[11px]`/`text-[12px]`), never half-pixels.
-- **Exempt (stay numbers, NOT tokens):** xterm `Terminal({ fontSize: 13 })` configs — must be a number, not a CSS var (`LoginTerminalDialog.tsx` + `src/terminal.ts`); and proportional glyph sizing in domain primitives — `FileGlyph` (`6.5`/`8.5`, below the 9px floor) and `AccountAvatar` (`size * 0.42`).
+- **Every inline `fontSize` in `*.tsx` is `fontSize: "var(--fs-N)"`** — never a raw px or rem literal. Invariant: `grep -rnE 'fontSize:\s*[0-9]' --include='*.tsx' src/app` must stay empty (the lone exception is the xterm `Terminal({ fontSize: 13 })` configs).
+- **CSS `font-size` in `tokens.css`/`panes.css` uses `var(--fs-N)`**; `font:` shorthand uses the rem step (`0.6875rem`/`0.75rem`), not px.
+- **Tailwind arbitrary sizes** use rem (`text-[0.6875rem]`), never raw px — they must scale with the fluid root.
+- **Exempt (stay numbers, NOT tokens/rem):** xterm `Terminal({ fontSize: 13 })` configs — must be a number, not a CSS var (`LoginTerminalDialog.tsx` + `src/terminal.ts`); and proportional glyph sizing in domain primitives — `FileGlyph` (`6.5`/`8.5`, below the 9px floor) and `AccountAvatar` (`size * 0.42`).
+
+## Responsive units — ALWAYS rem, never fixed px
+
+**Every size/space measure is responsive (rem), so the whole UI scales with the window.** The single knob is the fluid root font-size in `theme.css` (`html { font-size: clamp(13px, 0.3vw + 0.3vh + 9px, 21px) }` — ≈16px identity at the 1440×900 design size). **Both axes drive the scale additively** so widening OR heightening the window visibly enlarges the chrome (a pure `min(vw,vh)` form pinned the root to the height term on normal landscape windows → widening scaled nothing; don't reintroduce it). Every rem is authored against **base 16** (`Npx → (N ÷ 16)rem`), so the look is pixel-identical at the design size and grows/shrinks fluidly otherwise. shadcn `ui/` primitives already use Tailwind rem utilities (`h-9`, `px-3`) → they scale for free; the `IconBtn` primitive renders its box in rem (`size/16`) too.
+
+- **New inline styles use rem strings** for `padding/margin/gap/width/height/min·max/inset/top·left·right·bottom/borderRadius/boxShadow/transform/grid track sizes`. Never a bare number (React implies px) or a `"Npx"` string.
+- **CSS uses rem** for the same. The **only** intentional px left: hairline `1px` borders/rules (sub-pixel rem blurs), `@media` breakpoint widths, the `clamp()` root rule itself, and the xterm exemptions above.
+- **Exempt (deliberate px):** xterm glyph grid (`fontSize: 13` numeric — the terminal is a fixed glyph grid by design; only chrome scales); SVG-geometry primitives (`AgentGlyph`, `Character`, `CompanionAvatar` avatar/orbit coords, `icons`, `Logo`, `Spark` — numbers pair with SVG coords; the `CompanionAvatar` *speech bubble* is layout → rem). **Resizable docks are rem-native:** `useResizableDock` stores `size` in **rem** (render `${size}rem`) and the drag converts the px pointer delta → rem against the live root (`rootPx()`), so `Files`/`Diff`/`FilePreview`/`ShellPanel` scale with the root AND the edge still tracks the cursor 1:1. `def`/`min`/`max` (and the max thunk's return) are rem. Don't reintroduce a px `size` — bump the localStorage key (`.wr`/`.hr`) if you change the unit again so stale px values aren't misread as rem.
+- **framer-motion**: animate rem **strings** (`animate={{ width: "16.5rem" }}`) — incl. dock open/close (`initial/exit: "0rem"`, `animate: \`${size}rem\``). Never mix a px number and a rem string across `initial`/`animate` for the same prop. Arithmetic on sizes (e.g. `LINE_H + GRAPHS_H`) can't use rem strings — precompute the rem target instead.
+- **Guard invariant:** `grep -rnoE '(padding|margin|gap|width|height|minWidth|minHeight|maxWidth|maxHeight|inset|borderRadius):\s*[0-9]+' --include='*.tsx' src/app/screens src/app/components --exclude-dir=primitives | grep -vE ':\s*(0|1|999)\b'` must stay empty.
 
 ## CSS class conventions
 

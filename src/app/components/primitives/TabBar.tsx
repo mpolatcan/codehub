@@ -40,8 +40,8 @@ export function Tab({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 8,
-        padding: "10px 16px",
+        gap: "0.5rem",
+        padding: "0.625rem 1rem",
         background: "transparent",
         border: "none",
         // -1px overlaps the container's bottom rule so the active underline sits on it.

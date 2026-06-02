@@ -87,7 +87,7 @@ export function HubTabs() {
   return (
     <div
       style={{
-        height: "var(--tabbar-h, 40px)",
+        height: "var(--tabbar-h, 2.5rem)",
         display: "flex",
         alignItems: "stretch",
         borderBottom: "1px solid var(--bd-soft)",
@@ -134,8 +134,8 @@ export function HubTabs() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                padding: "0 8px 0 11px",
+                gap: "0.5rem",
+                padding: "0 0.5rem 0 0.6875rem",
                 height: "100%",
                 borderRight: "1px solid var(--bd-soft)",
                 background: "var(--bg-2)",
@@ -150,7 +150,7 @@ export function HubTabs() {
                 <button
                   type="button"
                   className="tab-close"
-                  style={{ marginLeft: 2 }}
+                  style={{ marginLeft: "0.125rem" }}
                   onClick={(e) => {
                     e.stopPropagation();
                     setLauncher(false);
@@ -168,8 +168,8 @@ export function HubTabs() {
               onClick={() => setLauncher(true)}
               style={{
                 alignSelf: "center",
-                marginLeft: 6,
-                padding: "4px 6px",
+                marginLeft: "0.375rem",
+                padding: "0.25rem 0.375rem",
                 background: "transparent",
                 border: "none",
                 color: "var(--fg-2)",
@@ -202,8 +202,8 @@ export function HubTabs() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 2,
-          padding: "0 8px",
+          gap: "0.125rem",
+          padding: "0 0.5rem",
           position: "relative",
         }}
       >
@@ -215,13 +215,13 @@ export function HubTabs() {
               alignSelf: "center",
               display: "inline-flex",
               alignItems: "center",
-              gap: 5,
-              padding: "4px 7px",
+              gap: "0.3125rem",
+              padding: "0.25rem 0.4375rem",
               background: "transparent",
               border: "none",
               color: "var(--fg-2)",
               cursor: "pointer",
-              borderRadius: 6,
+              borderRadius: "0.375rem",
             }}
           >
             {Ico.search}
@@ -256,25 +256,25 @@ export function HubTabs() {
             <div
               style={{
                 position: "absolute",
-                top: "calc(100% + 4px)",
-                right: 4,
-                width: 280,
+                top: "calc(100% + 0.25rem)",
+                right: "0.25rem",
+                width: "min(17.5rem, calc(100vw - 2rem))",
                 zIndex: 50,
                 background: "var(--bg-2)",
                 border: "1px solid var(--bd)",
-                borderRadius: 8,
+                borderRadius: "0.5rem",
                 boxShadow: "var(--shadow-2)",
-                padding: 6,
+                padding: "0.375rem",
               }}
             >
               <div
                 style={{
-                  padding: "4px 8px",
+                  padding: "0.25rem 0.5rem",
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: "0.375rem",
                   borderBottom: "1px solid var(--bd-soft)",
-                  marginBottom: 4,
+                  marginBottom: "0.25rem",
                 }}
               >
                 <span className="lbl" style={{ fontSize: "var(--fs-10)" }}>
@@ -297,12 +297,12 @@ export function HubTabs() {
                       switchWorkspace(ws.id);
                       setOverflowOpen(false);
                     }}
-                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                    style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
                   >
                     <span
                       style={{
-                        width: 10,
-                        height: 10,
+                        width: "0.625rem",
+                        height: "0.625rem",
                         borderRadius: "50%",
                         background: color,
                         border: `1px solid color-mix(in oklab, ${color} 60%, black)`,
@@ -351,7 +351,13 @@ export function HubTabs() {
                   </div>
                 );
               })}
-              <div style={{ borderTop: "1px solid var(--bd-soft)", marginTop: 4, paddingTop: 4 }}>
+              <div
+                style={{
+                  borderTop: "1px solid var(--bd-soft)",
+                  marginTop: "0.25rem",
+                  paddingTop: "0.25rem",
+                }}
+              >
                 <div
                   className="ctx-row"
                   onClick={() => {
@@ -361,7 +367,7 @@ export function HubTabs() {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 7,
+                    gap: "0.4375rem",
                     fontSize: "var(--fs-13)",
                   }}
                 >
@@ -391,8 +397,8 @@ export function HubTabs() {
                   position: "absolute",
                   top: -1,
                   right: -1,
-                  width: 6,
-                  height: 6,
+                  width: "0.375rem",
+                  height: "0.375rem",
                   borderRadius: "50%",
                   background: "var(--wait)",
                 }}
@@ -462,8 +468,8 @@ function WorkspaceTab({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 9,
-          padding: "0 10px 0 8px",
+          gap: "0.5625rem",
+          padding: "0 0.625rem 0 0.5rem",
           height: "100%",
           borderRight: "1px solid var(--bd-soft)",
           ...(active ? { background: "var(--bg-2)", boxShadow: `inset 0 3px 0 ${accent}` } : {}),
@@ -471,7 +477,7 @@ function WorkspaceTab({
           cursor: "pointer",
           position: "relative",
           whiteSpace: "nowrap",
-          width: 212,
+          width: "clamp(9.5rem, 16vw, 13.25rem)",
           flexShrink: 0,
         }}
       >
@@ -514,11 +520,11 @@ function WorkspaceTab({
                 width: "100%",
                 background: "var(--bg-0)",
                 border: "1px solid var(--bd)",
-                borderRadius: 4,
+                borderRadius: "0.25rem",
                 color: "var(--fg-0)",
                 font: "inherit",
                 fontSize: "var(--fs-12)",
-                padding: "1px 4px",
+                padding: "0.0625rem 0.25rem",
               }}
             />
           ) : (
@@ -553,17 +559,24 @@ function WorkspaceTab({
             fontWeight: state === "wait" ? 600 : 500,
             color: chipFg,
             background: chipBg,
-            padding: "1px 5px",
+            padding: "0.0625rem 0.3125rem",
             borderRadius: 999,
             lineHeight: 1,
             display: "inline-flex",
             alignItems: "center",
-            gap: 4,
+            gap: "0.25rem",
             flexShrink: 0,
           }}
         >
           {state === "live" && (
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--live)" }} />
+            <span
+              style={{
+                width: "0.3125rem",
+                height: "0.3125rem",
+                borderRadius: "50%",
+                background: "var(--live)",
+              }}
+            />
           )}
           {chipLabel}
         </span>
@@ -571,7 +584,7 @@ function WorkspaceTab({
           <button
             type="button"
             className="tab-close"
-            style={{ marginLeft: 2 }}
+            style={{ marginLeft: "0.125rem" }}
             onClick={(e) => {
               e.stopPropagation();
               const result = confirmCloseWorkspace(ws.id);

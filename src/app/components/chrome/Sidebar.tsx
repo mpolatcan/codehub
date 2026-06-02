@@ -46,7 +46,8 @@ export function Sidebar({ groups = DEFAULT_GROUPS, footer, onSelect }: SidebarPr
   return (
     <div
       style={{
-        width: 220,
+        width: "clamp(11rem, 18vw, 13.75rem)",
+        maxWidth: "100%",
         display: "flex",
         flexDirection: "column",
         background: "var(--bg-0)",
@@ -58,7 +59,7 @@ export function Sidebar({ groups = DEFAULT_GROUPS, footer, onSelect }: SidebarPr
       {/* Logo header */}
       <div
         style={{
-          padding: "14px 14px 10px",
+          padding: "0.875rem 0.875rem 0.625rem",
           borderBottom: "1px solid var(--bd-soft)",
           flexShrink: 0,
         }}
@@ -67,12 +68,15 @@ export function Sidebar({ groups = DEFAULT_GROUPS, footer, onSelect }: SidebarPr
       </div>
 
       {/* Nav groups */}
-      <div style={{ flex: 1, overflow: "auto", padding: "8px 4px" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: "0.5rem 0.25rem" }}>
         {groups.map((group, gi) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: nav groups have no stable id
-          <div key={gi} style={{ marginBottom: 16 }}>
+          <div key={gi} style={{ marginBottom: "1rem" }}>
             {group.label && (
-              <div className="lbl" style={{ padding: "4px 10px 6px", display: "block" }}>
+              <div
+                className="lbl"
+                style={{ padding: "0.25rem 0.625rem 0.375rem", display: "block" }}
+              >
                 {group.label}
               </div>
             )}
@@ -92,7 +96,13 @@ export function Sidebar({ groups = DEFAULT_GROUPS, footer, onSelect }: SidebarPr
 
       {/* Optional footer slot */}
       {footer && (
-        <div style={{ flexShrink: 0, borderTop: "1px solid var(--bd-soft)", padding: "8px 4px" }}>
+        <div
+          style={{
+            flexShrink: 0,
+            borderTop: "1px solid var(--bd-soft)",
+            padding: "0.5rem 0.25rem",
+          }}
+        >
           {footer}
         </div>
       )}

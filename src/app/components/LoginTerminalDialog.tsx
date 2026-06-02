@@ -273,12 +273,12 @@ export function LoginTerminalDialog({
     >
       <div
         style={{
-          width: 860,
-          maxWidth: "calc(100vw - 48px)",
+          width: "min(53.75rem, calc(100vw - 2rem))",
+          maxHeight: "calc(100vh - 2rem)",
           background: "var(--bg-1)",
           border: "1px solid var(--bd)",
-          borderRadius: 10,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.5)",
+          borderRadius: "0.625rem",
+          boxShadow: "0 1.5rem 4rem rgba(0,0,0,0.5)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -289,8 +289,8 @@ export function LoginTerminalDialog({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 10,
-            padding: "12px 16px",
+            gap: "0.625rem",
+            padding: "0.75rem 1rem",
             borderBottom: "1px solid var(--bd-soft)",
             flexShrink: 0,
           }}
@@ -300,7 +300,7 @@ export function LoginTerminalDialog({
           </span>
           <span
             className="mono"
-            style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginLeft: 4 }}
+            style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)", marginLeft: "0.25rem" }}
           >
             {status === "connecting"
               ? "connecting..."
@@ -326,9 +326,10 @@ export function LoginTerminalDialog({
         {/* terminal */}
         <div
           style={{
-            height: 420,
+            height: "clamp(18rem, 60vh, 26.25rem)",
             background: "#08090b",
-            flexShrink: 0,
+            flex: "1 1 auto",
+            minHeight: 0,
             position: "relative",
           }}
         >
@@ -338,7 +339,7 @@ export function LoginTerminalDialog({
             style={{
               position: "absolute",
               inset: 0,
-              padding: "8px 4px",
+              padding: "0.5rem 0.25rem",
             }}
           />
         </div>
@@ -346,13 +347,14 @@ export function LoginTerminalDialog({
         {/* footer */}
         <div
           style={{
-            padding: "10px 16px",
+            padding: "0.625rem 1rem",
             borderTop: "1px solid var(--bd-soft)",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: "0.625rem",
+            flexWrap: "wrap",
             flexShrink: 0,
-            minHeight: 52,
+            minHeight: "3.25rem",
           }}
         >
           {status === "error" && (

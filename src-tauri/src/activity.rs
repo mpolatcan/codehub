@@ -6,12 +6,16 @@
 //! nothing is fabricated.
 
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::time::Instant;
 
 /// A session is "working" while output arrived within this window, else "idle".
 const WORKING_GRACE_MS: u64 = 1500;
+
+/// How many recent tool interactions to keep per session for the island's
+/// output block. Small — it's a glance surface, not a transcript.
+const RECENT_TOOLS_CAP: usize = 5;
 
 /// Coarse, observable activity state from output flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -49,6 +53,18 @@ pub enum TurnOutcome {
     Failed,
 }
 
+/// One observed tool interaction within the current turn: the tool name, a short
+/// argument summary (Bash command / file path / pattern …), and a short result
+/// snippet once `PostToolUse` returns. All fields are captured TRUNCATED by the
+/// in-container hook (never full output) — honest, glance-sized, never fabricated.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolLine {
+    pub tool: String,
+    pub arg: Option<String>,
+    pub result: Option<String>,
+}
+
 /// One session's activity snapshot as the frontend sees it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,6 +75,11 @@ pub struct SessionActivity {
     pub bytes: u64,
     pub cli: Option<String>,
     pub alias: Option<String>,
+    /// Human workspace title (e.g. "my-project"), for OS notifications that fire
+    /// outside the app where the tab/sidebar context is gone. `None` until
+    /// `set_workspace` ran (the `workspace` create-arg is the container KEY, not
+    /// this readable title — they're different values).
+    pub workspace: Option<String>,
     pub claude_id: Option<String>,
     /// Codex conversation/rollout uuid (the notify `thread-id`), captured from the
     /// event stream — the key that locates this session's rollout for token/turn
@@ -85,6 +106,19 @@ pub struct SessionActivity {
     /// Whether ANY agent hook has fired for this session. Gate for status trust:
     /// `true` ⇒ believe `session_status`; `false` ⇒ fall back to byte-flow `state`.
     pub seen_hooks: bool,
+    /// Recent tool interactions of the CURRENT turn (oldest→newest), for the
+    /// island's output block. Cleared on each new turn (`UserPromptSubmit`).
+    /// Empty for hook-less CLIs or before any tool ran.
+    pub recent_tools: Vec<ToolLine>,
+}
+
+/// Readable identity for an OS notification — pane alias, workspace title, cli.
+/// All optional; absent fields fall back to the raw session name at the call site.
+#[derive(Default)]
+pub struct NotifyLabel {
+    pub alias: Option<String>,
+    pub workspace: Option<String>,
+    pub cli: Option<String>,
 }
 
 #[derive(Default)]
@@ -93,6 +127,7 @@ struct Entry {
     bytes: u64,
     cli: Option<String>,
     alias: Option<String>,
+    workspace: Option<String>,
     claude_id: Option<String>,
     codex_id: Option<String>,
     task_description: Option<String>,
@@ -107,6 +142,8 @@ struct Entry {
     /// report `outcome_ms_ago` and consumers can dedupe announcements by time.
     last_outcome: Option<(TurnOutcome, i64)>,
     seen_hooks: bool,
+    /// Recent tool interactions of the current turn (capped at RECENT_TOOLS_CAP).
+    recent_tools: VecDeque<ToolLine>,
 }
 
 /// Shared, in-memory per-session activity tracker.
@@ -162,6 +199,31 @@ impl ActivityTracker {
         entry.task_description = task_description.map(|s| s.to_string());
     }
 
+    /// Attach the human workspace title (for OS notifications). Set right after
+    /// `register`, but `or_default` keeps it safe if a hook raced the register on
+    /// restart-adopt. Separate from `register` so the many test call sites of
+    /// `register` don't all need a new argument.
+    pub fn set_workspace(&self, session: &str, workspace: &str) {
+        let mut map = self.lock_inner();
+        let e = map.entry(session.to_string()).or_default();
+        e.workspace = Some(workspace.to_string());
+    }
+
+    /// Pane alias + workspace title + cli for a session, for building a readable OS
+    /// notification. All-`None` for an unknown session → caller falls back to the
+    /// raw session name.
+    pub fn notify_label(&self, session: &str) -> NotifyLabel {
+        let map = self.lock_inner();
+        match map.get(session) {
+            Some(e) => NotifyLabel {
+                alias: e.alias.clone(),
+                workspace: e.workspace.clone(),
+                cli: e.cli.clone(),
+            },
+            None => NotifyLabel::default(),
+        }
+    }
+
     /// Record the Codex conversation/rollout uuid (notify `thread-id`) once. Stable
     /// per session, so first capture wins — a later turn carries the same id, and
     /// we never overwrite with a stale/empty one. No-op for an unregistered session.
@@ -208,18 +270,32 @@ impl ActivityTracker {
         e.turn_started_at = Some(Instant::now());
         e.current_tool = None;
         e.last_outcome = None;
+        e.recent_tools.clear();
         e.session_status = SessionStatus::Running;
     }
 
-    /// `PreToolUse`: the agent is invoking a tool. Counts it and records the tool
-    /// name as the current activity ("running <tool>").
-    pub fn on_pre_tool(&self, session: &str, tool: Option<&str>) {
+    /// `PreToolUse`: the agent is invoking a tool. Counts it, records the tool
+    /// name as the current activity ("running <tool>"), and appends a tool line
+    /// (tool + short arg summary) to the current turn's recent-tools buffer.
+    pub fn on_pre_tool(&self, session: &str, tool: Option<&str>, arg: Option<&str>) {
         let mut map = self.lock_inner();
         let e = map.entry(session.to_string()).or_default();
         e.seen_hooks = true;
         e.tool_calls = e.tool_calls.saturating_add(1);
         e.current_tool = tool.map(|s| s.to_string());
         e.session_status = SessionStatus::Running;
+        // Record the interaction for the island's output block. Keyed on a real
+        // tool name; a None tool (rare) is counted but not shown as a line.
+        if let Some(t) = tool {
+            if e.recent_tools.len() >= RECENT_TOOLS_CAP {
+                e.recent_tools.pop_front();
+            }
+            e.recent_tools.push_back(ToolLine {
+                tool: t.to_string(),
+                arg: arg.map(|s| s.to_string()),
+                result: None,
+            });
+        }
         // A turn may surface its first hook as a tool (no prompt_submit seen):
         // start the timer here so the elapsed clock isn't missing.
         if e.turn_started_at.is_none() {
@@ -228,13 +304,17 @@ impl ActivityTracker {
     }
 
     /// `PostToolUse`: the tool returned; the agent is back to thinking. Clears the
-    /// current tool but keeps the turn `Running`.
-    pub fn on_post_tool(&self, session: &str) {
+    /// current tool, attaches the (short) result to the last recorded tool line,
+    /// but keeps the turn `Running`.
+    pub fn on_post_tool(&self, session: &str, result: Option<&str>) {
         let mut map = self.lock_inner();
         let e = map.entry(session.to_string()).or_default();
         e.seen_hooks = true;
         e.current_tool = None;
         e.session_status = SessionStatus::Running;
+        if let (Some(r), Some(last)) = (result, e.recent_tools.back_mut()) {
+            last.result = Some(r.to_string());
+        }
     }
 
     /// `Stop`/`StopFailure`: the turn finished. Stops the timer, records the
@@ -295,6 +375,12 @@ impl ActivityTracker {
         self.lock_inner().remove(session);
     }
 
+    /// Every currently tracked session name — for stale-entry reconciliation
+    /// against the set of live tmux sessions (see `prune_stale_activity_loop`).
+    pub fn sessions(&self) -> Vec<String> {
+        self.lock_inner().keys().cloned().collect()
+    }
+
     /// Current activity for every tracked session.
     pub fn snapshot(&self) -> Vec<SessionActivity> {
         let now = Instant::now();
@@ -325,6 +411,7 @@ impl ActivityTracker {
                     bytes: e.bytes,
                     cli: e.cli.clone(),
                     alias: e.alias.clone(),
+                    workspace: e.workspace.clone(),
                     claude_id: e.claude_id.clone(),
                     codex_id: e.codex_id.clone(),
                     task_description: e.task_description.clone(),
@@ -338,6 +425,7 @@ impl ActivityTracker {
                     last_outcome,
                     outcome_ms_ago,
                     seen_hooks: e.seen_hooks,
+                    recent_tools: e.recent_tools.iter().cloned().collect(),
                 }
             })
             .collect()
@@ -538,12 +626,12 @@ mod tests {
         let t = ActivityTracker::new();
         t.register("s1", "claude", "Claude 1", None, None, None);
         t.on_prompt_submit("s1");
-        t.on_pre_tool("s1", Some("Bash"));
+        t.on_pre_tool("s1", Some("Bash"), Some("pnpm test"));
         let snap = t.snapshot();
         assert_eq!(snap[0].tool_calls, 1);
         assert_eq!(snap[0].current_tool.as_deref(), Some("Bash"));
         assert_eq!(snap[0].session_status, SessionStatus::Running);
-        t.on_post_tool("s1");
+        t.on_post_tool("s1", None);
         let snap = t.snapshot();
         assert_eq!(snap[0].current_tool, None); // thinking
         assert_eq!(snap[0].session_status, SessionStatus::Running);
@@ -555,7 +643,7 @@ mod tests {
         let t = ActivityTracker::new();
         t.register("s1", "claude", "Claude 1", None, None, None);
         t.on_prompt_submit("s1");
-        t.on_pre_tool("s1", Some("Edit"));
+        t.on_pre_tool("s1", Some("Edit"), Some("src/auth.ts"));
         t.on_turn_end("s1", 1_000, false, None);
         let snap = t.snapshot();
         assert_eq!(snap[0].last_outcome, Some(TurnOutcome::Completed));
@@ -574,6 +662,46 @@ mod tests {
         assert_eq!(snap[0].last_outcome, Some(TurnOutcome::Failed));
         assert_eq!(snap[0].session_status, SessionStatus::Failed);
         assert_eq!(snap[0].failure_reason.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn recent_tools_capture_arg_and_result_and_reset_per_turn() {
+        let t = ActivityTracker::new();
+        t.register("s1", "claude", "Claude 1", None, None, None);
+        t.on_prompt_submit("s1");
+        t.on_pre_tool("s1", Some("Bash"), Some("pnpm test src/auth"));
+        t.on_post_tool("s1", Some("✓ 4 passed"));
+        t.on_pre_tool("s1", Some("Read"), Some("src/auth.ts"));
+        let snap = t.snapshot();
+        assert_eq!(snap[0].recent_tools.len(), 2);
+        assert_eq!(snap[0].recent_tools[0].tool, "Bash");
+        assert_eq!(
+            snap[0].recent_tools[0].arg.as_deref(),
+            Some("pnpm test src/auth")
+        );
+        assert_eq!(
+            snap[0].recent_tools[0].result.as_deref(),
+            Some("✓ 4 passed")
+        );
+        assert_eq!(snap[0].recent_tools[1].tool, "Read");
+        assert_eq!(snap[0].recent_tools[1].result, None);
+        // A new turn clears the buffer.
+        t.on_prompt_submit("s1");
+        assert!(t.snapshot()[0].recent_tools.is_empty());
+    }
+
+    #[test]
+    fn recent_tools_cap_evicts_oldest() {
+        let t = ActivityTracker::new();
+        t.register("s1", "claude", "Claude 1", None, None, None);
+        t.on_prompt_submit("s1");
+        for i in 0..(RECENT_TOOLS_CAP + 3) {
+            t.on_pre_tool("s1", Some("Bash"), Some(&format!("cmd {i}")));
+        }
+        let snap = t.snapshot();
+        assert_eq!(snap[0].recent_tools.len(), RECENT_TOOLS_CAP);
+        // Oldest evicted: first retained arg is "cmd 3".
+        assert_eq!(snap[0].recent_tools[0].arg.as_deref(), Some("cmd 3"));
     }
 
     #[test]

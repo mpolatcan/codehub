@@ -5,8 +5,16 @@ export interface LogoProps {
 
 export function Logo({ size = 18, withText = true }: LogoProps) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <svg width={size} height={size} viewBox="0 0 20 20" role="img" aria-label="CodeHub">
+    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+      {/* Outer box in rem (px ÷ 16) so the mark scales with the fluid root like
+          the wordmark; the viewBox keeps the internal SVG coords fixed. */}
+      <svg
+        width={`${size / 16}rem`}
+        height={`${size / 16}rem`}
+        viewBox="0 0 20 20"
+        role="img"
+        aria-label="CodeHub"
+      >
         <rect
           x="1.5"
           y="1.5"

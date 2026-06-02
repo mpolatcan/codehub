@@ -10,8 +10,8 @@ pub mod devserver;
 pub mod docker;
 /// Agent-event hooks subsystem.
 pub mod events;
-// Native macOS Dynamic Island companion. On other platforms the companion stays
-// a WebviewWindow (see open_companion below).
+// Native macOS Dynamic Island — a webview notch window (see `island.rs`).
+// macOS-only; other platforms have no ambient surface (OS notifications only).
 #[cfg(target_os = "macos")]
 pub mod island;
 pub mod lifecycle;
@@ -849,7 +849,9 @@ async fn container_image(
     workspace: Option<String>,
 ) -> Result<ImageInfo, String> {
     let docker = match workspace {
-        Some(ref key) => Some(Arc::new(state.manager.workspace_container(key).docker_client())),
+        Some(ref key) => Some(Arc::new(
+            state.manager.workspace_container(key).docker_client(),
+        )),
         None => state.manager.any_running_docker().await,
     };
     match docker {
@@ -1231,28 +1233,6 @@ async fn claude_session_usage(
         .map_err(|e| e.to_string())
 }
 
-/// Build the native island's honest one-line Claude metric (e.g.
-/// "14 edits · 184.2k tok") from a real [`SessionUsage`]. Returns `None` when
-/// there is nothing real to show (no edits and no tokens) so the row stays
-/// metric-less rather than displaying a fabricated "0".
-#[cfg(target_os = "macos")]
-fn island_metric(u: &SessionUsage) -> Option<String> {
-    let tok = u.tokens_in.saturating_add(u.tokens_out);
-    if u.edits == 0 && tok == 0 {
-        return None;
-    }
-    let tok_str = if tok >= 1000 {
-        format!("{:.1}k tok", tok as f64 / 1000.0)
-    } else {
-        format!("{tok} tok")
-    };
-    if u.edits > 0 {
-        Some(format!("{} edits · {tok_str}", u.edits))
-    } else {
-        Some(tok_str)
-    }
-}
-
 /// What Claude is connected to (Integrations screen): the signed-in account +
 /// configured MCP servers. Reads from `/config` via any running container.
 #[tauri::command]
@@ -1324,6 +1304,10 @@ async fn create_session(
     workspace_dir: Option<String>,
     cwd: Option<String>,
     task_description: Option<String>,
+    // Human workspace title (e.g. "my-project"), distinct from `workspace` (the
+    // container routing KEY). Stored on the activity entry purely so OS
+    // notifications can read "[<workspace>] <pane>".
+    workspace_label: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let cli = Cli::parse(&cli).map_err(|e| e.to_string())?;
@@ -1509,6 +1493,9 @@ async fn create_session(
         git_branch.as_deref(),
         task_description.as_deref(),
     );
+    if let Some(label) = workspace_label.as_deref().filter(|s| !s.is_empty()) {
+        state.registry.activity().set_workspace(&name, label);
+    }
     Ok(())
 }
 
@@ -1520,6 +1507,10 @@ async fn kill_session(
 ) -> Result<(), String> {
     state.registry.detach_by_session(&name).await;
     state.events.remove_session(&name);
+    // Forget the activity entry too — otherwise the session lingers in the
+    // `session_activity` feed forever (closed pane / replayed event file), which
+    // any AGGREGATE consumer (the Dynamic-Island pill count) then overcounts.
+    state.registry.activity().remove(&name);
     docker_for(&state, &workspace)
         .kill_tmux_session(&name)
         .await
@@ -1540,6 +1531,7 @@ async fn stop_all_agents(
     for s in sessions {
         state.registry.detach_by_session(&s.name).await;
         state.events.remove_session(&s.name);
+        state.registry.activity().remove(&s.name);
         let _ = docker.kill_tmux_session(&s.name).await;
     }
     Ok(())
@@ -1689,102 +1681,83 @@ async fn session_activity(
     Ok(state.registry.activity().snapshot())
 }
 
-/// Label of the always-on-top companion window (non-macOS webview companion).
-#[cfg(not(target_os = "macos"))]
-const COMPANION_LABEL: &str = "companion";
+// ── Dynamic Island commands (macOS-only feature) ────────────────────────────
+// On macOS the island is a webview notch window ([`island`]) that renders the
+// real `#/island` React route. Other platforms have NO ambient surface (OS
+// notifications only) — these commands are no-ops there so the IPC handler list
+// and the dev bridge stay platform-uniform.
 
-/// Build (or re-focus) the non-macOS webview companion window. Shared by the
-/// `open_companion` command and the global-shortcut handler so both create the
-/// window identically when it does not exist yet.
-#[cfg(not(target_os = "macos"))]
-fn show_companion_window(app: &tauri::AppHandle) -> Result<(), String> {
-    // Already open → just bring it forward.
-    if let Some(win) = app.get_webview_window(COMPANION_LABEL) {
-        let _ = win.show();
-        let _ = win.set_focus();
-        return Ok(());
-    }
-    let win = tauri::WebviewWindowBuilder::new(
-        app,
-        COMPANION_LABEL,
-        tauri::WebviewUrl::App("index.html#/companion".into()),
-    )
-    .title("CodeHub Companion")
-    .inner_size(248.0, 360.0)
-    .min_inner_size(200.0, 160.0)
-    .decorations(false)
-    .always_on_top(true)
-    .resizable(true)
-    .skip_taskbar(true)
-    .build()
-    .map_err(|e| e.to_string())?;
-    // Best-effort: pin to the top-right of the primary monitor, leaving a small
-    // inset. Positioning failure is non-fatal — the window still opens.
-    if let Ok(Some(monitor)) = win.primary_monitor() {
-        let size = monitor.size();
-        let scale = monitor.scale_factor();
-        let inset = (24.0 * scale) as i32;
-        let win_w = (248.0 * scale) as i32;
-        let x = (size.width as i32 - win_w - inset).max(0);
-        let _ = win.set_position(tauri::PhysicalPosition::new(x, inset));
-    }
-    Ok(())
-}
-
-/// Toggle the non-macOS webview companion: hide it when it exists and is
-/// currently visible, otherwise show/create + focus it. Used by the global
-/// shortcut so repeated presses flip the window on and off (mirroring
-/// `island::toggle` on macOS), rather than only ever raising it.
-#[cfg(not(target_os = "macos"))]
-fn toggle_companion_window(app: &tauri::AppHandle) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window(COMPANION_LABEL) {
-        if win.is_visible().unwrap_or(false) {
-            win.hide().map_err(|e| e.to_string())?;
-            return Ok(());
-        }
-    }
-    show_companion_window(app)
-}
-
-/// Open (or re-focus) the companion — a floating overlay that mirrors the live
-/// working/idle state of every running agent so it stays visible over other
-/// apps. Everything it shows is the honest activity signal — no fabricated
-/// turn/token/approval state.
-///
-/// On macOS this is the native Dynamic Island ([`island`]); elsewhere it is a
-/// small frameless `WebviewWindow` loading the real `index.html#/companion`
-/// route.
+/// Master enable (Settings toggle): ensure the hidden island window exists so
+/// its React route begins polling and shows the collapsed status pill at once.
 #[cfg(target_os = "macos")]
 #[tauri::command]
-async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
-    island::show(&app);
+async fn open_island(app: tauri::AppHandle) -> Result<(), String> {
+    island::present(&app);
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-async fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
-    show_companion_window(&app)
-}
-
-/// Close/hide the companion. No-op when it is not open.
+/// Master disable: tear the island window down (`ensure` rebuilds on re-enable).
 #[cfg(target_os = "macos")]
 #[tauri::command]
-async fn close_companion(app: tauri::AppHandle) -> Result<(), String> {
-    island::hide(&app);
+async fn close_island(app: tauri::AppHandle) -> Result<(), String> {
+    island::destroy(&app);
     Ok(())
 }
 
+/// Announce: show + raise the island at the notch. The React route calls this
+/// when an agent newly needs input, or a turn just finished/failed.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn island_present(app: tauri::AppHandle) -> Result<(), String> {
+    island::present(&app);
+    Ok(())
+}
+
+/// Dismiss: hide the island (auto-dismiss timer / the card's Dismiss button).
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn island_dismiss(app: tauri::AppHandle) -> Result<(), String> {
+    island::dismiss(&app);
+    Ok(())
+}
+
+/// Resize the island to the React content size, keeping the top pinned at the
+/// notch. Called from a ResizeObserver in the `#/island` route.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn resize_island(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
+    island::resize(&app, width, height);
+    Ok(())
+}
+
+// Non-macOS stubs — the Dynamic Island is macOS-only.
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-async fn close_companion(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window(COMPANION_LABEL) {
-        win.close().map_err(|e| e.to_string())?;
-    }
+async fn open_island(_app: tauri::AppHandle) -> Result<(), String> {
+    Ok(())
+}
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn close_island(_app: tauri::AppHandle) -> Result<(), String> {
+    Ok(())
+}
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn island_present(_app: tauri::AppHandle) -> Result<(), String> {
+    Ok(())
+}
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn island_dismiss(_app: tauri::AppHandle) -> Result<(), String> {
+    Ok(())
+}
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn resize_island(_app: tauri::AppHandle, _width: f64, _height: f64) -> Result<(), String> {
     Ok(())
 }
 
-/// Jump from the companion to a session in the main window: raise + focus the
+/// Jump from the island to a session in the main window: raise + focus the
 /// main window, then emit `codehub://focus-session` so the app focuses that
 /// session and leaves any open detail view. Missing main window is a no-op.
 #[tauri::command]
@@ -1925,6 +1898,7 @@ async fn codex_rate_limits(
 ///   1. a vault-backed `github` account profile (OAuth or pasted PAT) — the
 ///      `gh auth login` / "Paste a PAT" flows both store here, keyed by profile id;
 ///   2. the host `GITHUB_TOKEN` env var (shell-exported fallback).
+///
 /// Returns the secret so the GitHub commands can forward it into the container
 /// exec (by name, never argv/logs). `None` when nothing is connected.
 fn resolve_github_token(state: &AppState) -> Option<String> {
@@ -2275,11 +2249,10 @@ pub fn run() {
         .or_else(|_| std::env::var("AVIARY_IMAGE"))
         .unwrap_or_else(|_| DEFAULT_IMAGE.into());
 
-    // P5 global shortcut: Cmd+Shift+J (macOS) / Ctrl+Shift+J (Win/Linux) toggles
-    // the always-on-top surface — the native island on macOS, the webview
-    // companion elsewhere. `Modifiers` is an all-required bitflag set (not an
-    // either/or CmdOrCtrl alias), so the platform modifier is chosen at compile
-    // time; listing both Super and Control would force users to hold both keys.
+    // P5 global shortcut: ⌘⇧J toggles the Dynamic Island — a macOS-only feature.
+    // `Modifiers` is an all-required bitflag set (not an either/or CmdOrCtrl
+    // alias). The hotkey is registered cross-platform so the keybinding contract
+    // stays uniform, but its handler is a no-op off macOS (no island there).
     // Registered through the plugin builder with an on-press handler so the
     // keystroke works while CodeHub is in the background (a global hotkey).
     use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
@@ -2310,7 +2283,8 @@ pub fn run() {
                     }
                     #[cfg(not(target_os = "macos"))]
                     {
-                        let _ = toggle_companion_window(app);
+                        // Dynamic Island is macOS-only — no ambient surface here.
+                        let _ = app;
                     }
                 })
                 .build(),
@@ -2337,16 +2311,9 @@ pub fn run() {
 
             let notify_config = config.clone();
 
-            #[cfg(target_os = "macos")]
-            let island_registry = registry.clone();
-            #[cfg(target_os = "macos")]
-            let island_events = events.clone();
-            #[cfg(target_os = "macos")]
-            let island_manager = manager.clone();
+            // macOS-only: launch-time master-enable check for the Dynamic Island.
             #[cfg(target_os = "macos")]
             let island_config = config.clone();
-            #[cfg(not(target_os = "macos"))]
-            let companion_launch_config = config.clone();
 
             let stats_hist = Arc::new(stats_history::StatsHistory::new());
 
@@ -2389,6 +2356,20 @@ pub fn run() {
                 ));
             }
 
+            // Stale-activity prune loop: reconcile the ActivityTracker against
+            // live tmux sessions so the `session_activity` feed (and the
+            // Dynamic-Island session list) reflects only RUNNING agents — closed
+            // panes / replayed event files otherwise linger as ghost entries.
+            // Captured before `registry` moves into AppState. Tauri-only spawner.
+            {
+                let prune_manager = manager.clone();
+                let prune_activity = registry.activity();
+                tauri::async_runtime::spawn(crate::manager::prune_stale_activity_loop(
+                    prune_manager,
+                    prune_activity,
+                ));
+            }
+
             app.manage(AppState {
                 manager: manager.clone(),
                 registry,
@@ -2398,208 +2379,22 @@ pub fn run() {
                 vault: app_vault,
             });
 
-            // macOS: drive the native Dynamic Island from the live activity feed.
-            // Every signal is honest (mirrors the frontend `deriveLiveStatus`):
-            //   - Wait  ← `pending_prompts()` / hook `Awaiting` (a real prompt)
-            //   - Err   ← a turn that just failed (transient ~6s linger)
-            //   - Done  ← a turn that just finished (transient ~6s linger)
-            //   - Live  ← a turn in flight; sub-line shows the current tool /
-            //             "thinking" + tool count + the live turn clock
-            //   - Idle  ← otherwise (sub-line shows the Claude edits·tok metric)
-            //   - agent ← the registered cli id (dot identity)
-            // Now that the hooks distinguish turn-finish (`Stop` → transient Done)
-            // from failure (`StopFailure` → transient Err) and from idle, these are
-            // emitted from REAL events — no recency heuristic, nothing fabricated.
-            //
-            // The island AUTO-POPS (and expands) when a row newly enters awaiting or
-            // a turn just finished/failed — the "needs you / done" announcement —
-            // then collapses back to the pill after a short window (awaiting holds
-            // it open until answered). The loop therefore runs every tick even while
-            // hidden, to detect those transitions; only the heavier Claude metric
-            // read is gated on the island being visible.
+            // macOS: pre-build the (hidden) Dynamic Island window when the feature
+            // is enabled so its `#/island` React route mounts and begins polling
+            // `session_activity` + `pending_prompts` at launch. The route owns ALL
+            // announce / which-session / auto-dismiss logic and drives the native
+            // window purely via the `island_present` / `island_dismiss` /
+            // `resize_island` commands — Rust only does the window ops. Toggling
+            // the Settings switch off later calls `close_island` (destroy); on
+            // calls `open_island` (ensure). Default-on → built on launch.
             #[cfg(target_os = "macos")]
             {
-                use std::collections::{HashMap, HashSet};
-                use std::time::{Duration, Instant};
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    // A finished/failed turn lingers as a transient badge this long
-                    // (matches the frontend OUTCOME_LINGER_MS).
-                    const OUTCOME_LINGER_MS: u64 = 6000;
-                    // How long the panel auto-expands to announce a fresh event
-                    // before it's allowed to collapse back to the pill.
-                    const ANNOUNCE: Duration = Duration::from_millis(5000);
-                    // Refresh the (heavier) Claude transcript metric every 5th tick.
-                    const METRIC_EVERY: u64 = 5;
-
-                    let mut tick = tokio::time::interval(Duration::from_millis(1000));
-                    let mut metric_cache: HashMap<String, String> = HashMap::new();
-                    let mut prev_awaiting: HashSet<String> = HashSet::new();
-                    let mut last_outcome_ms: HashMap<String, u64> = HashMap::new();
-                    let mut announce_until: Option<Instant> = None;
-                    let mut ticks: u64 = 0;
-                    // Tracks the show_companion setting edge so we auto-show on
-                    // launch (first tick, enabled) and on a later re-enable.
-                    let mut prev_enabled = false;
-
-                    loop {
-                        tick.tick().await;
-                        // Master enable (Settings → "Dynamic Island"). Default on:
-                        // shows on launch; turning it off hides + parks the feed.
-                        let enabled = island_config.get().show_companion;
-                        if enabled && !prev_enabled {
-                            island::show(&handle);
-                        }
-                        prev_enabled = enabled;
-                        if !enabled {
-                            if island::is_visible() {
-                                island::hide(&handle);
-                            }
-                            continue;
-                        }
-                        let visible = island::is_visible();
-                        let activity = island_registry.activity().snapshot();
-                        let waiting: HashSet<String> = island_events
-                            .pending_prompts()
-                            .into_iter()
-                            .map(|p| p.session)
-                            .collect();
-
-                        // The Claude metric (idle rows) needs a heavy transcript
-                        // read — only do it while the island is actually on screen.
-                        if visible && ticks % METRIC_EVERY == 0 {
-                            if let Some(docker) = island_manager.any_running_docker().await {
-                                for a in &activity {
-                                    let Some(id) = a.claude_id.as_deref() else {
-                                        continue;
-                                    };
-                                    match docker.claude_session_usage(id).await {
-                                        Ok(Some(u)) => {
-                                            if let Some(m) = island_metric(&u) {
-                                                metric_cache.insert(a.session.clone(), m);
-                                            } else {
-                                                metric_cache.remove(&a.session);
-                                            }
-                                        },
-                                        _ => {
-                                            metric_cache.remove(&a.session);
-                                        },
-                                    }
-                                }
-                            }
-                        }
-                        let live_sessions: HashSet<&str> =
-                            activity.iter().map(|a| a.session.as_str()).collect();
-                        metric_cache.retain(|s, _| live_sessions.contains(s.as_str()));
-                        ticks = ticks.wrapping_add(1);
-
-                        // Build rows + detect the events that auto-pop the island: a
-                        // NEW awaiting prompt, or a freshly finished/failed turn.
-                        // Status precedence mirrors the frontend deriveLiveStatus:
-                        // wait > err > done > live > idle.
-                        let now = Instant::now();
-                        let mut any_awaiting = false;
-                        let mut new_awaiting = false;
-                        let mut fresh_outcome = false;
-                        let mut cur_awaiting: HashSet<String> = HashSet::new();
-                        let mut cur_outcome_ms: HashMap<String, u64> = HashMap::new();
-
-                        let rows: Vec<island::IslandRow> = activity
-                            .iter()
-                            .map(|a| {
-                                let waiting_now = waiting.contains(&a.session)
-                                    || a.session_status == activity::SessionStatus::Awaiting;
-                                let outcome_fresh = a
-                                    .outcome_ms_ago
-                                    .map(|ms| ms < OUTCOME_LINGER_MS)
-                                    .unwrap_or(false);
-                                let status = if waiting_now {
-                                    island::IslandStatus::Wait
-                                } else if outcome_fresh
-                                    && a.last_outcome == Some(activity::TurnOutcome::Failed)
-                                {
-                                    island::IslandStatus::Err
-                                } else if outcome_fresh
-                                    && a.last_outcome == Some(activity::TurnOutcome::Completed)
-                                {
-                                    island::IslandStatus::Done
-                                } else if (a.seen_hooks
-                                    && a.session_status == activity::SessionStatus::Running)
-                                    || (!a.seen_hooks
-                                        && matches!(a.state, activity::ActivityState::Working))
-                                {
-                                    island::IslandStatus::Live
-                                } else {
-                                    island::IslandStatus::Idle
-                                };
-
-                                if waiting_now {
-                                    any_awaiting = true;
-                                    cur_awaiting.insert(a.session.clone());
-                                    if !prev_awaiting.contains(&a.session) {
-                                        new_awaiting = true;
-                                    }
-                                }
-                                // Fresh outcome = the outcome clock reset since the
-                                // last tick (a new Stop drops ms_ago back near 0) and
-                                // is recent — so each finished/failed turn announces
-                                // exactly once, not every tick of its linger.
-                                if let Some(ms) = a.outcome_ms_ago {
-                                    cur_outcome_ms.insert(a.session.clone(), ms);
-                                    let prev = last_outcome_ms.get(&a.session).copied();
-                                    if ms < OUTCOME_LINGER_MS
-                                        && prev.map(|p| ms < p).unwrap_or(true)
-                                    {
-                                        fresh_outcome = true;
-                                    }
-                                }
-
-                                island::IslandRow {
-                                    label: a.alias.clone().unwrap_or_else(|| a.session.clone()),
-                                    session: a.session.clone(),
-                                    agent: a.cli.clone(),
-                                    status,
-                                    metric: metric_cache.get(&a.session).cloned(),
-                                    model: None,
-                                    branch: a.git_branch.clone(),
-                                    current_tool: a.current_tool.clone(),
-                                    turns: a.turns,
-                                    tool_calls: a.tool_calls,
-                                    turn_ms: a.turn_elapsed_ms,
-                                }
-                            })
-                            .collect();
-
-                        prev_awaiting = cur_awaiting;
-                        last_outcome_ms = cur_outcome_ms;
-
-                        if new_awaiting || fresh_outcome {
-                            announce_until = Some(now + ANNOUNCE);
-                        }
-                        let announcing = announce_until.map(|t| now < t).unwrap_or(false);
-                        // Awaiting holds the panel open until answered; a finish/fail
-                        // expands for the announce window then collapses to the pill.
-                        let want_expanded = any_awaiting || announcing;
-                        // Pop when expanding; stay present once shown.
-                        let want_present = want_expanded || visible;
-
-                        if want_present {
-                            island::drive(
-                                &handle,
-                                island::IslandSnapshot { rows },
-                                want_present,
-                                want_expanded,
-                            );
-                        }
-                    }
-                });
-            }
-
-            // Non-macOS: open the companion window on launch when enabled (the
-            // macOS island handles its own launch-show via the feed's enable edge).
-            #[cfg(not(target_os = "macos"))]
-            if companion_launch_config.get().show_companion {
-                let _ = show_companion_window(&app.handle());
+                // Persistent presence: when enabled, SHOW the island on launch (the
+                // React route renders the collapsed status pill) — not just build it
+                // hidden. The pill stays at the notch and expands on agent events.
+                if island_config.get().show_island {
+                    island::present(app.handle());
+                }
             }
 
             // Daemon reachability check — containers are created on demand by
@@ -2710,8 +2505,11 @@ pub fn run() {
             pty_resize,
             detach_session,
             session_activity,
-            open_companion,
-            close_companion,
+            open_island,
+            close_island,
+            island_present,
+            island_dismiss,
+            resize_island,
             focus_session_from_companion,
             // Phase-0 completion contract: live command handlers.
             pending_prompts,
