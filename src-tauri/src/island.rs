@@ -23,7 +23,7 @@
 #![cfg(target_os = "macos")]
 
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -32,7 +32,9 @@ use objc2_app_kit::{
     NSColor, NSEvent, NSEventMask, NSScreen, NSStatusWindowLevel, NSWindow,
     NSWindowCollectionBehavior, NSWorkspace, NSWorkspaceActiveSpaceDidChangeNotification,
 };
-use objc2_foundation::{NSNotification, NSPoint, NSRect, NSSize};
+use objc2_foundation::{
+    NSActivityOptions, NSNotification, NSPoint, NSProcessInfo, NSRect, NSSize, NSString, NSTimer,
+};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 /// Window label — also the second-window identity the rest of the app keys on.
@@ -48,6 +50,9 @@ static VISIBLE: AtomicBool = AtomicBool::new(false);
 static HOVERED: AtomicBool = AtomicBool::new(false);
 /// Hover mouse-monitors installed once (global + local NSEvent monitors).
 static MONITORS_INSTALLED: AtomicBool = AtomicBool::new(false);
+/// Last cursor position pushed to the webview (window-local points, packed
+/// `x<<32 | y`). Dedup so `island://cursor` fires only when it actually moved.
+static LAST_CURSOR: AtomicI64 = AtomicI64::new(i64::MIN);
 
 /// Whether the island is on screen. Safe from any thread.
 pub fn is_visible() -> bool {
@@ -72,6 +77,11 @@ pub fn ensure(app: &AppHandle) {
         .focused(false)
         .visible(false)
         .skip_taskbar(true)
+        // The island is a non-activating overlay: without this, the FIRST click on
+        // it is swallowed to activate the window (you'd need a double-click to hit a
+        // row). `accept_first_mouse` routes that first click straight to the webview
+        // so a single click jumps to the terminal even when CodeHub is in the back.
+        .accept_first_mouse(true)
         .build();
     match built {
         Ok(win) => apply_native(&win),
@@ -203,6 +213,7 @@ fn hover_tick(app: &AppHandle) {
         if let (Some(have), Some(want)) = (have, want) {
             let (a, b) = (have.frame().origin, want.frame().origin);
             if a.x != b.x || a.y != b.y {
+                tracing::debug!("island: cursor crossed to a new screen — re-placing");
                 place(&win, true, None);
                 return;
             }
@@ -213,8 +224,38 @@ fn hover_tick(app: &AppHandle) {
         && p.y >= f.origin.y
         && p.y <= f.origin.y + f.size.height;
     if inside != HOVERED.swap(inside, Ordering::Relaxed) {
+        // Boundary crossing only (not every move). If this never logs while you hover
+        // the island, no mouse monitor is reaching `hover_tick` (see the install
+        // warnings); if it logs but the island doesn't expand, the webview isn't
+        // receiving `island://hover` (event-listener / focus issue, not native).
+        tracing::debug!(inside, "island: hover boundary crossing");
         let _ = app.emit("island://hover", inside);
     }
+    // Push the cursor's window-LOCAL position so the webview can drive inner-element
+    // hover (row/jump highlight) via `elementFromPoint`. CSS `:hover` is frozen while
+    // CodeHub is backgrounded — the OS delivers mouse-moved only to the active app's
+    // windows — so the expanded roster never lit up under the pointer. The poll knows
+    // the cursor at any time, so we convert it to viewport coords (Cocoa points ==
+    // CSS px; flip Y from the bottom-left frame origin to a top-left viewport origin;
+    // the window top-left == viewport (0,0)) and let the frontend hit-test. Emitted
+    // only while inside the frame, deduped to integer-point moves.
+    if inside {
+        let lx = (p.x - f.origin.x).round() as i32;
+        let ly = ((f.origin.y + f.size.height) - p.y).round() as i32;
+        let packed = (i64::from(lx) << 32) | (i64::from(ly) & 0xFFFF_FFFF);
+        if LAST_CURSOR.swap(packed, Ordering::Relaxed) != packed {
+            let _ = app.emit("island://cursor", CursorPos { x: lx, y: ly });
+        }
+    }
+}
+
+/// Cursor position in island webview-LOCAL coordinates (CSS px, top-left origin),
+/// pushed as `island://cursor` so the React route can `elementFromPoint` it and
+/// drive inner-element hover while CodeHub is backgrounded.
+#[derive(Clone, Copy, serde::Serialize)]
+struct CursorPos {
+    x: i32,
+    y: i32,
 }
 
 /// Install global + local mouse-move monitors so hover-expand works whether or not
@@ -227,11 +268,26 @@ fn install_hover_monitors(app: &AppHandle) {
     if MONITORS_INSTALLED.swap(true, Ordering::Relaxed) {
         return;
     }
+    // Opt out of App Nap (once) so the island stays live while CodeHub is
+    // backgrounded — see `disable_app_nap`.
+    disable_app_nap();
     let g = app.clone();
     let global = RcBlock::new(move |_e: NonNull<NSEvent>| hover_tick(&g));
     // Keep the monitor alive by leaking its token (app-session lifetime).
     let global_token =
         NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::MouseMoved, &global);
+    // A nil token = macOS refused the GLOBAL monitor → hover-expand won't fire while
+    // CodeHub is BACKGROUNDED (cursor over the island with another app frontmost).
+    // NB: NSEvent *mouse* monitors do NOT require the Input Monitoring (TCC
+    // ListenEvent) grant — that gates KEYBOARD monitors + CGEventTap/IOHIDManager
+    // only. So a nil here is an OS/build fault, NOT a missing privacy permission;
+    // there is deliberately no permission prompt (it would request an unneeded
+    // grant). The LOCAL monitor below still drives hover whenever CodeHub is focused.
+    if global_token.is_none() {
+        tracing::warn!(
+            "island: global mouse monitor not installed — backgrounded hover-expand disabled"
+        );
+    }
     std::mem::forget(global_token);
 
     let l = app.clone();
@@ -243,9 +299,57 @@ fn install_hover_monitors(app: &AppHandle) {
     let local_token = unsafe {
         NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::MouseMoved, &local)
     };
+    if local_token.is_none() {
+        tracing::warn!("island: local mouse monitor not installed — focused hover-expand disabled");
+    }
     std::mem::forget(local_token);
 
+    tracing::info!("island: hover monitors installed");
+    install_hover_poll(app);
     install_space_observer(app);
+}
+
+/// Poll the cursor on a main-run-loop timer so hover is detected even when CodeHub
+/// is BACKGROUNDED. Verified empirically: the global `NSEvent` mouse monitor
+/// delivers ZERO events while another app is frontmost (it silently never fires
+/// without the Input Monitoring grant — which we deliberately do NOT demand for a
+/// notch widget). `NSEvent::mouseLocation()` needs no permission and is readable at
+/// any time, so a ~20 Hz timer calling `hover_tick` covers the background case; the
+/// LOCAL monitor still gives instant response while CodeHub is active. Cost is one
+/// bounds check per tick, and `hover_tick` early-returns while the island is hidden.
+/// Scheduled on the main run loop (we are on the main thread here); App Nap is
+/// disabled so the run loop keeps pumping the timer while backgrounded. The timer is
+/// leaked to live for the app session.
+fn install_hover_poll(app: &AppHandle) {
+    let a = app.clone();
+    let block = RcBlock::new(move |_t: NonNull<NSTimer>| {
+        hover_tick(&a);
+    });
+    // SAFETY: standard repeating timer; the block borrows nothing past its call.
+    let timer =
+        unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(0.05, true, &block) };
+    std::mem::forget(timer);
+}
+
+/// Disable App Nap for the whole process. macOS suppresses a non-frontmost
+/// `.regular` app: its timers are throttled, its WKWebView rendering is paused,
+/// and `NSWorkspace` notification blocks are coalesced/delayed. That broke the
+/// island two ways while another app was active — (1) hover-expand only animated
+/// AFTER a click "woke" the webview, and (2) the active-Space observer fired late
+/// or never, so the island failed to realize on other Spaces. Beginning a long-
+/// lived user-initiated activity opts the process out of App Nap; we keep idle
+/// SYSTEM sleep allowed (we only need the app awake, not the machine). The
+/// returned activity token is leaked so it lasts the whole app session — dropping
+/// it would re-enable App Nap. Main-thread only (called from the setup path).
+fn disable_app_nap() {
+    let pi = NSProcessInfo::processInfo();
+    let reason = NSString::from_str("CodeHub Dynamic Island stays live while backgrounded");
+    let token = pi.beginActivityWithOptions_reason(
+        NSActivityOptions::UserInitiatedAllowingIdleSystemSleep,
+        &reason,
+    );
+    std::mem::forget(token);
+    tracing::info!("island: App Nap disabled (overlay stays live while backgrounded)");
 }
 
 /// Re-float the island onto the active Space whenever the user switches Spaces.
@@ -275,6 +379,7 @@ fn install_space_observer(app: &AppHandle) {
         // never ran and the (CanJoinAllSpaces) window never realized on the newly
         // active Space. Doing it inline (like `hover_tick`) fixes the follow.
         let ns: &NSWindow = unsafe { &*(ptr.cast::<NSWindow>()) };
+        tracing::debug!("island: active Space changed — re-floating + raising");
         float_on_all_spaces(ns);
         ns.orderFrontRegardless();
     });
@@ -373,6 +478,11 @@ fn place(win: &WebviewWindow, follow: bool, size: Option<NSSize>) {
         // screen top and merge with the notch.
         ns.setFrame_display(rect, false);
         ns.setFrameOrigin(rect.origin);
+        // notch_h > 0 → notched display (strip merges with the notch); 0 → external/
+        // notch-less (the pill hangs under the menu bar). If this is 0 on a notched
+        // Mac, the wrong branch renders — check `safeAreaInsets().top` for that screen.
+        // NB: no log here — `place` runs per morph frame (ResizeObserver), so a debug
+        // line would flood. The notch geom is observable via the `island://notch` emit.
         let _ = app.emit(
             "island://notch",
             NotchGeom {

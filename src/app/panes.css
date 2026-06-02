@@ -874,11 +874,133 @@ body.dragging .divider::after {
   }
 }
 
-/* Dynamic-Island session row — hover highlight (the surface is pure black, so
-   --bg-hover reads clearly). Whole row is the jump-to-terminal target. */
-.island-row {
-  transition: background 0.12s ease;
+/* Dynamic-Island surface — a polished obsidian slab. At rest it's flat black so it
+   merges with the notch; on expand (`[data-open]`, set from the React `expanded`
+   state) a faint top sheen + a hairline inner ring + a deeper drop shadow make it
+   "wake up" into a floating glass card. Background sheen is `background-image`
+   (paints BEHIND content) so the inline `background-color` can't clobber it and no
+   z-index juggling is needed. */
+.island-surface {
+  box-shadow: 0 0.625rem 1.75rem -0.5rem rgba(0, 0, 0, 0.6);
+  transition: box-shadow 0.2s ease;
 }
-.island-row:hover {
-  background: var(--bg-hover);
+/* Expanded stays PURE BLACK (the surface is `--island-bg: #000`). No white sheen or
+   inner ring — only a deeper drop shadow to lift it off the desktop. The merge with
+   the physical notch reads as one continuous black shape; any white wash broke that. */
+.island-surface[data-open="true"] {
+  box-shadow: 0 0.875rem 2.25rem -0.5rem rgba(0, 0, 0, 0.8);
+}
+
+/* Dynamic-Island session row — hover highlight (the surface is pure black, so
+   --bg-hover reads clearly). Whole row is the jump-to-terminal target. `background-
+   color` is animated for hover so it layers over the active row's `background-image`
+   wash instead of clobbering it. */
+.island-row {
+  transition: background-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+/* `.is-cursor` mirrors `:hover` — driven by the native cursor bridge
+   (island://cursor → elementFromPoint) so the row lights even while CodeHub is
+   backgrounded, where CSS :hover is frozen (no mouse-moved to an inactive app). */
+.island-row:hover,
+.island-row.is-cursor {
+  background-color: var(--bg-hover);
+}
+.island-row:active {
+  transform: scale(0.985);
+}
+
+/* Active (lead) row: a faint left-to-right wash in the agent's status color
+   (`--row-accent`, set inline) so the agent that matters glows under its status
+   rail. Lives on `background-image` so the hover `background-color` layers on top. */
+.island-row--active {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--row-accent, var(--pri)) 12%, transparent),
+    transparent 58%
+  );
+}
+
+/* The terminal-glyph "jump" affordance: a faint rounded chip that is ALWAYS visible
+   at the row's trailing edge (so the row reads as "open in terminal" at rest), then
+   fills with the primary accent + lifts when the row is hovered. */
+.island-row__jump {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 0.4375rem;
+  color: var(--fg-3);
+  background: color-mix(in oklab, var(--fg-0) 6%, transparent);
+  transition: color 0.14s ease, background 0.14s ease, transform 0.14s ease;
+}
+.island-row:hover .island-row__jump,
+.island-row.is-cursor .island-row__jump {
+  color: var(--pri);
+  background: var(--pri-dim);
+  transform: scale(1.08);
+}
+.island-row:active .island-row__jump {
+  transform: scale(0.94);
+}
+
+/* Active (lead) row status rail — a crisp rounded capsule inset from the row edges
+   in the agent's status color, with a soft glow. Replaces the old inset box-shadow
+   rail that followed the row's corner radius (it read as a rounded bracket). */
+.island-row__rail {
+  position: absolute;
+  left: 0.4375rem;
+  top: 0.4375rem;
+  bottom: 0.4375rem;
+  width: 0.1875rem;
+  border-radius: 999px;
+  background: var(--row-accent, var(--pri));
+  box-shadow: 0 0 0.4375rem -0.0625rem
+    color-mix(in oklab, var(--row-accent, var(--pri)) 50%, transparent);
+}
+
+/* Indeterminate "working" equalizer (ActivityBars) — bars bounce out of phase in
+   `currentColor` (set to the agent accent). Signals ACTIVITY, not a percentage. */
+.island-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.0625rem;
+  height: 0.75rem;
+  flex-shrink: 0;
+}
+.island-eq > i {
+  width: 0.125rem;
+  height: 100%;
+  border-radius: 0.0625rem;
+  background: currentColor;
+  transform-origin: center bottom;
+  animation: island-eq 0.9s ease-in-out infinite;
+}
+.island-eq > i:nth-child(1) {
+  animation-delay: -0.6s;
+}
+.island-eq > i:nth-child(2) {
+  animation-delay: -0.3s;
+}
+.island-eq > i:nth-child(3) {
+  animation-delay: -0.48s;
+}
+.island-eq > i:nth-child(4) {
+  animation-delay: -0.15s;
+}
+@keyframes island-eq {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .island-eq > i {
+    animation: none;
+    transform: scaleY(0.6);
+  }
 }

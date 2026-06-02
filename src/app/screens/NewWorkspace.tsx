@@ -17,6 +17,7 @@
  * the first agent tab. Reuses the shared spawn-form pieces so it can't drift from
  * the spawn dialog.
  */
+import { AGENT_META, AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { IconBtn } from "@/app/components/primitives/IconBtn";
 import { Tip } from "@/app/components/primitives/Tip";
 import { Ico } from "@/app/components/primitives/icons";
@@ -374,7 +375,16 @@ export function NewWorkspace() {
                       <SelectContent className={SELECT_CONTENT}>
                         {CLIS.map((c) => (
                           <SelectItem key={c.id} value={c.id} className={SELECT_ITEM}>
-                            {c.label}
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                              }}
+                            >
+                              <AgentGlyph agent={c.id} size={14} color={AGENT_META[c.id].accent} />
+                              <span>{c.label}</span>
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>

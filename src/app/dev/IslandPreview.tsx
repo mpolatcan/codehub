@@ -13,20 +13,20 @@ import {
 
 const NOTCH_W = 180; // camera dead-zone width (px) — ~14" MBP
 const NOTCH_H = 32; // notch / menu-bar height (px)
-const FLANK = 58;
-const EXPANDED_W = 420;
+const FLANK = 64;
+const EXPANDED_W = 360;
 
 const SAMPLE: IslandSessionView[] = [
   {
     session: "claude-1",
-    status: "done",
+    status: "live",
     title: "fix auth bug",
     agent: "claude",
     agentName: "Claude",
     workspace: "aurora-api",
     ago: "28m",
     subtitle: "fix the auth bug in middleware",
-    action: "Finished — click to jump",
+    action: "Thinking…",
   },
   {
     session: "codex-1",
@@ -36,22 +36,31 @@ const SAMPLE: IslandSessionView[] = [
     agentName: "Codex",
     workspace: "edge",
     ago: "1h",
+    action: "Running npm test",
   },
   {
     session: "antigravity-1",
-    status: "idle",
+    status: "wait",
     title: "optimize queries",
     agent: "antigravity",
     agentName: "Antigravity",
     workspace: "warehouse",
     ago: "5h",
+    action: "Needs input",
   },
 ];
 
 // One mock "display": a dark panel with the physical notch drawn at its top-center,
 // and the island surface merged into it (top strip fills the notch, body flares
 // below). `expanded` shows the full roster.
-function Stage({ expanded }: { expanded: boolean }) {
+function Stage({
+  expanded,
+  sessions = SAMPLE,
+}: { expanded: boolean; sessions?: IslandSessionView[] }) {
+  // Mirror screens/Island.tsx: a lone agent widens the collapsed flanks to fit its
+  // workspace name, capped at the expanded width.
+  const singleWs = sessions.length === 1 && !!sessions[0]?.workspace;
+  const collapsedW = Math.min(EXPANDED_W, NOTCH_W + 2 * (singleWs ? 96 : FLANK));
   return (
     <div
       style={{
@@ -82,24 +91,26 @@ function Stage({ expanded }: { expanded: boolean }) {
       {/* The island surface, top flush with the screen top so its notch-height strip
           merges with the notch above; camera dead-zone aligns with the notch. */}
       <div
+        className="island-surface"
+        data-open={expanded}
         style={{
           position: "absolute",
           top: 0,
           left: "50%",
           transform: "translateX(-50%)",
-          width: `${expanded ? EXPANDED_W : NOTCH_W + 2 * FLANK}px`,
+          width: `${expanded ? EXPANDED_W : collapsedW}px`,
           zIndex: 2,
           ...ISLAND_SURFACE,
         }}
       >
         <NotchStrip
-          active={SAMPLE[0]}
-          count={SAMPLE.length}
+          active={sessions[0] ?? null}
+          count={sessions.length}
           notchW={NOTCH_W}
           notchH={NOTCH_H}
           expanded={expanded}
         />
-        {expanded ? <IslandList sessions={SAMPLE} onJump={() => {}} /> : null}
+        {expanded ? <IslandList sessions={sessions} onJump={() => {}} /> : null}
       </div>
     </div>
   );
@@ -122,6 +133,10 @@ export default function IslandPreview() {
         Collapsed — fills the notch, content flanks the camera
       </div>
       <Stage expanded={false} />
+      <div style={{ color: "var(--fg-2)", fontFamily: "var(--mono)", fontSize: "var(--fs-12)" }}>
+        Collapsed (single agent) — shows its workspace instead of a count
+      </div>
+      <Stage expanded={false} sessions={[SAMPLE[0]]} />
       <div style={{ color: "var(--fg-2)", fontFamily: "var(--mono)", fontSize: "var(--fs-12)" }}>
         Expanded — grows down + out of the notch
       </div>

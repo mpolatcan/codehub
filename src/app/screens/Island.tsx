@@ -27,15 +27,24 @@ import { type SessionActivity, ipc } from "../lib/ipc";
 
 const POLL_MS = 700;
 
+// Native (Tauri webview) vs the dev-web browser. In the native island the cursor
+// poll in `island.rs` is the AUTHORITATIVE hover signal (it works foreground AND
+// backgrounded); the in-webview DOM `onMouseEnter/Leave` is UNRELIABLE there — a
+// non-key island window can miss the `mouseleave` after a jump refocuses the main
+// window, leaving DOM hover stuck `true` and pinning the island's state. So we use
+// DOM hover ONLY in the browser, where the native events never fire.
+const IS_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
 // Surface widths in PX (numbers, not rem) — the island root is pinned to 16px so it
 // is a fixed-size native surface, not the fluid chrome, and a numeric width lets the
 // spring morph between the notch-sized collapsed box and the expanded box smoothly.
 // On a notched display the collapsed width is `notch.width + 2·FLANK` (computed live)
 // so the strip just clears the camera; COLLAPSED_W is the notch-less fallback.
 const COLLAPSED_W = 280;
-const EXPANDED_W = 420;
-// Room (px) each side of the camera dead-zone for the status dot / count chip.
-const FLANK = 58;
+const EXPANDED_W = 360;
+// Room (px) each side of the camera dead-zone for the status dot / count chip (and,
+// when a single agent is active, its collapsed workspace tag).
+const FLANK = 64;
 // One spring drives BOTH the width morph and the body height-accordion so the box
 // grows out of the notch as a single fluid motion (Apple-DI feel). Snappy, settled.
 const SURFACE_SPRING = { type: "spring", stiffness: 420, damping: 36 } as const;
@@ -60,19 +69,27 @@ function agentFromName(session: string): AgentId | null {
   return slug === "claude" || slug === "codex" || slug === "antigravity" ? slug : null;
 }
 
-// Status line shown on the expanded active row. Idle rows get none.
-function actionFor(status: StatusKey): string | undefined {
-  switch (status) {
-    case "wait":
-      return "Needs input — click to jump";
-    case "err":
-      return "Failed — click to jump";
-    case "done":
-      return "Finished — click to jump";
-    case "live":
+// Humanize the shared live-status label (deriveLiveStatus) for the island's per-row
+// event line. The label is a REAL signal — the hook lifecycle: "thinking" (model
+// generating, no tool), "running <tool>" (inside a tool call), "needs input"
+// (blocked), "finished"/"failed" (transient turn outcome), "working" (hook-less
+// byte-flow). Idle → none (the row's time + dot already say "at rest").
+function eventLabel(label: string): string | undefined {
+  if (label.startsWith("idle")) return undefined;
+  if (label.startsWith("running ")) return `Running ${label.slice("running ".length)}`;
+  switch (label) {
+    case "needs input":
+      return "Needs input";
+    case "thinking":
+      return "Thinking…";
+    case "working":
       return "Working…";
+    case "finished":
+      return "Finished";
+    case "failed":
+      return "Failed";
     default:
-      return undefined;
+      return label;
   }
 }
 
@@ -86,7 +103,12 @@ function paneTitle(session: string, alias: string | null, agent: AgentId): strin
   return idx ? `${AGENT_NAME[agent]} ${idx}` : AGENT_NAME[agent];
 }
 
-function toView(act: SessionActivity, status: StatusKey, agent: AgentId): IslandSessionView {
+function toView(
+  act: SessionActivity,
+  status: StatusKey,
+  agent: AgentId,
+  label: string,
+): IslandSessionView {
   const title = paneTitle(act.session, act.alias, agent);
   const subtitle =
     act.taskDescription && act.taskDescription !== title ? act.taskDescription : undefined;
@@ -99,7 +121,7 @@ function toView(act: SessionActivity, status: StatusKey, agent: AgentId): Island
     workspace: act.workspace ?? undefined,
     ago: fmtIdle(act.idleMs),
     subtitle,
-    action: actionFor(status),
+    action: eventLabel(label),
   };
 }
 
@@ -121,9 +143,30 @@ export function Island() {
   // notch.width; both 0 on external/notch-less displays (→ a plain pill below the
   // menu bar). Changes as the island follows the cursor across screens.
   const [notch, setNotch] = useState({ width: 0, height: 0 });
+  // After a jump (a row click), collapse the island and KEEP it collapsed even
+  // though the cursor is still over it — otherwise `nativeHover`/`hovering` would
+  // hold it open. Cleared once the cursor actually leaves (both hover signals go
+  // false), so the next hover re-expands normally. Urgency still overrides it.
+  const [suppressed, setSuppressed] = useState(false);
+  // Session of the row the cursor is over, hit-tested from the native cursor bridge
+  // (island://cursor → elementFromPoint). Drives inner-row hover while CodeHub is
+  // backgrounded, where CSS :hover is frozen (no mouse-moved to an inactive app).
+  const [cursorSession, setCursorSession] = useState<string | null>(null);
   const roRef = useRef<ResizeObserver | null>(null);
 
-  const expanded = hovering || nativeHover || urgent;
+  // Native: trust ONLY the poll (`nativeHover`) — DOM hover can stick after a jump.
+  // Browser: the poll never fires, so fall back to DOM hover.
+  const hover = nativeHover || (!IS_TAURI && hovering);
+  const expanded = urgent || (hover && !suppressed);
+
+  // Cursor left the surface → drop the post-jump suppression so hovering works again,
+  // and clear the native-driven row highlight.
+  useEffect(() => {
+    if (!hover) {
+      if (suppressed) setSuppressed(false);
+      setCursorSession(null);
+    }
+  }, [hover, suppressed]);
 
   // Native signals — all work regardless of app focus (see island.rs monitors).
   // No-ops in browser (dev bridge never emits them); the JS hover above covers dev.
@@ -133,6 +176,13 @@ export function Island() {
     listen<{ width: number; height: number }>("island://notch", (e) => setNotch(e.payload)).then(
       (f) => uns.push(f),
     );
+    // Native cursor bridge → drive inner-row hover by hit-testing the reported point.
+    // Coords are window-local CSS px (island.rs flips Cocoa's bottom-left origin).
+    listen<{ x: number; y: number }>("island://cursor", (e) => {
+      const el = document.elementFromPoint(e.payload.x, e.payload.y);
+      const row = el?.closest("[data-island-row]");
+      setCursorSession(row?.getAttribute("data-island-row") ?? null);
+    }).then((f) => uns.push(f));
     return () => {
       for (const u of uns) u();
     };
@@ -183,15 +233,15 @@ export function Island() {
             if (!liveNames.has(act.session)) return null;
             const agent = agentFromName(act.session);
             if (!agent) return null;
-            const status = deriveLiveStatus(act, awaiting.has(act.session)).status;
-            return { act, status, agent, idle: act.idleMs };
+            const live = deriveLiveStatus(act, awaiting.has(act.session));
+            return { act, status: live.status, agent, idle: act.idleMs, label: live.label };
           })
           .filter((x): x is NonNullable<typeof x> => x !== null)
           .sort((a, b) => {
             const r = (RANK[b.status] ?? 0) - (RANK[a.status] ?? 0);
             return r !== 0 ? r : a.idle - b.idle; // ties: most-recent first
           })
-          .map(({ act, status, agent }) => toView(act, status, agent));
+          .map(({ act, status, agent, label }) => toView(act, status, agent, label));
 
         setSessions(views);
         setUrgent(
@@ -240,11 +290,20 @@ export function Island() {
   }, []);
 
   const onJump = useCallback((session: string) => {
+    // Collapse immediately on jump (stays collapsed until the cursor leaves), so
+    // focus visibly moves to the terminal instead of leaving the roster hanging open.
+    setSuppressed(true);
     void ipc.focusSessionFromCompanion(session).catch(() => {});
   }, []);
 
   const active = sessions[0] ?? null;
   const notched = notch.height > 0;
+  // A lone agent shows its workspace in the collapsed strip — widen the camera flanks
+  // so the name isn't truncated, but never past the expanded width (a collapsed pill
+  // wider than the open one would look broken). Multiple agents → the count chip is
+  // tiny, keep the tight FLANK.
+  const singleWs = sessions.length === 1 && !!active?.workspace;
+  const collapsedW = Math.min(EXPANDED_W, notch.width + 2 * (singleWs ? 96 : FLANK));
 
   return (
     <div
@@ -278,8 +337,10 @@ export function Island() {
             the morph continuously instead of snapping. */}
         {notched ? (
           <motion.div
+            className="island-surface"
+            data-open={expanded}
             initial={false}
-            animate={{ width: expanded ? EXPANDED_W : notch.width + 2 * FLANK }}
+            animate={{ width: expanded ? EXPANDED_W : collapsedW }}
             transition={SURFACE_SPRING}
             style={ISLAND_SURFACE}
           >
@@ -299,12 +360,19 @@ export function Island() {
               transition={SURFACE_SPRING}
               style={{ overflow: "hidden" }}
             >
-              <IslandList sessions={sessions} onJump={onJump} show={expanded} />
+              <IslandList
+                sessions={sessions}
+                onJump={onJump}
+                show={expanded}
+                cursorSession={cursorSession}
+              />
             </motion.div>
           </motion.div>
         ) : (
           // Notch-less display (external monitor): a plain pill that morphs bar↔list.
           <motion.div
+            className="island-surface"
+            data-open={expanded}
             initial={false}
             animate={{ width: expanded ? EXPANDED_W : COLLAPSED_W }}
             transition={SURFACE_SPRING}
@@ -320,7 +388,7 @@ export function Island() {
                 style={{ overflow: "hidden" }}
               >
                 {expanded ? (
-                  <IslandList sessions={sessions} onJump={onJump} />
+                  <IslandList sessions={sessions} onJump={onJump} cursorSession={cursorSession} />
                 ) : (
                   <IslandBar active={active} count={sessions.length} />
                 )}

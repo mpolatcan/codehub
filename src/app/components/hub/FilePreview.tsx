@@ -16,11 +16,15 @@ const WIDTH = 22.5; // rem (scales with the fluid root)
 export function FilePreview({ path, onClose }: { path: string; onClose: () => void }) {
   const [body, setBody] = useState<string | null>(null);
   const containerKey = useStore((s) => activeWorkspace(s)?.containerKey);
-  const { size, dragging, ref, beginResize, reset } = useResizableDock("ch.filePreview.wr2", WIDTH, {
-    min: 12,
-    max: () => Math.max(12, Math.min(window.innerWidth * 0.5, 43.75 * rootPx()) / rootPx()),
-    edge: "left",
-  });
+  const { size, dragging, ref, beginResize, reset } = useResizableDock(
+    "ch.filePreview.wr2",
+    WIDTH,
+    {
+      min: 12,
+      max: () => Math.max(12, Math.min(window.innerWidth * 0.5, 43.75 * rootPx()) / rootPx()),
+      edge: "left",
+    },
+  );
 
   useEffect(() => {
     let alive = true;
