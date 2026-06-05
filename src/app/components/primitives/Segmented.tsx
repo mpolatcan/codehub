@@ -18,9 +18,18 @@ export interface SegmentedProps<T extends string> {
   value: T;
   options: SegmentedOption<T>[];
   onChange: (key: T) => void;
+  // Stretch the pill to its container and split it into equal-width segments
+  // (each item `flex-1`) — used where the control reads as a tab strip rather
+  // than a compact inline switch.
+  fullWidth?: boolean;
 }
 
-export function Segmented<T extends string>({ value, options, onChange }: SegmentedProps<T>) {
+export function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  fullWidth = false,
+}: SegmentedProps<T>) {
   return (
     <ToggleGroup
       type="single"
@@ -29,13 +38,17 @@ export function Segmented<T extends string>({ value, options, onChange }: Segmen
       // is clicked again, so the selection can't be cleared (matches the old
       // button-row behavior).
       onValueChange={(v) => v && onChange(v as T)}
-      className="overflow-hidden rounded-md border border-[var(--bd)] bg-[var(--bg-1)]"
+      className={`overflow-hidden rounded-md border border-[var(--bd)] bg-[var(--bg-1)]${
+        fullWidth ? " flex w-full" : ""
+      }`}
     >
       {options.map((o) => (
         <ToggleGroupItem
           key={o.key}
           value={o.key}
-          className="h-auto rounded-none border-0 px-3.5 py-1.5 font-sans text-xs text-[var(--fg-2)] data-[state=on]:bg-[var(--bg-3)] data-[state=on]:text-[var(--fg-0)]"
+          className={`h-auto rounded-none border-0 px-3.5 py-1.5 font-sans text-xs text-[var(--fg-2)] data-[state=on]:bg-[var(--bg-3)] data-[state=on]:text-[var(--fg-0)]${
+            fullWidth ? " flex-1" : ""
+          }`}
         >
           {o.label}
         </ToggleGroupItem>

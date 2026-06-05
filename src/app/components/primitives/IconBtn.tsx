@@ -1,8 +1,11 @@
-import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
+import type { ButtonHTMLAttributes, CSSProperties, MouseEventHandler, ReactNode, Ref } from "react";
 import { Button } from "../../ui/button";
 import { Tip } from "./Tip";
 
-export interface IconBtnProps {
+// Extends the native button props so the handlers/ref/data-* that Radix injects
+// when an external `<Tip>`/<DropdownMenuTrigger asChild> clones an <IconBtn>
+// have a typed home and get forwarded to the underlying <Button>.
+export interface IconBtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   onClick?: MouseEventHandler<HTMLButtonElement>;
   title?: string;
@@ -19,6 +22,12 @@ export interface IconBtnProps {
   idleColor?: string;
   hoverColor?: string;
   hoverBg?: string;
+  // Forwarded to <Button> so a wrapping `<Tip><IconBtn/></Tip>` (Radix asChild)
+  // can attach its tooltip ref — without it the cloned ref has nowhere to land
+  // and the tooltip never opens.
+  ref?: Ref<HTMLButtonElement>;
+  // Accessible name for icon-only buttons (no visible text child).
+  "aria-label"?: string;
 }
 
 // Token-driven icon button. Renders the shadcn <Button> (variant `ghostIcon`)
@@ -37,6 +46,11 @@ export function IconBtn({
   idleColor,
   hoverColor,
   hoverBg,
+  ref,
+  "aria-label": ariaLabel,
+  // Radix-injected handlers (onPointerMove/onFocus/data-state/…) land here and
+  // are spread onto <Button> so the trigger's hover/press wiring actually binds.
+  ...rest
 }: IconBtnProps) {
   // Map state → the CSS vars consumed by the `ghostIcon` variant. active pins
   // hover to the active colors so it reads "stuck on"; an explicit idleColor
@@ -57,10 +71,13 @@ export function IconBtn({
 
   const btn = (
     <Button
+      {...rest}
+      ref={ref}
       type="button"
       variant="ghostIcon"
       onClick={onClick}
       disabled={disabled}
+      aria-label={ariaLabel}
       // Layout (size/radius) stays inline so callers can override width/height.
       // The icon is pinned to 0.875rem (14px at base, scales with the root)
       // instead of the variant's size-4, so box + glyph grow together. disabled

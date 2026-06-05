@@ -1,14 +1,20 @@
-import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ExpandTab,
   ISLAND_SURFACE,
   IslandBar,
   IslandList,
   type IslandSessionView,
+  MASCOT_STATUS,
   NotchStrip,
+  mascotAccent,
+  mascotStateFor,
+  statusTally,
 } from "../components/Island";
 import type { AgentId } from "../components/primitives/AgentGlyph";
-import type { StatusKey } from "../components/primitives/StatusDot";
+import { MascotGif } from "../components/primitives/MascotGif";
+import type { MascotState } from "../components/primitives/RobotMascot";
+import { StatusDot, type StatusKey } from "../components/primitives/StatusDot";
 import { deriveLiveStatus, fmtIdle } from "../lib/activity";
 import { type UnlistenFn, listen } from "../lib/bridge";
 import { type SessionActivity, ipc } from "../lib/ipc";
@@ -34,20 +40,92 @@ const POLL_MS = 700;
 // window, leaving DOM hover stuck `true` and pinning the island's state. So we use
 // DOM hover ONLY in the browser, where the native events never fire.
 const IS_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+// True wherever the authoritative native cursor poll exists: the Tauri app AND the
+// .accessory helper webview (its bridge shim sets `__CODEHUB_ISLAND_NATIVE`). In
+// both we trust ONLY the poll and IGNORE the in-webview DOM hover — the helper is
+// not Tauri, so keying off IS_TAURI alone misclassified it as a dev browser and
+// fell back to DOM hover, which never fires mouseleave when CodeHub is inactive →
+// the island stuck EXPANDED after the cursor left (only collapsed on a row click).
+const NATIVE_HOVER =
+  IS_TAURI || (typeof window !== "undefined" && "__CODEHUB_ISLAND_NATIVE" in window);
+// In the native panel the WINDOW is sized natively — `island-helper` interpolates the
+// panel frame to the per-mode target (rAF is suspended in the hidden helper webview, so
+// neither framer-motion nor a CSS width transition can animate the box). So the card +
+// surface FILL the window (width:100%) and follow that native frame animation via layout
+// → the visible black pill grows/shrinks WITH the window, symmetric (the native place()
+// recenters x each step). In the dev browser there's no native window, so the card takes
+// its explicit per-mode target width (snaps; keeps the route pill-sized + verifiable).
+const NATIVE_PANEL = NATIVE_HOVER;
 
 // Surface widths in PX (numbers, not rem) — the island root is pinned to 16px so it
 // is a fixed-size native surface, not the fluid chrome, and a numeric width lets the
 // spring morph between the notch-sized collapsed box and the expanded box smoothly.
-// On a notched display the collapsed width is `notch.width + 2·FLANK` (computed live)
-// so the strip just clears the camera; COLLAPSED_W is the notch-less fallback.
-const COLLAPSED_W = 280;
-const EXPANDED_W = 360;
-// Room (px) each side of the camera dead-zone for the status dot / count chip (and,
-// when a single agent is active, its collapsed workspace tag).
-const FLANK = 64;
-// One spring drives BOTH the width morph and the body height-accordion so the box
-// grows out of the notch as a single fluid motion (Apple-DI feel). Snappy, settled.
-const SURFACE_SPRING = { type: "spring", stiffness: 420, damping: 36 } as const;
+// On a notched display the collapsed width is at least `notch.width + 2·FLANK`
+// (computed live) so the strip clears the camera with room for its content;
+// COLLAPSED_W is the minimum notched surface and the notch-less fallback.
+const COLLAPSED_W = 340;
+const EXPANDED_W = 420;
+// Collapsed notch-strip flank sizing (px, each side of the camera dead-zone). The
+// strip SIZES TO ITS CONTENT instead of a fixed width: each flank grows to fit the
+// lead agent's title (left) and live event (right) so the text shows in FULL when it
+// fits, and ellipsizes only once a flank would reach the menu bar. So short content
+// yields a NARROW strip (no overlap) while long content widens up to the expanded
+// width rather than truncating over an empty-looking pill. Symmetric (the camera
+// dead-zone stays centered): the larger of the two needs sets both flanks.
+const FLANK_MIN = 40;
+// Ceiling per flank. The whole collapsed pill is still clamped to EXPANDED_W, so this
+// only bounds how wide each side grows for its content (mascot + label left, count
+// right) before the overall cap kicks in.
+const FLANK_MAX = 150;
+
+// The transparent shadow margin baked into the outer card (`padding: 0 1.5rem 1.5rem`).
+// The island pins its rem root to 16px, so 1.5rem = 24px. The native window is sized to
+// surface + this margin so the float shadow isn't clipped. Used to compute the window
+// target directly (no per-frame ResizeObserver) — see the resize effects below.
+const PAD_X = 24;
+const PAD_B = 24;
+
+// PEEK (minimized) surface — the island shrunk so only the mascot + count show and the
+// pill narrows symmetrically (reducing equally on both sides as the native window
+// recenters), freeing the menu bar to its sides. On a notched display the mascot still
+// flanks the camera (left) with the count on the right, just with tight flanks; off-notch
+// it's a small mascot+count pill. The peek flank only needs the mascot box + a little pad
+// (the label is dropped), so it's much tighter than the collapsed flank.
+const PEEK_FLANK_PAD = 18;
+// Height (px) of the transparent zone BELOW the black surface that holds the floating
+// chevron (ExpandTab) — the tab sits OUTSIDE the island, just past its bottom edge. Added
+// to the collapsed + expanded window targets (above the PAD_B shadow margin) so the chevron
+// is inside the window (clickable + not clipped). Peek has no tab.
+const EXPAND_TAB_H = 15;
+type IslandMode = "expanded" | "collapsed" | "peek";
+
+// Measure an element's natural border-box size via ResizeObserver, exposed as state.
+// Used on the NATURAL content (banner+list / bar) — which is pinned to a FIXED width (or
+// is content-sized), so its measured size is morph-STABLE: it changes only when the
+// rows/banner/label change, never during the expand/collapse spring. That stability is
+// what lets the window jump to its final size ONCE instead of chasing the animation
+// frame-by-frame (the old shake — a width-tracking measurer reflowed every frame).
+function useMeasuredSize(): [(node: HTMLDivElement | null) => void, number, number] {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const ro = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((node: HTMLDivElement | null) => {
+    ro.current?.disconnect();
+    if (!node) {
+      ro.current = null;
+      return;
+    }
+    const measure = () => {
+      const w = node.offsetWidth;
+      const h = node.offsetHeight;
+      if (w > 0 && h > 0) setSize((p) => (p.w === w && p.h === h ? p : { w, h }));
+    };
+    const obs = new ResizeObserver(measure);
+    obs.observe(node);
+    ro.current = obs;
+    measure();
+  }, []);
+  return [ref, size.w, size.h];
+}
 
 const AGENT_NAME: Record<string, string> = {
   claude: "Claude",
@@ -103,6 +181,19 @@ function paneTitle(session: string, alias: string | null, agent: AgentId): strin
   return idx ? `${AGENT_NAME[agent]} ${idx}` : AGENT_NAME[agent];
 }
 
+// Active-turn elapsed → "M:SS" (or "H:MM:SS" past an hour). REAL: `turnElapsedMs` is
+// `now - turn_started_at` recomputed every snapshot and cleared at turn end, so it
+// ticks while the agent works and vanishes when it stops — a glance answers "how long
+// has it been grinding". Only shown for a live agent (see toView).
+function fmtTurn(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
 function toView(
   act: SessionActivity,
   status: StatusKey,
@@ -120,21 +211,194 @@ function toView(
     agentName: AGENT_NAME[agent] ?? "Agent",
     workspace: act.workspace ?? undefined,
     ago: fmtIdle(act.idleMs),
+    timer: status === "live" && act.turnElapsedMs != null ? fmtTurn(act.turnElapsedMs) : undefined,
     subtitle,
     action: eventLabel(label),
   };
 }
 
+// Header label for the EXPANDED island's mascot — a per-state phrase (the expanded
+// panel has room for the nuance the collapsed strip's working/idle can't).
+const BANNER_LABEL: Record<MascotState, string> = {
+  idle: "All idle",
+  thinking: "Thinking…",
+  coding: "Working",
+  building: "Deploying",
+  success: "Done",
+  error: "Needs attention",
+};
+
+// Crown of the EXPANDED island: the animated robot mascot seated in a state-tinted
+// "well", an app-identity overline, the aggregate state (status dot + phrase), and a
+// live-agent count pill — over a status-spine hairline that divides it from the roster.
+// Only mounted when expanded (so the active-state GIF is fetched on first expand).
+export function MascotBanner({ sessions }: { sessions: IslandSessionView[] }) {
+  const count = sessions.length;
+  const mascot = mascotStateFor(sessions);
+  const key = MASCOT_STATUS[mascot];
+  const accent = mascotAccent(mascot);
+  // A MIXED fleet (more than one status present) gets a per-status breakdown chip
+  // (●1 ●2) instead of a flat "N agents"; a single-status fleet keeps the word count.
+  const tally = statusTally(sessions);
+  return (
+    <>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.625rem",
+          padding: "0.625rem 0.6875rem 0.5625rem",
+        }}
+      >
+        {/* Mascot well — a rounded surface with an inset ring + soft outer glow tinted
+            to the fleet state, so the transparent robot reads as a contained avatar. */}
+        <div
+          style={{
+            position: "relative",
+            flexShrink: 0,
+            width: "3.25rem",
+            height: "3.25rem",
+            borderRadius: "0.75rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "color-mix(in oklab, var(--fg-0) 5%, transparent)",
+            boxShadow: `inset 0 0 0 1px color-mix(in oklab, ${accent} 30%, var(--bd-soft)), 0 0 1.25rem -0.625rem ${accent}`,
+          }}
+        >
+          <MascotGif state={mascot} size={44} radius="0.5rem" />
+        </div>
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "0.25rem", minWidth: 0, flex: 1 }}
+        >
+          <span
+            style={{
+              fontSize: "var(--fs-9)",
+              letterSpacing: "0.14em",
+              fontWeight: 600,
+              color: "var(--fg-3)",
+              textTransform: "uppercase",
+            }}
+          >
+            CodeHub · Agents
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4375rem", minWidth: 0 }}>
+            <StatusDot status={key} pulse={key === "live"} />
+            <span
+              style={{
+                fontSize: "var(--fs-14)",
+                fontWeight: 600,
+                color: "var(--fg-0)",
+                lineHeight: 1,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {BANNER_LABEL[mascot]}
+            </span>
+          </div>
+        </div>
+        {/* Fleet count / breakdown — single source of truth (the notch strip's badge is
+            hidden while expanded so it isn't shown twice). MIXED fleet → a per-status
+            tally (colored dots + counts), ordered awaiting-first; single status → the
+            "N agents" word count; empty → nothing (the empty roster below speaks). */}
+        {count === 0 ? null : tally.length > 1 ? (
+          <div
+            style={{
+              flexShrink: 0,
+              alignSelf: "center",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              background: "color-mix(in oklab, var(--fg-0) 6%, transparent)",
+              boxShadow: "inset 0 0 0 1px var(--bd-soft)",
+              borderRadius: "0.4375rem",
+              padding: "0.1875rem 0.5rem",
+            }}
+          >
+            {tally.map(({ key: k, n }) => (
+              <span
+                key={k}
+                className="tnum"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.25rem",
+                  fontSize: "var(--fs-12)",
+                  fontWeight: 700,
+                  color: "var(--fg-0)",
+                }}
+              >
+                <StatusDot status={k} pulse={k === "live" || k === "wait"} />
+                {n}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span
+            style={{
+              flexShrink: 0,
+              alignSelf: "center",
+              display: "inline-flex",
+              alignItems: "baseline",
+              gap: "0.25rem",
+              fontSize: "var(--fs-11)",
+              color: "var(--fg-2)",
+              background: "color-mix(in oklab, var(--fg-0) 6%, transparent)",
+              boxShadow: "inset 0 0 0 1px var(--bd-soft)",
+              borderRadius: "0.4375rem",
+              padding: "0.1875rem 0.4375rem",
+            }}
+          >
+            <b
+              className="tnum"
+              style={{ fontSize: "var(--fs-13)", fontWeight: 700, color: "var(--fg-0)" }}
+            >
+              {count}
+            </b>
+            {count === 1 ? "agent" : "agents"}
+          </span>
+        )}
+        {/* No collapse chevron here — collapse lives in the centered ▴ tab at the bottom
+            of the panel (ExpandTab, same place as the collapsed ▾), so the open/close cue
+            is in ONE spot, not split between a header button and a bottom tab. */}
+      </div>
+      {/* Status spine — the header/roster divider carries the fleet's accent, fading to
+          transparent at both ends, so the panel reads as lit by the aggregate state
+          (neutral hairline while idle). */}
+      <div
+        style={{
+          height: "1px",
+          margin: "0 0.5rem",
+          background:
+            mascot === "idle"
+              ? "var(--bd-soft)"
+              : `linear-gradient(90deg, transparent, color-mix(in oklab, ${accent} 55%, transparent) 22%, color-mix(in oklab, ${accent} 55%, transparent) 78%, transparent)`,
+        }}
+      />
+    </>
+  );
+}
+
 export function Island() {
   const [sessions, setSessions] = useState<IslandSessionView[]>([]);
   // An agent needs attention (waiting / just finished / failed) → auto-expand so
-  // the island announces it without a hover. Working/idle alone stay collapsed.
+  // the island announces it without a click. Working/idle alone stay collapsed.
   const [urgent, setUrgent] = useState(false);
-  // Pointer is over the notch surface → expand on demand (like the real DI).
-  // `hovering` is the in-webview signal (fires only when CodeHub is the active
-  // app); `nativeHover` is pushed from the native global/local mouse monitor
-  // (island.rs) so hover-expand ALSO works while CodeHub is in the background —
-  // a non-activating window otherwise never sees mouse-moved events when inactive.
+  // CLICK-driven expand (replaces hover-expand): the collapsed pill is a click target
+  // → open. Click the header's collapse control (or a row, or let the pointer leave for
+  // a beat) → closed. Hover no longer expands — moving the cursor near the notch used to
+  // pop the panel open over the menu bar by accident.
+  const [open, setOpen] = useState(false);
+  // PEEK: the user tucked the island down to a small nub so the menu bar behind it is
+  // usable. A third resting state below "collapsed"; restored by clicking the nub.
+  const [peeked, setPeeked] = useState(false);
+  // Pointer-over signals — no longer drive expand; they drive (a) auto-collapse once the
+  // cursor leaves the open panel, and (b) native-bridge row hit-testing. `hovering` is the
+  // in-webview signal (fires only when CodeHub is the active app); `nativeHover` is pushed
+  // from the native global/local mouse monitor (island.rs) so it ALSO works while CodeHub
+  // is backgrounded — a non-activating window never sees mouse-moved events when inactive.
   const [hovering, setHovering] = useState(false);
   const [nativeHover, setNativeHover] = useState(false);
   // Notch geometry (px) of the screen the island is currently on, pushed by the
@@ -143,45 +407,94 @@ export function Island() {
   // notch.width; both 0 on external/notch-less displays (→ a plain pill below the
   // menu bar). Changes as the island follows the cursor across screens.
   const [notch, setNotch] = useState({ width: 0, height: 0 });
-  // After a jump (a row click), collapse the island and KEEP it collapsed even
-  // though the cursor is still over it — otherwise `nativeHover`/`hovering` would
-  // hold it open. Cleared once the cursor actually leaves (both hover signals go
-  // false), so the next hover re-expands normally. Urgency still overrides it.
-  const [suppressed, setSuppressed] = useState(false);
   // Session of the row the cursor is over, hit-tested from the native cursor bridge
   // (island://cursor → elementFromPoint). Drives inner-row hover while CodeHub is
   // backgrounded, where CSS :hover is frozen (no mouse-moved to an inactive app).
   const [cursorSession, setCursorSession] = useState<string | null>(null);
-  const roRef = useRef<ResizeObserver | null>(null);
+  // Id of the inline control (chevron / minimize / restore) the native cursor bridge
+  // reports the pointer over — forces its hover look on the backgrounded panel where CSS
+  // :hover is frozen (same mechanism as `cursorSession` for rows). See `IslandCtrl`.
+  const [cursorCtrl, setCursorCtrl] = useState<string | null>(null);
+  // Brief attention pulse: a ring bloom on the surface when an agent FRESHLY flips to
+  // "needs input". Auto-expand alone surfaced the roster silently; the ping is the
+  // "look here" cue. Fired on the rising edge only (see effect below), self-clears.
+  const [ping, setPing] = useState(false);
+  const prevWait = useRef<Set<string>>(new Set());
+  // Natural (morph-stable) sizes of the expanded body (banner+list) and the notch-less
+  // collapsed bar — drive the window target so it's sized ONCE, not chased. The bar is
+  // content-sized, so its WIDTH is measured too: the notch-less collapsed pill hugs the
+  // bar (mascot + label + count) instead of a fixed width, so the "Idle"/"Working" label
+  // can NEVER truncate — the surface is exactly as wide as its content.
+  const [bodyRef, , bodyH] = useMeasuredSize();
+  const [barRef, barW, barH] = useMeasuredSize();
+  // The notch-less MINIMIZED pill (mascot + count, no label) — measured so the peek
+  // window target hugs it exactly (the count can be 1–2 digits).
+  const [minRef, minW, minH] = useMeasuredSize();
 
-  // Native: trust ONLY the poll (`nativeHover`) — DOM hover can stick after a jump.
-  // Browser: the poll never fires, so fall back to DOM hover.
-  const hover = nativeHover || (!IS_TAURI && hovering);
-  const expanded = urgent || (hover && !suppressed);
+  // Native: trust ONLY the poll (`nativeHover`). Browser: the poll never fires, so fall
+  // back to DOM hover. Used for auto-collapse + row hit-testing, NOT expand.
+  const hover = nativeHover || (!NATIVE_HOVER && hovering);
+  // The island is OPEN when the user expanded it. (Urgency auto-opens it on the rising
+  // edge via the effect below, but the user can still collapse it — `open` is the single
+  // source of truth, so an urgent panel isn't force-held open.)
+  const expanded = open;
+  // Three resting states drive the surface size + content. Open wins over peek.
+  const mode: IslandMode = open ? "expanded" : peeked ? "peek" : "collapsed";
 
-  // Cursor left the surface → drop the post-jump suppression so hovering works again,
-  // and clear the native-driven row highlight.
+  // Cursor left the surface → clear the native-driven row + control highlights.
   useEffect(() => {
     if (!hover) {
-      if (suppressed) setSuppressed(false);
       setCursorSession(null);
+      setCursorCtrl(null);
     }
-  }, [hover, suppressed]);
+  }, [hover]);
+
+  // Auto-collapse: once the pointer leaves the OPEN panel, collapse after a short grace
+  // (DI-like — forgiving close without hunting for the chevron). Skipped while urgent so
+  // an attention panel stays up until the user acts; the chevron / a row click close it
+  // instantly regardless.
+  useEffect(() => {
+    if (!open || hover || urgent) return;
+    const t = setTimeout(() => setOpen(false), 600);
+    return () => clearTimeout(t);
+  }, [open, hover, urgent]);
+
+  // Urgency announces itself: on the RISING edge of urgent, open the panel (and undo any
+  // peek). Edge-triggered so the user can collapse a still-urgent panel and it won't
+  // immediately re-open every poll.
+  const prevUrgent = useRef(false);
+  useEffect(() => {
+    if (urgent && !prevUrgent.current) {
+      setOpen(true);
+      setPeeked(false);
+    }
+    prevUrgent.current = urgent;
+  }, [urgent]);
 
   // Native signals — all work regardless of app focus (see island.rs monitors).
   // No-ops in browser (dev bridge never emits them); the JS hover above covers dev.
   useEffect(() => {
     const uns: UnlistenFn[] = [];
     listen<boolean>("island://hover", (e) => setNativeHover(e.payload)).then((f) => uns.push(f));
-    listen<{ width: number; height: number }>("island://notch", (e) => setNotch(e.payload)).then(
-      (f) => uns.push(f),
-    );
+    // The helper RE-EMITS notch dims periodically (a missed first emit, before this
+    // listener attached, otherwise left React stuck notch-less → a narrow pill centered
+    // UNDER the physical notch = invisible). Dedupe by VALUE so the resync is a no-op
+    // when unchanged (no re-render mid-morph — that was the shake).
+    listen<{ width: number; height: number }>("island://notch", (e) =>
+      setNotch((prev) =>
+        prev.width === e.payload.width && prev.height === e.payload.height ? prev : e.payload,
+      ),
+    ).then((f) => uns.push(f));
     // Native cursor bridge → drive inner-row hover by hit-testing the reported point.
     // Coords are window-local CSS px (island.rs flips Cocoa's bottom-left origin).
     listen<{ x: number; y: number }>("island://cursor", (e) => {
       const el = document.elementFromPoint(e.payload.x, e.payload.y);
       const row = el?.closest("[data-island-row]");
       setCursorSession(row?.getAttribute("data-island-row") ?? null);
+      // Same hit-test for the inline controls (chevron / minimize / restore) so they get a
+      // real hover on the backgrounded panel (CSS :hover is frozen there).
+      const ctrl = el?.closest("[data-island-ctrl]");
+      setCursorCtrl(ctrl?.getAttribute("data-island-ctrl") ?? null);
     }).then((f) => uns.push(f));
     return () => {
       for (const u of uns) u();
@@ -271,44 +584,129 @@ export function Island() {
     if (urgent) void ipc.islandPresent().catch(() => {});
   }, [urgent]);
 
-  // Keep the native window sized to the current content (+ shadow margin). A
-  // callback ref re-attaches the ResizeObserver as the bar/list swap in and out.
-  const cardRef = useCallback((node: HTMLDivElement | null) => {
-    roRef.current?.disconnect();
-    if (!node) {
-      roRef.current = null;
-      return;
-    }
-    const ro = new ResizeObserver(() => {
-      const r = node.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) {
-        void ipc.resizeIsland(Math.ceil(r.width), Math.ceil(r.height)).catch(() => {});
-      }
-    });
-    ro.observe(node);
-    roRef.current = ro;
-  }, []);
+  // Attention ping on the RISING EDGE of "needs input": pulse only when a session that
+  // wasn't waiting last frame now is, so a steady-state awaiting agent doesn't strobe
+  // every poll. Self-clears after the ring animation (~1.4s).
+  useEffect(() => {
+    const wait = sessions.filter((s) => s.status === "wait").map((s) => s.session);
+    const fresh = wait.some((id) => !prevWait.current.has(id));
+    prevWait.current = new Set(wait);
+    if (!fresh) return;
+    setPing(true);
+    const t = setTimeout(() => setPing(false), 1400);
+    return () => clearTimeout(t);
+  }, [sessions]);
 
   const onJump = useCallback((session: string) => {
-    // Collapse immediately on jump (stays collapsed until the cursor leaves), so
-    // focus visibly moves to the terminal instead of leaving the roster hanging open.
-    setSuppressed(true);
+    // Collapse on jump so focus visibly moves to the terminal instead of leaving the
+    // roster hanging open.
+    setOpen(false);
     void ipc.focusSessionFromCompanion(session).catch(() => {});
   }, []);
 
   const active = sessions[0] ?? null;
   const notched = notch.height > 0;
-  // A lone agent shows its workspace in the collapsed strip — widen the camera flanks
-  // so the name isn't truncated, but never past the expanded width (a collapsed pill
-  // wider than the open one would look broken). Multiple agents → the count chip is
-  // tiny, keep the tight FLANK.
-  const singleWs = sessions.length === 1 && !!active?.workspace;
-  const collapsedW = Math.min(EXPANDED_W, notch.width + 2 * (singleWs ? 96 : FLANK));
+  // Aggregate working/idle state + a mascot box sized to the notch height (clamped so
+  // it stays a crisp pixel sprite). The COLLAPSED island shows ONE mascot instead of a
+  // per-session name — concurrent agents can't share one name, so the mascot's loop is
+  // the honest "is the fleet working" signal.
+  const mascot = mascotStateFor(sessions);
+  const mascotSize = Math.min(36, Math.max(24, notch.height - 2));
+  // Flank = half the collapsed strip, one each side of the camera dead-zone. Collapsed
+  // LEFT flank holds the mascot + a one-word status label ("Idle"/"Working"); RIGHT flank
+  // holds the count badge — so the left flank must be wide enough for the label too.
+  // Symmetric (camera stays centered): the larger need sets both flanks. Clamped to
+  // [COLLAPSED_W, EXPANDED_W] — a hard MIN so the strip flanks the camera instead of
+  // hiding under it, and a MAX so the collapsed pill never grows wider than the open one.
+  const leftNeed = mascotSize + 8 + 64 + 14; // mascot + gap + label room ("Working") + edge pad
+  const rightNeed = 40; // count badge + gaps + edge pad
+  const flank = Math.min(FLANK_MAX, Math.max(FLANK_MIN, leftNeed, rightNeed));
+  const collapsedW = Math.min(EXPANDED_W, Math.max(COLLAPSED_W, notch.width + 2 * flank));
+  // Notch-less collapsed pill hugs its content: the surface is exactly as wide as the
+  // bar (mascot + label + count), so the label is never clipped. Falls back to a sane
+  // width until the first measure lands; capped at the expanded width.
+  const collapsedPillW = barW > 0 ? Math.min(EXPANDED_W, barW) : COLLAPSED_W;
+
+  // The native window target for a resting MODE, computed DIRECTLY from constants + the
+  // morph-stable content sizes (no per-frame measurement). Notched: the top strip is the
+  // notch height; the body adds `bodyH` only when expanded; peek is a tiny nub. Notch-
+  // less: the surface is the bar (collapsed) / banner+list (expanded) / nub (peek). Plus
+  // the transparent shadow margin (PAD_X sides, PAD_B bottom; top is flush with the notch).
+  // Peek (minimized): mascot + count only. Notched → tight flanks around the camera
+  // (mascot left, count right), same strip height; off-notch → the measured mini pill.
+  // Peek right flank holds the count + the `<->` restore control, so it must be wide enough
+  // that the count never slides under the camera dead-zone (the mascot-only left need is
+  // smaller; both flanks render at this width). 60px ≈ count(2-digit) + gap + 18px button +
+  // edge pad at the pinned 16px root.
+  const peekFlank = Math.max(mascotSize + PEEK_FLANK_PAD, 60);
+  const peekW = notched
+    ? Math.min(EXPANDED_W, notch.width + 2 * peekFlank)
+    : minW > 0
+      ? Math.min(EXPANDED_W, minW)
+      : 96;
+  const winTarget = useCallback(
+    (m: IslandMode) => {
+      let surfaceW: number;
+      let surfaceH: number;
+      // The chevron tab is OUTSIDE the black surface now — it floats just below the bottom
+      // edge. `belowH` is the transparent zone reserved under the surface for it (above the
+      // shadow margin PAD_B). Present collapsed + expanded (same place); peek has no tab.
+      let belowH: number;
+      if (m === "expanded") {
+        surfaceW = EXPANDED_W;
+        surfaceH = notched ? notch.height + bodyH : bodyH;
+        belowH = EXPAND_TAB_H;
+      } else if (m === "peek") {
+        surfaceW = peekW;
+        surfaceH = notched ? notch.height : minH > 0 ? minH : barH;
+        belowH = 0;
+      } else {
+        surfaceW = notched ? collapsedW : collapsedPillW;
+        surfaceH = notched ? notch.height : barH;
+        belowH = EXPAND_TAB_H;
+      }
+      return { w: Math.ceil(surfaceW + 2 * PAD_X), h: Math.ceil(surfaceH + belowH + PAD_B) };
+    },
+    [notched, collapsedW, collapsedPillW, peekW, notch.height, bodyH, barH, minH],
+  );
+
+  // Size the native window to the current mode's FINAL target. The surface snaps to its
+  // mode width instantly (no spring), so the window snaps with it — one resize per mode
+  // change, correct and centered. (Inert in the native helper — the injected shim drives
+  // the panel off the data-attrs below since the route's resizeIsland IPC is a no-op there
+  // — but kept correct for the dev browser + future Tauri-native island.)
+  useEffect(() => {
+    const { w, h } = winTarget(mode);
+    void ipc.resizeIsland(w, h).catch(() => {});
+  }, [mode, winTarget]);
+
+  const expandedTarget = winTarget("expanded");
+  const collapsedTarget = winTarget("collapsed");
+  const peekTarget = winTarget("peek");
+
+  // The collapsed pill is a click target → toggle open. The minimize/peek control + the
+  // expanded collapse chevron stop propagation so they don't also fire this.
+  const toggleOpen = () => {
+    setPeeked(false);
+    setOpen((o) => !o);
+  };
+  // Expand straight from the minimized pill (its ▾ lives only in the collapsed state, so
+  // the minimized pill restores to collapsed on click — but the collapsed ▾/click then
+  // opens). Collapsed → minimized via the − control.
+  const minimize = () => {
+    setOpen(false);
+    setPeeked(true);
+  };
+  const restore = () => setPeeked(false);
+
+  // Native helper: the card FILLS the window (width 100%) so its content tracks the panel
+  // as island.rs animates the frame — no in-webview width animation (dead in the hidden,
+  // rAF-suspended WKWebView). Dev-web has no native window, so the card carries the
+  // explicit per-mode width itself (snaps per mode; the states stay verifiable in-browser).
+  const cardWidth = NATIVE_PANEL ? "100%" : `${winTarget(mode).w}px`;
 
   return (
     <div
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
       style={{
         minHeight: "100vh",
         display: "flex",
@@ -318,85 +716,172 @@ export function Island() {
         overflow: "hidden",
       }}
     >
-      {/* Stable outer node (ResizeObserver target). On a notched display the native
-          window top sits at the SCREEN top (island.rs), so this top pad is 0 and the
-          surface's notch-height top strip fills the notch area and merges with it.
-          The shadow margin (sides + bottom) is included so the window covers the
-          float shadow. */}
-      <motion.div
-        ref={cardRef}
-        style={{ transformOrigin: "top center", padding: "0 1.5rem 1.5rem" }}
-        initial={{ opacity: 0, y: "-1rem" }}
-        animate={{ opacity: 1, y: "0rem" }}
-        transition={SURFACE_SPRING}
+      {/* Stable outer node. On a notched display the native window top sits at the
+          SCREEN top (island.rs), so this top pad is 0 and the surface's notch-height top
+          strip fills the notch area and merges with it. The shadow margin (sides +
+          bottom, PAD_X/PAD_B) is included so the window covers the float shadow.
+          `data-island-mode` + the per-mode targets drive the native panel resize (the
+          injected shim reads them; the route's own resizeIsland IPC is a no-op there). */}
+      <div
+        data-island-card
+        data-island-mode={mode}
+        data-island-expanded-w={expandedTarget.w}
+        data-island-expanded-h={expandedTarget.h}
+        data-island-collapsed-w={collapsedTarget.w}
+        data-island-collapsed-h={collapsedTarget.h}
+        data-island-peek-w={peekTarget.w}
+        data-island-peek-h={peekTarget.h}
+        style={{
+          transformOrigin: "top center",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          padding: "0 1.5rem 1.5rem",
+          width: cardWidth,
+          boxSizing: "border-box",
+        }}
       >
-        {/* THE morphing surface — a SINGLE black box. Width springs (horizontal grow)
-            and, on a notched display, the body height springs from 0→auto (vertical
-            grow) so the box grows OUT of the notch. Animating real width/height (not a
-            framer `layout` transform) is what lets the RO-driven native window follow
-            the morph continuously instead of snapping. */}
+        {/* THE surface — a SINGLE black box. Width + body height SNAP to the mode target
+            (no spring): the native helper's WKWebView runs as a hidden, accessory-app
+            panel, so requestAnimationFrame is suspended there — a framer-motion morph
+            never ticks, leaving the surface frozen at its old size while the window
+            resizes (broken). Plain inline styles apply on render with no rAF, so the box
+            is ALWAYS at its mode size. The window is sized to the same target by the resize
+            effect (dev/native) or the injected MutationObserver shim (helper). */}
         {notched ? (
-          <motion.div
-            className="island-surface"
+          <div
+            className={`island-surface${ping ? " is-ping" : ""}`}
             data-open={expanded}
-            initial={false}
-            animate={{ width: expanded ? EXPANDED_W : collapsedW }}
-            transition={SURFACE_SPRING}
-            style={ISLAND_SURFACE}
+            onMouseEnter={() => setHovering(true)}
+            onMouseLeave={() => setHovering(false)}
+            style={{ ...ISLAND_SURFACE, width: "100%" }}
           >
-            {/* Always-on notch strip (fills the notch, content flanks the camera). */}
-            <NotchStrip
-              active={active}
-              count={sessions.length}
-              notchW={notch.width}
-              notchH={notch.height}
-              expanded={expanded}
-            />
-            {/* Body grows DOWN from the notch on expand; all text lives here, below
-                the camera. */}
-            <motion.div
-              initial={false}
-              animate={{ height: expanded ? "auto" : 0 }}
-              transition={SURFACE_SPRING}
-              style={{ overflow: "hidden" }}
-            >
-              <IslandList
-                sessions={sessions}
-                onJump={onJump}
-                show={expanded}
-                cursorSession={cursorSession}
-              />
-            </motion.div>
-          </motion.div>
+            {peeked && !open ? (
+              // MINIMIZED → icon + count only, flanking the camera at the notch height
+              // (the window receded symmetrically to this width). Click anywhere OR the
+              // `<->` restore control → back to collapsed.
+              <div onClick={restore} style={{ cursor: "pointer" }}>
+                <NotchStrip
+                  active={active}
+                  count={sessions.length}
+                  notchW={notch.width}
+                  notchH={notch.height}
+                  expanded={false}
+                  minimized
+                  mascot={mascot}
+                  mascotSize={mascotSize}
+                  onRestore={restore}
+                  cursorCtrl={cursorCtrl}
+                />
+              </div>
+            ) : (
+              <>
+                {/* Always-on notch strip (fills the notch, content flanks the camera).
+                    The strip is the click target that toggles the panel open/closed;
+                    its `>-<` minimizes. */}
+                <div onClick={toggleOpen} style={{ cursor: "pointer" }}>
+                  <NotchStrip
+                    active={active}
+                    count={sessions.length}
+                    notchW={notch.width}
+                    notchH={notch.height}
+                    expanded={expanded}
+                    mascot={mascot}
+                    mascotSize={mascotSize}
+                    onPeek={minimize}
+                    cursorCtrl={cursorCtrl}
+                  />
+                </div>
+                {/* Body shows on expand; all text lives here, below the camera. ALWAYS
+                    mounted (height clipped to 0 when collapsed) so the inner `bodyRef`
+                    div keeps its natural height — measured for the window target even
+                    while collapsed (no first-open clip). Height toggles instantly. */}
+                <div style={{ overflow: "hidden", height: expanded ? "auto" : 0 }}>
+                  {/* Pinned to the FINAL expanded width so the measured height is stable
+                      (one measurement, never reflows with the surface width). */}
+                  <div ref={bodyRef} style={{ width: `${EXPANDED_W}px` }}>
+                    <MascotBanner sessions={sessions} />
+                    <IslandList
+                      sessions={sessions}
+                      onJump={onJump}
+                      show={expanded}
+                      cursorSession={cursorSession}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         ) : (
-          // Notch-less display (external monitor): a plain pill that morphs bar↔list.
-          <motion.div
-            className="island-surface"
+          // Notch-less display (external monitor): a plain pill that toggles bar↔list↔min.
+          <div
+            className={`island-surface${ping ? " is-ping" : ""}`}
             data-open={expanded}
-            initial={false}
-            animate={{ width: expanded ? EXPANDED_W : COLLAPSED_W }}
-            transition={SURFACE_SPRING}
-            style={ISLAND_SURFACE}
+            onMouseEnter={() => setHovering(true)}
+            onMouseLeave={() => setHovering(false)}
+            style={{ ...ISLAND_SURFACE, width: "100%" }}
           >
-            <AnimatePresence mode="popLayout" initial={false}>
-              <motion.div
-                key={expanded ? "list" : "bar"}
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={SURFACE_SPRING}
-                style={{ overflow: "hidden" }}
-              >
-                {expanded ? (
+            {/* All three variants ALWAYS mounted (height clipped to 0 for the inactive
+                ones) so bodyH / barW / minW stay measured for the window targets; only the
+                active one has height (toggles instantly — no rAF crossfade in the hidden
+                WKWebView). */}
+            <>
+              <div style={{ overflow: "hidden", height: open ? "auto" : 0 }}>
+                <div ref={bodyRef} style={{ width: `${EXPANDED_W}px` }}>
+                  <MascotBanner sessions={sessions} />
                   <IslandList sessions={sessions} onJump={onJump} cursorSession={cursorSession} />
-                ) : (
-                  <IslandBar active={active} count={sessions.length} />
-                )}
-              </motion.div>
-            </AnimatePresence>
-          </motion.div>
+                </div>
+              </div>
+              <div style={{ overflow: "hidden", height: mode === "collapsed" ? "auto" : 0 }}>
+                {/* Content-sized (inline-block) so the measured width IS the bar's
+                    intrinsic width — the surface then hugs it (no label truncation).
+                    The whole bar is a click target → open; its `>-<` minimizes. */}
+                <div
+                  ref={barRef}
+                  onClick={toggleOpen}
+                  style={{ display: "inline-block", cursor: "pointer" }}
+                >
+                  <IslandBar
+                    count={sessions.length}
+                    mascot={mascot}
+                    onPeek={minimize}
+                    cursorCtrl={cursorCtrl}
+                  />
+                </div>
+              </div>
+              <div style={{ overflow: "hidden", height: peeked && !open ? "auto" : 0 }}>
+                {/* MINIMIZED → icon + count only; click anywhere OR the `<->` restore
+                    control → back to collapsed. */}
+                <div
+                  ref={minRef}
+                  onClick={restore}
+                  style={{ display: "inline-block", cursor: "pointer" }}
+                >
+                  <IslandBar
+                    count={sessions.length}
+                    mascot={mascot}
+                    minimized
+                    onRestore={restore}
+                    cursorCtrl={cursorCtrl}
+                  />
+                </div>
+              </div>
+            </>
+          </div>
         )}
-      </motion.div>
+        {/* The chevron lives OUTSIDE the black surface — a single floating glyph just below
+            the island's bottom edge (centered by the card's flex column), in the transparent
+            zone above the shadow margin. Same place both states: ▾ collapsed (→ expand) /
+            ▴ expanded (→ collapse). Hidden while minimized (the peek pill restores via `<->`). */}
+        {!(peeked && !open) ? (
+          <ExpandTab
+            expanded={open}
+            onToggle={toggleOpen}
+            mascot={mascot}
+            cursor={cursorCtrl === "chevron"}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -316,6 +316,33 @@ pub async fn serve() {
         .route("/claude-integrations", get(claude_integrations))
         .route("/claude-agent-config", get(claude_agent_config))
         .route("/container-git-log", get(container_git_log))
+        .route("/container-git-graph", get(container_git_graph))
+        .route("/container-git-branches", get(container_git_branches))
+        .route("/container-git-show", get(container_git_show))
+        .route("/container-git-message", get(container_git_message))
+        .route("/container-git-checkout", post(container_git_checkout))
+        .route(
+            "/container-git-checkout-commit",
+            post(container_git_checkout_commit),
+        )
+        .route(
+            "/container-git-create-branch",
+            post(container_git_create_branch),
+        )
+        .route(
+            "/container-git-delete-branch",
+            post(container_git_delete_branch),
+        )
+        .route("/container-git-reset", post(container_git_reset))
+        .route("/container-git-stash", post(container_git_stash))
+        .route("/container-git-stash-pop", post(container_git_stash_pop))
+        .route(
+            "/container-git-discard-file",
+            post(container_git_discard_file),
+        )
+        .route("/container-git-fetch", post(container_git_fetch))
+        .route("/container-git-pull", post(container_git_pull))
+        .route("/container-git-push", post(container_git_push))
         .route("/session-activity", get(session_activity))
         // Phase-0 completion contract: live handlers mirroring lib.rs.
         .route("/pending-prompts", get(pending_prompts))
@@ -342,6 +369,10 @@ pub async fn serve() {
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/:name", delete(kill_session))
         .route("/sessions/:name/rename", post(rename_session))
+        .route(
+            "/sessions/:name/adopt-identity",
+            post(adopt_session_identity),
+        )
         .route("/attach", post(attach))
         .route("/panes/:id/write", post(write))
         .route("/panes/:id/resize", post(resize))
@@ -1203,6 +1234,229 @@ async fn container_git_log(
         .map_err(err)
 }
 
+async fn container_git_graph(
+    State(st): State<AppState>,
+    Query(q): Query<LogQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    docker_container_for(&st, &ws)
+        .git_graph(q.limit.unwrap_or(200))
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+async fn container_git_branches(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    docker_container_for(&st, &ws)
+        .git_branches()
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+#[derive(Deserialize)]
+struct ShowQuery {
+    hash: String,
+    workspace: Option<String>,
+}
+
+async fn container_git_show(
+    State(st): State<AppState>,
+    Query(q): Query<ShowQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    docker_container_for(&st, &ws)
+        .git_show(&q.hash)
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+async fn container_git_message(
+    State(st): State<AppState>,
+    Query(q): Query<ShowQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    docker_container_for(&st, &ws)
+        .git_commit_message(&q.hash)
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+#[derive(Deserialize)]
+struct CheckoutBody {
+    name: String,
+    workspace: String,
+}
+
+async fn container_git_checkout(
+    State(st): State<AppState>,
+    Json(body): Json<CheckoutBody>,
+) -> Result<StatusCode, ApiError> {
+    docker_container_for(&st, &body.workspace)
+        .git_checkout(&body.name)
+        .await
+        .map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct CheckoutCommitBody {
+    hash: String,
+    workspace: String,
+}
+
+async fn container_git_checkout_commit(
+    State(st): State<AppState>,
+    Json(body): Json<CheckoutCommitBody>,
+) -> Result<StatusCode, ApiError> {
+    docker_container_for(&st, &body.workspace)
+        .git_checkout_commit(&body.hash)
+        .await
+        .map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct CreateBranchBody {
+    name: String,
+    checkout: bool,
+    workspace: String,
+}
+
+async fn container_git_create_branch(
+    State(st): State<AppState>,
+    Json(body): Json<CreateBranchBody>,
+) -> Result<StatusCode, ApiError> {
+    docker_container_for(&st, &body.workspace)
+        .git_create_branch(&body.name, body.checkout)
+        .await
+        .map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct DeleteBranchBody {
+    name: String,
+    force: bool,
+    workspace: String,
+}
+
+async fn container_git_delete_branch(
+    State(st): State<AppState>,
+    Json(body): Json<DeleteBranchBody>,
+) -> Result<StatusCode, ApiError> {
+    docker_container_for(&st, &body.workspace)
+        .git_delete_branch(&body.name, body.force)
+        .await
+        .map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct ResetBody {
+    hash: String,
+    mode: String,
+    workspace: String,
+}
+
+async fn container_git_reset(
+    State(st): State<AppState>,
+    Json(body): Json<ResetBody>,
+) -> Result<StatusCode, ApiError> {
+    docker_container_for(&st, &body.workspace)
+        .git_reset(&body.hash, &body.mode)
+        .await
+        .map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn container_git_stash(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<StatusCode, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    docker_container_for(&st, &ws)
+        .git_stash()
+        .await
+        .map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn container_git_stash_pop(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<StatusCode, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    docker_container_for(&st, &ws)
+        .git_stash_pop()
+        .await
+        .map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn container_git_discard_file(
+    State(st): State<AppState>,
+    Json(body): Json<PathWorkspaceBody>,
+) -> Result<StatusCode, ApiError> {
+    docker_container_for(&st, &body.workspace)
+        .git_discard_file(&body.path)
+        .await
+        .map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn container_git_fetch(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    let token = resolve_github_token_dev(&st).unwrap_or_default();
+    docker_container_for(&st, &ws)
+        .git_fetch(&token)
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+async fn container_git_pull(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    let token = resolve_github_token_dev(&st).unwrap_or_default();
+    docker_container_for(&st, &ws)
+        .git_pull(&token)
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
+#[derive(Deserialize)]
+struct PushBody {
+    #[serde(default)]
+    force: bool,
+}
+
+async fn container_git_push(
+    State(st): State<AppState>,
+    Query(q): Query<WorkspaceQuery>,
+    Json(body): Json<PushBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ws = workspace_required(q.workspace)?;
+    let token = resolve_github_token_dev(&st).unwrap_or_default();
+    docker_container_for(&st, &ws)
+        .git_push(body.force, &token)
+        .await
+        .map(Json)
+        .map_err(err)
+}
+
 async fn list_sessions(State(st): State<AppState>) -> Result<impl IntoResponse, ApiError> {
     st.manager.list_all_sessions().await.map(Json).map_err(err)
 }
@@ -1343,6 +1597,36 @@ async fn rename_session(
         .rename_tmux_window(&name, &body.alias)
         .await
         .map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct AdoptIdentityBody {
+    cli: String,
+    alias: String,
+    label: Option<String>,
+    claude_id: Option<String>,
+}
+
+/// Mirror of the Tauri `adopt_session_identity` command — attach a restored
+/// session's resolved label/alias to its in-memory activity entry so the island
+/// feed (and other consumers) show its real name + workspace.
+async fn adopt_session_identity(
+    State(st): State<AppState>,
+    Path(name): Path<String>,
+    Json(body): Json<AdoptIdentityBody>,
+) -> Result<StatusCode, ApiError> {
+    st.registry.activity().register(
+        &name,
+        &body.cli,
+        &body.alias,
+        body.claude_id.as_deref(),
+        None,
+        None,
+    );
+    if let Some(label) = body.label.as_deref().filter(|s| !s.is_empty()) {
+        st.registry.activity().set_workspace(&name, label);
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

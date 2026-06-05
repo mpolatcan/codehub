@@ -234,6 +234,61 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
     }
     case "container_git_log":
       return jget(`/container-git-log?limit=${args.limit ?? 12}${wsAmp}`) as Promise<T>;
+    case "container_git_graph":
+      return jget(`/container-git-graph?limit=${args.limit ?? 200}${wsAmp}`) as Promise<T>;
+    case "container_git_branches":
+      return jget(`/container-git-branches${wsq}`) as Promise<T>;
+    case "container_git_show":
+      return jget(
+        `/container-git-show?hash=${encodeURIComponent(String(args.hash))}${wsAmp}`,
+      ) as Promise<T>;
+    case "container_git_message":
+      return jget(
+        `/container-git-message?hash=${encodeURIComponent(String(args.hash))}${wsAmp}`,
+      ) as Promise<T>;
+    case "container_git_checkout":
+      return jsend("POST", "/container-git-checkout", {
+        name: args.name,
+        workspace: args.workspace,
+      }) as Promise<T>;
+    case "container_git_checkout_commit":
+      return jsend("POST", "/container-git-checkout-commit", {
+        hash: args.hash,
+        workspace: args.workspace,
+      }) as Promise<T>;
+    case "container_git_create_branch":
+      return jsend("POST", "/container-git-create-branch", {
+        name: args.name,
+        checkout: args.checkout,
+        workspace: args.workspace,
+      }) as Promise<T>;
+    case "container_git_delete_branch":
+      return jsend("POST", "/container-git-delete-branch", {
+        name: args.name,
+        force: args.force,
+        workspace: args.workspace,
+      }) as Promise<T>;
+    case "container_git_reset":
+      return jsend("POST", "/container-git-reset", {
+        hash: args.hash,
+        mode: args.mode,
+        workspace: args.workspace,
+      }) as Promise<T>;
+    case "container_git_stash":
+      return jsend("POST", `/container-git-stash${wsq}`) as Promise<T>;
+    case "container_git_stash_pop":
+      return jsend("POST", `/container-git-stash-pop${wsq}`) as Promise<T>;
+    case "container_git_discard_file":
+      return jsend("POST", "/container-git-discard-file", {
+        path: args.path,
+        workspace: args.workspace,
+      }) as Promise<T>;
+    case "container_git_fetch":
+      return jsend("POST", `/container-git-fetch${wsq}`) as Promise<T>;
+    case "container_git_pull":
+      return jsend("POST", `/container-git-pull${wsq}`) as Promise<T>;
+    case "container_git_push":
+      return jsend("POST", `/container-git-push${wsq}`, { force: args.force }) as Promise<T>;
     case "session_activity":
       return jget("/session-activity") as Promise<T>;
     // Phase-0 completion contract (stub backend; mirrors devserver.rs routes).
@@ -344,6 +399,13 @@ async function httpInvoke<T>(cmd: string, args: Args = {}): Promise<T> {
       return jsend("POST", `/sessions/${encodeURIComponent(String(args.name))}/rename`, {
         alias: args.alias,
         workspace: args.workspace,
+      }) as Promise<T>;
+    case "adopt_session_identity":
+      return jsend("POST", `/sessions/${encodeURIComponent(String(args.name))}/adopt-identity`, {
+        cli: args.cli,
+        alias: args.alias,
+        label: args.label,
+        claude_id: args.claudeId,
       }) as Promise<T>;
     case "attach_session":
       return jsend("POST", "/attach", {

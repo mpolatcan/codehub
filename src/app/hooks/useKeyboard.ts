@@ -29,7 +29,7 @@ export function autoSplitDir(session: string): SplitDir {
 //   ⌘/Ctrl 1-9 — switch to tab N
 //   ⌘/Ctrl \  — split the focused pane (longer axis); ⌘⇧\ forces the other axis
 //   ⌘/Ctrl E  — toggle the Files docked viewer
-//   ⌘/Ctrl D  — toggle the all-changes Diff viewer
+//   ⌘/Ctrl D  — toggle the Source-control dock
 //   ⌘/Ctrl J  — toggle the Shell docked panel
 //   ⌘/Ctrl I  — toggle the Details (workspace metrics) panel
 //   ⌘B        — collapse/expand the sidebar
@@ -158,7 +158,7 @@ export function useKeyboard() {
           e.preventDefault();
           overlay.setFiles(!overlay.files);
           break;
-        case "d": // toggle the all-changes Diff viewer
+        case "d": // toggle the Source-control dock
           e.preventDefault();
           overlay.setDiff(overlay.diff === null ? "" : null);
           break;

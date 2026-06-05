@@ -4,7 +4,7 @@
 # this package breaks `tauri build`. The dev bridge therefore lives in its own
 # member crate (`devserver/`), which `tauri build` never compiles or bundles.
 [workspace]
-members = ["devserver"]
+members = ["devserver", "island-helper"]
 resolver = "2"
 
 [package]

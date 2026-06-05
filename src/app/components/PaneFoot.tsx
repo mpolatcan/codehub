@@ -4,6 +4,7 @@ import { Tip } from "../components/primitives/Tip";
 import { Ico } from "../components/primitives/icons";
 import { fmtTokens, useCodexUsage, useSessionUsage } from "../hooks/useSessionUsage";
 import { useStore } from "../lib/store";
+import { paneInk } from "../lib/tree";
 
 // Pane FOOTER telemetry strip — moved out of PaneHead so the live tally sits at the
 // bottom of the agent pane, reading as a status bar beneath the terminal. Shows the
@@ -46,9 +47,15 @@ export function PaneFoot({ session }: { session: string }) {
         ? dirBase(wsDir)
         : "workspace";
 
-  // A picked pane color tints the footer to match the head; the gauge/metrics
-  // grounded on a dark mix so their default text stays legible over the fill.
+  // A picked pane color fills the whole footer to mirror the head, and `ink` is its
+  // paired contrast foreground so the dir/gauge/turn/tok all flip to the legible
+  // contrast color instead of staying on the neutral fg tokens (which washed out
+  // against the fill). Undefined → neutral bar with the default fg tokens.
   const tint = meta.color;
+  const ink = paneInk(tint);
+  const dirColor = ink ?? "var(--fg-2)";
+  const iconColor = ink ? `color-mix(in oklab, ${ink} 70%, transparent)` : "var(--fg-3)";
+  const vrColor = ink ? `color-mix(in oklab, ${ink} 30%, transparent)` : undefined;
 
   return (
     <div
@@ -58,9 +65,9 @@ export function PaneFoot({ session }: { session: string }) {
         alignItems: "center",
         gap: "0.625rem",
         padding: "0.3125rem 0.75rem",
-        background: tint ? `color-mix(in oklab, ${tint} 22%, var(--bg-1))` : "var(--bg-1)",
-        borderTop: tint
-          ? `1px solid color-mix(in oklab, ${tint} 40%, var(--bd-soft))`
+        background: tint ?? "var(--bg-1)",
+        borderTop: ink
+          ? `1px solid color-mix(in oklab, ${ink} 28%, transparent)`
           : "1px solid var(--bd-soft)",
         overflow: "hidden",
       }}
@@ -75,10 +82,10 @@ export function PaneFoot({ session }: { session: string }) {
             maxWidth: "min(10rem, 100%)",
             fontFamily: "var(--mono)",
             fontSize: "var(--fs-11)",
-            color: "var(--fg-2)",
+            color: dirColor,
           }}
         >
-          <span style={{ display: "inline-flex", flexShrink: 0, color: "var(--fg-3)" }}>
+          <span style={{ display: "inline-flex", flexShrink: 0, color: iconColor }}>
             {Ico.files}
           </span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -86,11 +93,11 @@ export function PaneFoot({ session }: { session: string }) {
           </span>
         </span>
       </Tip>
-      <span className="vr" style={{ height: "0.875rem" }} />
-      <ContextGauge used={u.contextUsed} max={u.contextWindow} width={64} />
-      <span className="vr" style={{ height: "0.875rem" }} />
-      <MetricStat label="turn" value={String(u.turns)} />
-      <MetricStat label="tok" value={fmtTokens(u.tokensIn + u.tokensOut)} />
+      <span className="vr" style={{ height: "0.875rem", background: vrColor }} />
+      <ContextGauge used={u.contextUsed} max={u.contextWindow} width={64} ink={ink} />
+      <span className="vr" style={{ height: "0.875rem", background: vrColor }} />
+      <MetricStat label="turn" value={String(u.turns)} ink={ink} />
+      <MetricStat label="tok" value={fmtTokens(u.tokensIn + u.tokensOut)} ink={ink} />
     </div>
   );
 }

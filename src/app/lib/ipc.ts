@@ -396,6 +396,33 @@ export interface CommitInfo {
   subject: string;
 }
 
+// One commit node in the repository DAG (Source-control "History" graph).
+// `parents` are full SHAs (multiple for a merge, empty for the root); `refs`
+// are decoration names (branches/tags, "HEAD -> " stripped). The frontend
+// computes lane layout from `parents`.
+export interface GraphCommit {
+  hash: string;
+  parents: string[];
+  refs: string[];
+  author: string;
+  relative: string;
+  subject: string;
+}
+
+// One ref (local head or remote-tracking branch) for the "Branches" tab.
+// `current` is the checked-out branch; `remote` covers refs/remotes/*.
+// `ahead`/`behind` are vs the upstream (0 when none).
+export interface BranchInfo {
+  name: string;
+  current: boolean;
+  remote: boolean;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  hash: string;
+  subject: string;
+}
+
 // Working-tree state of /workspace. `isRepo: false` when it's not a git repo
 // (or git is unavailable). `files` is capped server-side; `total` is the full
 // count.
@@ -915,6 +942,49 @@ export const ipc = {
   // Recent commits on /workspace (`git log`); defaults to 12 server-side.
   containerGitLog: (limit?: number, workspace?: string) =>
     invoke<CommitInfo[]>("container_git_log", { limit, workspace }),
+  // Commit DAG across all refs (Source-control "History" graph); defaults to 200.
+  containerGitGraph: (limit?: number, workspace?: string) =>
+    invoke<GraphCommit[]>("container_git_graph", { limit, workspace }),
+  // Local + remote-tracking branches ("Branches" tab).
+  containerGitBranches: (workspace?: string) =>
+    invoke<BranchInfo[]>("container_git_branches", { workspace }),
+  // Unified diff of one commit (History-graph row selection).
+  containerGitShow: (hash: string, workspace?: string) =>
+    invoke<string>("container_git_show", { hash, workspace }),
+  // Full commit message body (everything after the subject) for the detail view.
+  containerGitMessage: (hash: string, workspace?: string) =>
+    invoke<string>("container_git_message", { hash, workspace }),
+  // Check out an existing branch (DWIM-creates a tracking branch for a
+  // remote-only name). Rejects with git's message on a dirty-tree conflict.
+  containerGitCheckout: (name: string, workspace?: string) =>
+    invoke<void>("container_git_checkout", { name, workspace }),
+  // Check out a commit by hash, detaching HEAD (History-view "checkout commit").
+  containerGitCheckoutCommit: (hash: string, workspace?: string) =>
+    invoke<void>("container_git_checkout_commit", { hash, workspace }),
+  // Create a branch, optionally checking it out.
+  containerGitCreateBranch: (name: string, checkout: boolean, workspace?: string) =>
+    invoke<void>("container_git_create_branch", { name, checkout, workspace }),
+  // Delete a branch (`-D` when force). Non-force unmerged delete rejects.
+  containerGitDeleteBranch: (name: string, force: boolean, workspace?: string) =>
+    invoke<void>("container_git_delete_branch", { name, force, workspace }),
+  // Move HEAD to a commit: mode "soft" | "mixed" | "hard" ("hard" destructive).
+  containerGitReset: (hash: string, mode: "soft" | "mixed" | "hard", workspace?: string) =>
+    invoke<void>("container_git_reset", { hash, mode, workspace }),
+  // Stash the working tree (incl. untracked).
+  containerGitStash: (workspace?: string) => invoke<void>("container_git_stash", { workspace }),
+  // Re-apply + drop the most recent stash; conflicts reject with git's message.
+  containerGitStashPop: (workspace?: string) =>
+    invoke<void>("container_git_stash_pop", { workspace }),
+  // Discard working-tree changes to one path (deletes it if untracked).
+  containerGitDiscardFile: (path: string, workspace?: string) =>
+    invoke<void>("container_git_discard_file", { path, workspace }),
+  // Fetch all remotes + prune; resolves to git's summary (authed via GitHub token).
+  containerGitFetch: (workspace?: string) => invoke<string>("container_git_fetch", { workspace }),
+  // Fast-forward the current branch from upstream (`pull --ff-only`).
+  containerGitPull: (workspace?: string) => invoke<string>("container_git_pull", { workspace }),
+  // Push the current branch to origin (`--force-with-lease` when force).
+  containerGitPush: (force: boolean, workspace?: string) =>
+    invoke<string>("container_git_push", { force, workspace }),
   // Per-session working/idle activity from output flow (polled by the Hub).
   sessionActivity: () => invoke<SessionActivity[]>("session_activity"),
   // Token analytics from Claude Code session transcripts (Usage view): real
@@ -990,6 +1060,16 @@ export const ipc = {
   rollingUsage: (hours?: number) => invoke<RollingUsage>("rolling_usage", { hours }),
   renameSession: (name: string, alias: string, workspace?: string) =>
     invoke<void>("rename_session", { name, alias, workspace }),
+  // Attach a restored session's resolved identity (workspace label + alias) to its
+  // backend activity entry. An adopted session never went through createSession, so
+  // the Dynamic Island feed otherwise shows it with a generic name and no workspace.
+  adoptSessionIdentity: (
+    name: string,
+    cli: Cli,
+    alias: string,
+    label?: string,
+    claudeId?: string,
+  ) => invoke<void>("adopt_session_identity", { name, cli, alias, label, claudeId }),
   attachSession: (name: string, cols: number, rows: number, workspace?: string) =>
     invoke<string>("attach_session", { name, cols, rows, workspace }),
   ptyWrite: (paneId: string, data: string) => invoke<void>("pty_write", { paneId, data }),

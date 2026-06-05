@@ -18,7 +18,7 @@ const MAP: Record<
 > = {
   files: { label: "Files", color: "var(--idle)", icon: "files", toggle: true },
   shell: { label: "Shell", color: "var(--live)", icon: "terminal", toggle: true },
-  diff: { label: "Diff", color: "var(--wait)", icon: "diff", toggle: true },
+  diff: { label: "Git", color: "var(--wait)", icon: "branch", toggle: true },
 };
 
 export function PaneAddBtn({

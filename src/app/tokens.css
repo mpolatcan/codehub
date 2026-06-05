@@ -16,6 +16,11 @@
      notch / camera housing (true #000). --bg-0 is blue-tinted (#08090b) and
      leaves a visible tone seam against the notch, so the island never uses it. */
   --island-bg: #000000;
+  /* Island hairline — a faint LIGHT ring on the island's sides/bottom so the black
+     pill separates from the menu bar / desktop it floats over. Theme-independent
+     (the island is always #000 in every theme), hence not a --bd-* token (those go
+     dark in light theme and would vanish on the black surface). */
+  --island-bd: rgba(255, 255, 255, 0.1);
 
   /* borders */
   --bd: #262b34;
@@ -595,6 +600,164 @@
   box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.12);
 }
 
+/* Agent picker tiles (first-run empty state) — compact, centered, accent-aware.
+   Each tile sets `--agent-accent` inline from its agent color (NOT the shadcn
+   `--accent` token); hover lifts + rings + tints the icon tile and CTA. */
+.agent-pick {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.125rem 1rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--bg-2);
+  border: 1px solid var(--bd);
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  width: 100%;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s
+    ease;
+}
+/* accent rail — agent-color hairline along the card top, dim at rest, lit on hover */
+.agent-pick::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0.125rem;
+  background: linear-gradient(90deg, transparent, var(--agent-accent), transparent);
+  opacity: 0.4;
+  transition: opacity 0.16s ease;
+}
+.agent-pick:hover::before {
+  opacity: 1;
+}
+.agent-pick:hover {
+  transform: translateY(-0.1875rem);
+  border-color: color-mix(in oklab, var(--agent-accent) 50%, var(--bd));
+  box-shadow: 0 0.625rem 1.5rem -0.625rem color-mix(in oklab, var(--agent-accent) 40%, transparent);
+}
+.agent-pick:focus-visible {
+  outline: none;
+  border-color: color-mix(in oklab, var(--agent-accent) 60%, var(--bd));
+  box-shadow: 0 0 0 0.1875rem color-mix(in oklab, var(--agent-accent) 25%, transparent);
+}
+.agent-pick-icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.625rem;
+  background: color-mix(in oklab, var(--agent-accent) 15%, var(--bg-1));
+  border: 1px solid color-mix(in oklab, var(--agent-accent) 32%, var(--bd));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+.agent-pick:hover .agent-pick-icon {
+  background: color-mix(in oklab, var(--agent-accent) 24%, var(--bg-1));
+  border-color: color-mix(in oklab, var(--agent-accent) 55%, var(--bd));
+  transform: scale(1.04);
+}
+.agent-pick-cta {
+  transition: color 0.16s ease, gap 0.16s ease;
+}
+.agent-pick:hover .agent-pick-cta {
+  color: var(--agent-accent);
+}
+
+/* First-run hero backdrop: a faint dot-grid, radially masked so it fades out
+   toward the edges (no hard seam) and concentrates behind the hero. */
+.empty-grid {
+  background-image: radial-gradient(circle at center, var(--bd) 1px, transparent 1.5px);
+  background-size: 1.625rem 1.625rem;
+  opacity: 0.55;
+  -webkit-mask-image: radial-gradient(
+    ellipse 72% 58% at 50% 36%,
+    #000 0%,
+    rgba(0, 0, 0, 0.35) 56%,
+    transparent 82%
+  );
+  mask-image: radial-gradient(
+    ellipse 72% 58% at 50% 36%,
+    #000 0%,
+    rgba(0, 0, 0, 0.35) 56%,
+    transparent 82%
+  );
+}
+
+/* Slow "breathing" of the hero's primary top-glow — gives the backdrop quiet life
+   without distracting motion. Disabled under reduced-motion. */
+.empty-glow {
+  animation: empty-breathe 7s ease-in-out infinite;
+}
+@keyframes empty-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+/* Blinking block caret in the hero status bar — terminal identity cue. */
+.hero-caret {
+  color: var(--pri);
+  animation: hero-caret 1.1s steps(1) infinite;
+}
+@keyframes hero-caret {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .empty-glow,
+  .hero-caret {
+    animation: none;
+  }
+}
+
+/* Interactive cursor spotlight — a soft primary light that tracks the pointer
+   (position fed via --spot-x/--spot-y from JS). Fades in only while the pointer is
+   over the hero; removed entirely under reduced-motion. */
+.empty-spotlight {
+  background: radial-gradient(
+    18rem 18rem at var(--spot-x, 50%) var(--spot-y, 28%),
+    color-mix(in oklab, var(--pri) 13%, transparent),
+    transparent 62%
+  );
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+.empty-hero:hover .empty-spotlight {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .empty-spotlight {
+    display: none;
+  }
+}
+
+/* Film grain — fractal-noise texture at very low opacity for tactile depth. */
+.empty-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 10rem 10rem;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+}
+
 /* Dashboard mount reveal — staggered fade + rise. Callers set animation-delay
    inline to stagger tiles/sections. Honors reduced-motion. */
 .dash-rise {
@@ -654,6 +817,19 @@
 }
 .ws-side-row:hover {
   border-color: var(--bd);
+}
+
+/* Workspace lifecycle controls (restart/stop/start) — calm at rest, revealed on
+   row hover/focus (same pattern as .session-close) so a resting card reads as
+   name · path · branch · pane-count, not a control strip. Space is reserved
+   (opacity, not display) so the reveal never shifts the pane-count chip. */
+.ws-ctl {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ws-side-row:hover .ws-ctl,
+.ws-side-row:focus-within .ws-ctl {
+  opacity: 1;
 }
 
 /* Generic list-row hover — the reusable replacement for ad-hoc JS hover

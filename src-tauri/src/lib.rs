@@ -1278,6 +1278,202 @@ async fn container_git_log(
         .map_err(|e| e.to_string())
 }
 
+/// Commit DAG across all refs (Source-control "History" graph).
+#[tauri::command]
+async fn container_git_graph(
+    limit: Option<u32>,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<Vec<docker::GraphCommit>, String> {
+    docker_container_for(&state, &workspace)
+        .git_graph(limit.unwrap_or(200))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Local + remote-tracking branches (Source-control "Branches" tab).
+#[tauri::command]
+async fn container_git_branches(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<Vec<docker::BranchInfo>, String> {
+    docker_container_for(&state, &workspace)
+        .git_branches()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Unified diff of one commit (History-graph row selection).
+#[tauri::command]
+async fn container_git_show(
+    hash: String,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<String, String> {
+    docker_container_for(&state, &workspace)
+        .git_show(&hash)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Full commit message body for one commit (History-graph detail view).
+#[tauri::command]
+async fn container_git_message(
+    hash: String,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<String, String> {
+    docker_container_for(&state, &workspace)
+        .git_commit_message(&hash)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Check out an existing branch (Source-control "Branches" tab).
+#[tauri::command]
+async fn container_git_checkout(
+    name: String,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
+    docker_container_for(&state, &workspace)
+        .git_checkout(&name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Check out a commit by hash, detaching HEAD (History-view "checkout commit").
+#[tauri::command]
+async fn container_git_checkout_commit(
+    hash: String,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
+    docker_container_for(&state, &workspace)
+        .git_checkout_commit(&hash)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Create a branch, optionally checking it out.
+#[tauri::command]
+async fn container_git_create_branch(
+    name: String,
+    checkout: bool,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
+    docker_container_for(&state, &workspace)
+        .git_create_branch(&name, checkout)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete a branch (`-D` when `force`).
+#[tauri::command]
+async fn container_git_delete_branch(
+    name: String,
+    force: bool,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
+    docker_container_for(&state, &workspace)
+        .git_delete_branch(&name, force)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Move HEAD to a commit (`soft`/`mixed`/`hard`). `hard` is destructive.
+#[tauri::command]
+async fn container_git_reset(
+    hash: String,
+    mode: String,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
+    docker_container_for(&state, &workspace)
+        .git_reset(&hash, &mode)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Stash the working tree, including untracked files.
+#[tauri::command]
+async fn container_git_stash(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
+    docker_container_for(&state, &workspace)
+        .git_stash()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Re-apply and drop the most recent stash.
+#[tauri::command]
+async fn container_git_stash_pop(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
+    docker_container_for(&state, &workspace)
+        .git_stash_pop()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Discard working-tree changes to one path (delete it if untracked).
+#[tauri::command]
+async fn container_git_discard_file(
+    path: String,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<(), String> {
+    docker_container_for(&state, &workspace)
+        .git_discard_file(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Fetch all remotes and prune (authed via the resolved GitHub token).
+#[tauri::command]
+async fn container_git_fetch(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<String, String> {
+    let token = resolve_github_token(&state).unwrap_or_default();
+    docker_container_for(&state, &workspace)
+        .git_fetch(&token)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Fast-forward the current branch from its upstream.
+#[tauri::command]
+async fn container_git_pull(
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<String, String> {
+    let token = resolve_github_token(&state).unwrap_or_default();
+    docker_container_for(&state, &workspace)
+        .git_pull(&token)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Push the current branch to origin (`--force-with-lease` when `force`).
+#[tauri::command]
+async fn container_git_push(
+    force: bool,
+    state: tauri::State<'_, AppState>,
+    workspace: String,
+) -> Result<String, String> {
+    let token = resolve_github_token(&state).unwrap_or_default();
+    docker_container_for(&state, &workspace)
+        .git_push(force, &token)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn list_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<SessionInfo>, String> {
     state
@@ -1614,6 +1810,34 @@ async fn rename_session(
         .rename_tmux_window(&name, &alias)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Attach identity to an ADOPTED session's activity entry. A session restored on
+/// app launch (or "Open in Hub") never went through `create_session`, so its
+/// `ActivityTracker` entry — created lazily by the first replayed hook / byte —
+/// carries no `alias` or `workspace`. The Dynamic Island reads the activity feed
+/// (not the frontend store), so without this an adopted agent shows a generic
+/// derived name and no workspace chip. The frontend resolves the real label +
+/// alias from saved-workspace config during adopt and pushes them here. Pure
+/// in-memory metadata: no docker/tmux work, and it won't clobber a live status
+/// (`register` only sets identity fields; `set_workspace` only the label).
+#[tauri::command]
+fn adopt_session_identity(
+    name: String,
+    cli: String,
+    alias: String,
+    label: Option<String>,
+    claude_id: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .registry
+        .activity()
+        .register(&name, &cli, &alias, claude_id.as_deref(), None, None);
+    if let Some(label) = label.as_deref().filter(|s| !s.is_empty()) {
+        state.registry.activity().set_workspace(&name, label);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -2494,12 +2718,28 @@ pub fn run() {
             claude_integrations,
             claude_agent_config,
             container_git_log,
+            container_git_graph,
+            container_git_branches,
+            container_git_show,
+            container_git_message,
+            container_git_checkout,
+            container_git_checkout_commit,
+            container_git_create_branch,
+            container_git_delete_branch,
+            container_git_reset,
+            container_git_stash,
+            container_git_stash_pop,
+            container_git_discard_file,
+            container_git_fetch,
+            container_git_pull,
+            container_git_push,
             list_sessions,
             create_session,
             kill_session,
             stop_all_agents,
             rolling_usage,
             rename_session,
+            adopt_session_identity,
             attach_session,
             pty_write,
             pty_resize,

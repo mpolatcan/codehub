@@ -172,6 +172,7 @@ function RuntimeIndicator() {
           gap: "0.375rem",
           minWidth: 0,
           flexShrink: 1,
+          overflow: "hidden",
         }}
       >
         <StatusDot status={dotStatus} pulse={state === "running"} />
@@ -251,13 +252,15 @@ function TabsStatusLine() {
   const netRate = deriveNetRate(history);
 
   return (
-    <div style={lineStyle}>
+    <div className="sb-line" style={lineStyle}>
       <RuntimeIndicator />
 
       {/* inline metric sparklines — only when collapsed; when expanded the
-          full-size graphs below replace them (no duplication) */}
+          full-size graphs below replace them (no duplication). Grouped so they drop
+          together (container query in panes.css) when side docks narrow the bar,
+          instead of overflowing/overlapping the runtime identity. */}
       {!details && (
-        <>
+        <div className="sb-metrics">
           {vr}
           <MiniMetric
             label="cpu"
@@ -296,31 +299,18 @@ function TabsStatusLine() {
             accent="var(--idle)"
             title="Disk"
           />
-        </>
+        </div>
       )}
 
       <span style={{ flex: 1 }} />
 
       <ExpandChevron />
       {!details && (
-        <>
+        <div className="sb-hints">
           {vr}
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.875rem",
-              minWidth: 0,
-              flexShrink: 1,
-              overflow: "hidden",
-              whiteSpace: "nowrap",
-              color: "var(--fg-3)",
-            }}
-          >
-            <span>⌘K palette</span>
-            <span>⌘\ split</span>
-          </span>
-        </>
+          <span>⌘K palette</span>
+          <span>⌘\ split</span>
+        </div>
       )}
     </div>
   );
@@ -351,7 +341,7 @@ function GridStatusLine() {
   }).length;
 
   return (
-    <div style={{ ...lineStyle, gap: "0.75rem" }}>
+    <div className="sb-line" style={{ ...lineStyle, gap: "0.75rem" }}>
       <span style={{ display: "flex", alignItems: "center", gap: "0.625rem", flexShrink: 0 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3125rem" }}>
           <StatusDot status="live" /> <span className="tnum">{runningCount}</span> running
@@ -362,7 +352,7 @@ function GridStatusLine() {
       </span>
 
       {!details && (
-        <>
+        <div className="sb-metrics">
           {vr}
           <MiniMetric
             label="cpu"
@@ -393,19 +383,17 @@ function GridStatusLine() {
             accent="var(--idle)"
             title="Disk"
           />
-        </>
+        </div>
       )}
 
       <span style={{ flex: 1 }} />
 
       <ExpandChevron />
       {!details && (
-        <>
+        <div className="sb-hints">
           {vr}
-          <span style={{ color: "var(--fg-3)", flexShrink: 1, overflow: "hidden" }}>
-            ⌘1–9 focus
-          </span>
-        </>
+          <span>⌘1–9 focus</span>
+        </div>
       )}
     </div>
   );

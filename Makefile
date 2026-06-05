@@ -83,6 +83,17 @@ dev-signed: ## Like `make dev` but codesigns the binary with a stable identity s
 .PHONY: build
 build: ## Production build — Tauri bundle (DMG/AppImage/deb under src-tauri/target/release/bundle/)
 	npm run tauri build
+	# Embed the .accessory Dynamic-Island helper + a file://-loadable copy of the
+	# frontend into the built .app. Done POST-bundle (not via Tauri `externalBin`,
+	# which validates at build-script time and would break `cargo check`/CI). NOTE:
+	# this runs after the DMG is cut, so only the installed .app carries the helper.
+	cd src-tauri && cargo build --release -p codehub-island-helper
+	cp src-tauri/target/release/codehub-island-helper src-tauri/target/release/bundle/macos/CodeHub.app/Contents/MacOS/codehub-island-helper
+	rm -rf src-tauri/target/release/bundle/macos/CodeHub.app/Contents/Resources/dist
+	cp -R dist src-tauri/target/release/bundle/macos/CodeHub.app/Contents/Resources/dist
+	codesign --force --sign - src-tauri/target/release/bundle/macos/CodeHub.app/Contents/MacOS/codehub-island-helper
+	codesign --force --sign - src-tauri/target/release/bundle/macos/CodeHub.app
+	@echo "embedded island helper + dist → src-tauri/target/release/bundle/macos/CodeHub.app"
 
 .PHONY: preview
 preview: ## Preview the built frontend without Tauri (web only)

@@ -5,6 +5,9 @@ export interface MetricStatProps {
   deltaTone?: "up" | "down" | "neutral";
   mono?: boolean;
   spend?: "warn" | "over" | "ok";
+  // When the pane is tinted, the footer passes the paired contrast ink so the
+  // label + value read against the colored fill (mirrors the pane head).
+  ink?: string;
 }
 
 export function MetricStat({
@@ -14,13 +17,22 @@ export function MetricStat({
   deltaTone,
   mono = true,
   spend,
+  ink,
 }: MetricStatProps) {
-  let valueColor = "var(--fg-0)";
+  // Spend signals override the ink (they're a warning that must still pop).
+  let valueColor = ink ?? "var(--fg-0)";
   if (spend === "warn") valueColor = "var(--spend-warn)";
   else if (spend === "over") valueColor = "var(--spend-over)";
 
+  const labelColor = ink ? `color-mix(in oklab, ${ink} 62%, transparent)` : "var(--fg-3)";
   const dtone =
-    deltaTone === "up" ? "var(--live)" : deltaTone === "down" ? "var(--err)" : "var(--fg-2)";
+    deltaTone === "up"
+      ? "var(--live)"
+      : deltaTone === "down"
+        ? "var(--err)"
+        : ink
+          ? `color-mix(in oklab, ${ink} 70%, transparent)`
+          : "var(--fg-2)";
 
   return (
     <span
@@ -40,7 +52,7 @@ export function MetricStat({
         style={{
           fontFamily: "var(--mono)",
           fontSize: "var(--fs-11)",
-          color: "var(--fg-3)",
+          color: labelColor,
           fontWeight: 400,
         }}
       >

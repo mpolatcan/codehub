@@ -1,3 +1,4 @@
+import { DockerRuntimeBanner, useDockerRuntime } from "@/app/components/hub/DockerRuntimeBanner";
 import { AgentGlyph } from "@/app/components/primitives/AgentGlyph";
 import { IconBtn } from "@/app/components/primitives/IconBtn";
 import { SearchInput } from "@/app/components/primitives/SearchInput";
@@ -170,6 +171,9 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
   const openContainerWorkspace = useStore((s) => s.openContainerWorkspace);
   const openSavedWorkspace = useStore((s) => s.openSavedWorkspace);
   const beginNewWorkspaceSpawn = useStore((s) => s.beginNewWorkspaceSpawn);
+  // Daemon truth — gates the hero CTA + every card action (open/start/resume all
+  // need a runtime) and triggers the runtime banner above the list.
+  const { down: daemonDown } = useDockerRuntime();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "running" | "stopped">("all");
   // Explicit multi-select mode — OFF by default so the per-card checkbox reserves
@@ -316,20 +320,33 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-          <Tip text="Create a new workspace">
-            <Button
-              onClick={() => {
-                openWizard(true);
-                onClose?.();
-              }}
-            >
-              {Ico.plus}New workspace
-            </Button>
+          <Tip
+            text={
+              daemonDown
+                ? "Start a container runtime first — a workspace needs one"
+                : "Create a new workspace"
+            }
+          >
+            <span style={{ display: "inline-flex" }}>
+              <Button
+                disabled={daemonDown}
+                onClick={() => {
+                  openWizard(true);
+                  onClose?.();
+                }}
+              >
+                {Ico.plus}New workspace
+              </Button>
+            </span>
           </Tip>
         </div>
       </div>
 
       <div className="scroll" style={{ flex: 1, overflow: "auto", padding: "1.5rem 3rem 2.5rem" }}>
+        {/* container runtime down → can't open/start anything; surface it above the
+            list and gate the cards' CTAs (self-renders nothing while the daemon is up) */}
+        <DockerRuntimeBanner style={{ marginBottom: "1.25rem" }} />
+
         {/* toolbar: search + status filter (always present) */}
         <div
           style={{
@@ -374,7 +391,7 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
                     <Button
                       variant="outline"
                       onClick={() => void bulkOpen()}
-                      disabled={selected.size === 0}
+                      disabled={selected.size === 0 || daemonDown}
                     >
                       {Ico.arrowR}Open · {selected.size}
                     </Button>
@@ -420,6 +437,7 @@ export function Welcome({ onClose }: { onClose?: () => void } = {}) {
                 selectMode={selectMode}
                 selected={selected.has(e.key)}
                 onToggleSelect={() => toggleSelect(e.key)}
+                daemonDown={daemonDown}
               />
             ))}
           </CardSection>
@@ -480,12 +498,14 @@ function WorkspaceCard({
   selectMode,
   selected,
   onToggleSelect,
+  daemonDown,
 }: {
   entry: LauncherEntry;
   onClose?: () => void;
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
+  daemonDown: boolean;
 }) {
   const workspaces = useStore((s) => s.workspaces);
   const sessionMeta = useStore((s) => s.sessionMeta);
@@ -630,7 +650,9 @@ function WorkspaceCard({
   const canOpen = isOpen || !entry.container || state === "running";
   // Whole-card affordance is live only when the click does something (open) — or in
   // select mode for bulk-pick. A stopped/booting card is inert except for its controls.
-  const clickable = selectMode || canOpen;
+  // With the daemon down, opening is impossible (every action needs a runtime), so the
+  // card body goes inert too — only select mode (for bulk delete) stays live.
+  const clickable = selectMode || (canOpen && !daemonDown);
   const cardClick = () => {
     if (selectMode) {
       onToggleSelect();
@@ -684,9 +706,11 @@ function WorkspaceCard({
       text={
         selectMode
           ? `${entry.name} — ${selected ? "deselect" : "select"}`
-          : clickable
-            ? `${entry.name} — ${action.toLowerCase()} (${stateLabel})`
-            : `${entry.name} — ${stateLabel}; press Start to launch`
+          : daemonDown
+            ? `${entry.name} — start a container runtime to open`
+            : clickable
+              ? `${entry.name} — ${action.toLowerCase()} (${stateLabel})`
+              : `${entry.name} — ${stateLabel}; press Start to launch`
       }
     >
       <div
@@ -1015,30 +1039,35 @@ function WorkspaceCard({
                 )}
               </div>
               <span style={{ flex: 1 }} />
-              <Tip text={`${action} ${entry.name}`}>
-                <button
-                  type="button"
-                  className="ws-cta"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Start is the ONLY way to boot a stopped container (the card body is
-                    // inert for those); everything else opens via the shared cardClick.
-                    if (action === "Start") void start();
-                    else cardClick();
-                  }}
-                >
-                  {action === "Start" ? (
-                    <>
-                      <span style={{ display: "inline-flex", lineHeight: 0 }}>{Ico.play}</span>
-                      Start
-                    </>
-                  ) : (
-                    <>
-                      {action}
-                      <span style={{ display: "inline-flex", lineHeight: 0 }}>{Ico.arrowR}</span>
-                    </>
-                  )}
-                </button>
+              <Tip
+                text={daemonDown ? "Start a container runtime first" : `${action} ${entry.name}`}
+              >
+                <span style={{ display: "inline-flex" }}>
+                  <button
+                    type="button"
+                    className="ws-cta"
+                    disabled={daemonDown}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Start is the ONLY way to boot a stopped container (the card body is
+                      // inert for those); everything else opens via the shared cardClick.
+                      if (action === "Start") void start();
+                      else cardClick();
+                    }}
+                  >
+                    {action === "Start" ? (
+                      <>
+                        <span style={{ display: "inline-flex", lineHeight: 0 }}>{Ico.play}</span>
+                        Start
+                      </>
+                    ) : (
+                      <>
+                        {action}
+                        <span style={{ display: "inline-flex", lineHeight: 0 }}>{Ico.arrowR}</span>
+                      </>
+                    )}
+                  </button>
+                </span>
               </Tip>
             </>
           )}

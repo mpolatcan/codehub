@@ -7,7 +7,6 @@ import { ActionBar } from "./components/hub/ActionBar";
 import { BusyOverlay } from "./components/hub/BusyOverlay";
 import { CloneBanner } from "./components/hub/CloneBanner";
 import { CommandPalette } from "./components/hub/CommandPalette";
-import { DiffViewer } from "./components/hub/DiffViewer";
 import { FilePreview } from "./components/hub/FilePreview";
 import { FilesBrowser } from "./components/hub/FilesBrowser";
 import { GroupsBar } from "./components/hub/GroupsBar";
@@ -17,6 +16,7 @@ import { HubTabs } from "./components/hub/HubTabs";
 import { RuntimeBanner } from "./components/hub/RuntimeBanner";
 import { ShellPanel } from "./components/hub/ShellPanel";
 import { Shortcuts } from "./components/hub/Shortcuts";
+import { SourceControl } from "./components/hub/SourceControl";
 import { useActivityPoll } from "./hooks/useActivityPoll";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useContainerStatsPoll } from "./hooks/useContainerStatsPoll";
@@ -194,7 +194,9 @@ function HubView() {
       {active && !launcher && (
         <>
           <AnimatePresence>
-            {diff !== null && <DiffViewer key="diff" path={diff} onClose={() => setDiff(null)} />}
+            {diff !== null && (
+              <SourceControl key="diff" path={diff} onClose={() => setDiff(null)} />
+            )}
           </AnimatePresence>
           <AnimatePresence>
             {filePreview !== null && (

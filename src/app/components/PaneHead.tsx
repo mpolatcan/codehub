@@ -186,7 +186,11 @@ export function PaneHead({
                 }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  setEditing(true);
+                  // Defer past this click's focus resolution: selecting the pane
+                  // calls registry.focus() on the terminal, which would otherwise
+                  // steal focus from the freshly-autofocused rename input and blur
+                  // it shut on the same tick.
+                  requestAnimationFrame(() => setEditing(true));
                 }}
               >
                 {meta.alias}

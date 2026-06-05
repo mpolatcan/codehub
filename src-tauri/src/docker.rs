@@ -199,6 +199,40 @@ pub struct CommitInfo {
     pub subject: String,
 }
 
+/// One commit node in the repository DAG for the Source-control "History"
+/// graph ([`git_graph`](DockerClient::git_graph)). `parents` are full SHAs
+/// (multiple for a merge, empty for the root commit); `refs` are the
+/// decoration names (branches/tags/HEAD, with the `HEAD -> ` arrow stripped).
+/// The frontend computes lane layout from `parents`.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphCommit {
+    pub hash: String,
+    pub parents: Vec<String>,
+    pub refs: Vec<String>,
+    pub author: String,
+    pub relative: String,
+    pub subject: String,
+}
+
+/// One ref from `git for-each-ref` (a local head or a remote-tracking branch),
+/// backing the Source-control "Branches" tab. `current` marks the checked-out
+/// branch; `remote` is true for `refs/remotes/*`. `ahead`/`behind` are vs the
+/// upstream (0 when there is no upstream). `hash`/`subject` describe the branch
+/// tip.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchInfo {
+    pub name: String,
+    pub current: bool,
+    pub remote: bool,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    pub hash: String,
+    pub subject: String,
+}
+
 /// One entry in a `/workspace` directory listing (Files browser). `kind` is
 /// "dir" | "file" | "link" | "other"; `size` is bytes (0 for directories). The
 /// listing is non-recursive — the UI navigates one level at a time.
@@ -1993,6 +2027,306 @@ rm -f /tmp/codehub-pr.json"#,
         Ok(parse_git_log(&raw))
     }
 
+    /// Commit DAG for the Source-control "History" graph. One commit per line,
+    /// US-delimited (`hash\x1fparents\x1frefs\x1fauthor\x1frelative\x1fsubject`),
+    /// across local branches + tags + HEAD (`--branches --tags HEAD`) in
+    /// `--date-order` so branches interleave the way a GUI shows them. We
+    /// deliberately do NOT pass `--all`: that pulls in remote-only refs, and a
+    /// repo with stale unmerged `origin/dependabot/*` PR branches turns the
+    /// graph into a spider-web of long parallel lanes that never close. Local
+    /// refs keep the trunk + real feature branches (merged PRs still appear as
+    /// merge commits, and remote decorations still show on traversed commits)
+    /// without the dead-remote sprawl. `parents` is the space-joined parent SHAs
+    /// (empty for the root); `refs` is git's decoration. The frontend derives
+    /// lane layout from `parents`. `limit` is clamped to [`GIT_GRAPH_CAP`].
+    /// Not-a-repo / no-commits come back empty; errors only when the container
+    /// is down.
+    pub async fn git_graph(&self, limit: u32) -> Result<Vec<GraphCommit>, DockerError> {
+        self.require_running().await?;
+        let n = format!("-n{}", limit.clamp(1, GIT_GRAPH_CAP));
+        let raw = self
+            .exec_capture(vec![
+                "git",
+                "-C",
+                "/workspace",
+                "-c",
+                "core.quotePath=false",
+                "log",
+                "--no-color",
+                "--branches",
+                "--tags",
+                "HEAD",
+                "--date-order",
+                &n,
+                "--pretty=format:%H%x1f%P%x1f%D%x1f%an%x1f%ar%x1f%s",
+            ])
+            .await?;
+        Ok(parse_git_graph(&raw))
+    }
+
+    /// All local heads and remote-tracking branches in `/workspace`, via a
+    /// single `git for-each-ref` (Source-control "Branches" tab). Fields are
+    /// US-delimited; ahead/behind come from `%(upstream:track,nobracket)`. The
+    /// `refs/remotes/*/HEAD` symbolic ref is filtered out. Not-a-repo comes back
+    /// empty; errors only when the container is down.
+    pub async fn git_branches(&self) -> Result<Vec<BranchInfo>, DockerError> {
+        self.require_running().await?;
+        let raw = self
+            .exec_capture(vec![
+                "git",
+                "-C",
+                "/workspace",
+                "for-each-ref",
+                "--format=%(refname)\u{1f}%(HEAD)\u{1f}%(upstream:short)\u{1f}%(upstream:track,nobracket)\u{1f}%(objectname)\u{1f}%(contents:subject)",
+                "refs/heads",
+                "refs/remotes",
+            ])
+            .await?;
+        Ok(parse_git_branches(&raw))
+    }
+
+    /// Unified diff of a single commit (`git show`, commit header suppressed via
+    /// `--format=`) — the body shown when a History-graph row is selected. The
+    /// commit metadata (author/date/subject) comes from the graph row, so only
+    /// the patch is needed here; the frontend reuses `DiffBody` to render it.
+    /// `hash` is validated as a hex object name before use (it is never shell-
+    /// parsed regardless — discrete argv — but reject non-hashes early).
+    /// Errors only when the container is down or the hash is malformed.
+    pub async fn git_show(&self, hash: &str) -> Result<String, DockerError> {
+        self.require_running().await?;
+        if !is_commit_hash(hash) {
+            return Err(DockerError::Command("invalid commit hash".into()));
+        }
+        self.exec_capture(vec![
+            "git",
+            "-C",
+            "/workspace",
+            "-c",
+            "core.quotePath=false",
+            "show",
+            "--no-color",
+            "--format=",
+            hash,
+        ])
+        .await
+    }
+
+    /// The full commit message BODY for one commit (`git show -s --format=%b`):
+    /// everything after the subject line, used by the History detail view (the
+    /// subject itself comes from the graph row). Empty for single-line commits.
+    /// `hash` is validated as a hex object name before use. Errors only when the
+    /// container is down or the hash is malformed.
+    pub async fn git_commit_message(&self, hash: &str) -> Result<String, DockerError> {
+        self.require_running().await?;
+        if !is_commit_hash(hash) {
+            return Err(DockerError::Command("invalid commit hash".into()));
+        }
+        self.exec_capture(vec![
+            "git",
+            "-C",
+            "/workspace",
+            "-c",
+            "core.quotePath=false",
+            "show",
+            "--no-color",
+            "-s",
+            "--format=%b",
+            hash,
+        ])
+        .await
+    }
+
+    // ---- Source-control ACTIONS -------------------------------------------
+    // Local ops run via `git_rc` (args passed as `$1`/`$2` positionals — never
+    // shell-parsed — and the exit code captured). Remote ops run via
+    // `git_authed_script`, which wires the GitHub token into an in-shell
+    // credential helper (token referenced by NAME only, same channel as
+    // `git_open_pr`). Ref names / hashes / paths are validated before use as a
+    // second guard against option injection (a `$1` of `-foo` would still be
+    // read as a flag, which positional-passing alone does not prevent).
+
+    /// Check out an existing branch (`git switch <name>`). `switch` is
+    /// branch-only: unlike `git checkout`, it refuses a pathspec, so a `name`
+    /// that happens to match a tracked file errors instead of silently restoring
+    /// that file and discarding local changes. For a remote-only branch its
+    /// default `--guess` DWIM creates a tracking local branch, so the frontend
+    /// passes the short name. Fails (surfacing git's words) on a dirty tree that
+    /// would be overwritten. `name` is validated as a ref name first.
+    pub async fn git_checkout(&self, name: &str) -> Result<(), DockerError> {
+        if !valid_ref_name(name) {
+            return Err(DockerError::Command("invalid branch name".into()));
+        }
+        let (rc, out) = self.git_rc("git switch \"$1\"", &[name]).await?;
+        rc_ok(rc, out, "checkout failed")
+    }
+
+    /// Create a branch (`git branch <name>`, or `git checkout -b <name>` when
+    /// `checkout`). `name` is validated as a ref name first.
+    pub async fn git_create_branch(&self, name: &str, checkout: bool) -> Result<(), DockerError> {
+        if !valid_ref_name(name) {
+            return Err(DockerError::Command("invalid branch name".into()));
+        }
+        let tmpl = if checkout {
+            "git checkout -b \"$1\""
+        } else {
+            "git branch \"$1\""
+        };
+        let (rc, out) = self.git_rc(tmpl, &[name]).await?;
+        rc_ok(rc, out, "could not create branch")
+    }
+
+    /// Delete a branch (`git branch -d`, or `-D` when `force`). A non-force
+    /// delete of an unmerged branch fails with git's "not fully merged" message.
+    /// `name` is validated as a ref name first.
+    pub async fn git_delete_branch(&self, name: &str, force: bool) -> Result<(), DockerError> {
+        if !valid_ref_name(name) {
+            return Err(DockerError::Command("invalid branch name".into()));
+        }
+        let tmpl = if force {
+            "git branch -D \"$1\""
+        } else {
+            "git branch -d \"$1\""
+        };
+        let (rc, out) = self.git_rc(tmpl, &[name]).await?;
+        rc_ok(rc, out, "could not delete branch")
+    }
+
+    /// Move HEAD to a commit (`git reset --<mode> <hash>`). `mode` is one of
+    /// `soft`/`mixed`/`hard` (a `--hard` reset is destructive — the frontend
+    /// confirm-gates it). `hash` is validated as a hex object name.
+    pub async fn git_reset(&self, hash: &str, mode: &str) -> Result<(), DockerError> {
+        if !is_commit_hash(hash) {
+            return Err(DockerError::Command("invalid commit hash".into()));
+        }
+        let flag = match mode {
+            "soft" => "--soft",
+            "mixed" => "--mixed",
+            "hard" => "--hard",
+            _ => return Err(DockerError::Command("invalid reset mode".into())),
+        };
+        let (rc, out) = self
+            .git_rc(&format!("git reset {flag} \"$1\""), &[hash])
+            .await?;
+        rc_ok(rc, out, "reset failed")
+    }
+
+    /// Check out a commit by hash, detaching HEAD (`git switch --detach <hash>`).
+    /// Unlike [`git_checkout`](DockerClient::git_checkout) (branch-only `switch`),
+    /// `--detach` is the supported way to land HEAD on an arbitrary commit from
+    /// the History view. Fails (surfacing git's words) on a dirty tree that would
+    /// be overwritten; reversible by switching back to a branch. `hash` is
+    /// validated as a hex object name first.
+    pub async fn git_checkout_commit(&self, hash: &str) -> Result<(), DockerError> {
+        if !is_commit_hash(hash) {
+            return Err(DockerError::Command("invalid commit hash".into()));
+        }
+        let (rc, out) = self.git_rc("git switch --detach \"$1\"", &[hash]).await?;
+        rc_ok(rc, out, "checkout failed")
+    }
+
+    /// Stash the working tree, including untracked files (`git stash push -u`).
+    pub async fn git_stash(&self) -> Result<(), DockerError> {
+        let (rc, out) = self.git_rc("git stash push -u", &[]).await?;
+        rc_ok(rc, out, "stash failed")
+    }
+
+    /// Re-apply the most recent stash and drop it (`git stash pop`). Conflicts
+    /// leave the working tree merged and surface git's message.
+    pub async fn git_stash_pop(&self) -> Result<(), DockerError> {
+        let (rc, out) = self.git_rc("git stash pop", &[]).await?;
+        rc_ok(rc, out, "stash pop failed")
+    }
+
+    /// Discard changes to one path. Tracked → revert worktree + index to HEAD
+    /// (`git restore --staged --worktree`); untracked → delete the file. `path`
+    /// is repo-relative and validated (no `..`, no leading `/`, no `.git`
+    /// component) so the untracked `rm` branch can't escape the work tree or
+    /// delete repository metadata. Destructive — confirm-gated in UI.
+    pub async fn git_discard_file(&self, path: &str) -> Result<(), DockerError> {
+        if !is_safe_relpath(path) {
+            return Err(DockerError::Command("invalid path".into()));
+        }
+        // `$1` is the path; tracked-vs-untracked decided in-container.
+        let tmpl = "if git ls-files --error-unmatch -- \"$1\" >/dev/null 2>&1; then git restore --staged --worktree -- \"$1\"; else rm -rf -- \"$1\"; fi";
+        let (rc, out) = self.git_rc(tmpl, &[path]).await?;
+        rc_ok(rc, out, "could not discard changes")
+    }
+
+    /// Fetch all remotes and prune deleted refs (`git fetch --all --prune`).
+    /// Authed via the in-shell credential helper. Returns git's summary.
+    pub async fn git_fetch(&self, token: &str) -> Result<String, DockerError> {
+        let (rc, out) = self.git_authed_script("fetch --all --prune", token).await?;
+        rc_msg(rc, out, "Fetched.", "fetch failed")
+    }
+
+    /// Fast-forward the current branch from its upstream (`git pull --ff-only`).
+    /// `--ff-only` is deliberate: a pull that would need a merge/rebase fails
+    /// loudly with git's message rather than silently creating a merge commit or
+    /// leaving a conflicted tree. Authed via the credential helper.
+    pub async fn git_pull(&self, token: &str) -> Result<String, DockerError> {
+        let (rc, out) = self.git_authed_script("pull --ff-only", token).await?;
+        rc_msg(rc, out, "Up to date.", "pull failed")
+    }
+
+    /// Push the current branch to `origin`, setting upstream (`git push -u origin
+    /// HEAD`). `force` uses `--force-with-lease` (refuses to clobber refs that
+    /// moved since the last fetch) — never a bare `--force`; the frontend
+    /// additionally confirm-gates a force push. Authed via the credential helper.
+    pub async fn git_push(&self, force: bool, token: &str) -> Result<String, DockerError> {
+        let args = if force {
+            "push --force-with-lease -u origin HEAD"
+        } else {
+            "push -u origin HEAD"
+        };
+        let (rc, out) = self.git_authed_script(args, token).await?;
+        rc_msg(rc, out, "Pushed.", "push failed")
+    }
+
+    /// Run a git subcommand in `/workspace` with its variable arguments passed
+    /// as shell positionals (`$1`, `$2`, …) so they are never word-split,
+    /// glob-expanded, or re-parsed, and capture the exit code via a trailing
+    /// `__RC__:N` marker. `tmpl` is the git argv with `"$1"`-style placeholders;
+    /// `pos` supplies the values. Returns `(exit_code, output)` with the marker
+    /// stripped. Local (non-remote) ops only — no token wired in.
+    async fn git_rc(&self, tmpl: &str, pos: &[&str]) -> Result<(i32, String), DockerError> {
+        self.require_running().await?;
+        let script = format!(
+            "cd /workspace 2>/dev/null || {{ echo \"__RC__:90\"; exit 0; }}; {tmpl}; echo \"__RC__:$?\""
+        );
+        let mut cmd = vec!["sh", "-c", script.as_str(), "sh"];
+        cmd.extend_from_slice(pos);
+        let out = self.exec_capture(cmd).await?;
+        Ok(split_rc(&out))
+    }
+
+    /// Like [`git_rc`] but for remote ops: wires the GitHub token into an
+    /// in-shell credential helper (`$GITHUB_TOKEN` referenced by NAME only — the
+    /// value rides the structured exec `env`, never argv/log, same as
+    /// `git_open_pr`). `git_args` is the fixed subcommand string (constants only
+    /// — no user input is interpolated here, so it is safe to inline). Returns
+    /// `(exit_code, output)`.
+    async fn git_authed_script(
+        &self,
+        git_args: &str,
+        token: &str,
+    ) -> Result<(i32, String), DockerError> {
+        self.require_running().await?;
+        if token.is_empty() {
+            return Err(DockerError::Command(
+                "no GitHub token — connect GitHub in Settings → Integrations".into(),
+            ));
+        }
+        let token_env = vec![format!("GITHUB_TOKEN={token}")];
+        let helper = "!f(){ echo username=x-access-token; echo \"password=${GITHUB_TOKEN}\"; };f";
+        let script = format!(
+            "cd /workspace 2>/dev/null || {{ echo \"__RC__:90\"; exit 0; }}; git -c credential.helper='{helper}' {git_args}; echo \"__RC__:$?\""
+        );
+        let out = self
+            .exec_capture_env(vec!["sh", "-c", &script], &token_env)
+            .await?;
+        Ok(split_rc(&out))
+    }
+
     /// Non-recursive listing of a `/workspace` directory (Files browser). `path`
     /// is confined to `/workspace` ([`workspace_path`] rejects traversal); empty
     /// → the workspace root. Uses `find -maxdepth 1` with a `%y\t%s\t%f` format
@@ -3185,6 +3519,11 @@ const GIT_FILES_CAP: usize = 200;
 /// Upper bound on commits a single `git_log` call will return.
 const GIT_LOG_CAP: u32 = 50;
 
+/// Upper bound on commits a single `git_graph` call returns (the History graph
+/// is denser than the Dashboard log — across all refs — so it gets a bigger
+/// cap; the view paginates client-side if needed).
+const GIT_GRAPH_CAP: u32 = 300;
+
 /// Cap on entries returned for one directory listing (Files browser).
 const DIR_ENTRIES_CAP: usize = 500;
 
@@ -4194,6 +4533,198 @@ fn parse_git_log(raw: &str) -> Vec<CommitInfo> {
             })
         })
         .collect()
+}
+
+/// Is `s` a plausible git object name (hex, 7–64 chars)? Gate for
+/// [`git_show`](DockerClient::git_show) so a non-hash argument is rejected up
+/// front. The hash is passed as a discrete argv element (never shell-parsed),
+/// so this is defence-in-depth, not the only guard.
+fn is_commit_hash(s: &str) -> bool {
+    (7..=64).contains(&s.len()) && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Parse the US-delimited `git_graph` output
+/// (`hash\x1fparents\x1frefs\x1fauthor\x1frelative\x1fsubject`). `parents` is
+/// split on whitespace; `refs` is git's decoration (comma-space separated),
+/// with the leading `HEAD -> ` arrow stripped so the branch name stands alone.
+/// Lines missing fields (a `fatal:` on a non-repo, or empty output) are
+/// skipped, so callers get an empty list rather than garbage rows.
+fn parse_git_graph(raw: &str) -> Vec<GraphCommit> {
+    raw.lines()
+        .filter_map(|line| {
+            let mut f = line.split('\u{1f}');
+            let hash = f.next()?;
+            let parents = f.next()?;
+            let refs = f.next()?;
+            let author = f.next()?;
+            let relative = f.next()?;
+            let subject = f.next()?;
+            if hash.is_empty() {
+                return None;
+            }
+            Some(GraphCommit {
+                hash: hash.to_string(),
+                parents: parents.split_whitespace().map(String::from).collect(),
+                refs: refs
+                    .split(", ")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.strip_prefix("HEAD -> ").unwrap_or(s).to_string())
+                    .collect(),
+                author: author.to_string(),
+                relative: relative.to_string(),
+                subject: subject.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Parse the US-delimited `git for-each-ref` output backing `git_branches`
+/// (`refname\x1fHEAD\x1fupstream\x1ftrack\x1fobjectname\x1fsubject`). Strips the
+/// `refs/heads/` or `refs/remotes/` prefix for the display name, classifies
+/// remotes by the prefix, and drops the `*/HEAD` symbolic ref. Lines without
+/// all fields (a `fatal:` on a non-repo) are skipped → empty list.
+fn parse_git_branches(raw: &str) -> Vec<BranchInfo> {
+    raw.lines()
+        .filter_map(|line| {
+            let mut f = line.split('\u{1f}');
+            let refname = f.next()?;
+            let head = f.next()?;
+            let upstream = f.next()?;
+            let track = f.next()?;
+            let objectname = f.next()?;
+            let subject = f.next()?;
+            let remote = refname.starts_with("refs/remotes/");
+            let name = refname
+                .strip_prefix("refs/heads/")
+                .or_else(|| refname.strip_prefix("refs/remotes/"))
+                .unwrap_or(refname);
+            if name.is_empty() || name.ends_with("/HEAD") {
+                return None;
+            }
+            let (ahead, behind) = parse_branch_track(track);
+            Some(BranchInfo {
+                name: name.to_string(),
+                current: head == "*",
+                remote,
+                upstream: (!upstream.is_empty()).then(|| upstream.to_string()),
+                ahead,
+                behind,
+                hash: objectname.to_string(),
+                subject: subject.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Pull ahead/behind counts out of `%(upstream:track,nobracket)` — e.g.
+/// "ahead 2, behind 1", "ahead 3", "behind 2", "gone", or "". Unparseable
+/// parts (incl. "gone") contribute 0.
+fn parse_branch_track(track: &str) -> (u32, u32) {
+    let mut ahead = 0;
+    let mut behind = 0;
+    for part in track.split(',') {
+        let part = part.trim();
+        if let Some(n) = part.strip_prefix("ahead ") {
+            ahead = n.trim().parse().unwrap_or(0);
+        } else if let Some(n) = part.strip_prefix("behind ") {
+            behind = n.trim().parse().unwrap_or(0);
+        }
+    }
+    (ahead, behind)
+}
+
+/// Is `name` a safe git branch ref name? A subset of git's `check-ref-format`
+/// rules, tightened for our use: non-empty, no leading `-` (would be read as a
+/// flag even when passed as a `$1` positional), and none of the characters git
+/// forbids in a ref (whitespace, `~^:?*[\`, control chars) or the `..`/`@{`
+/// sequences. Gate for [`git_checkout`](DockerClient::git_checkout) /
+/// [`git_create_branch`](DockerClient::git_create_branch) /
+/// [`git_delete_branch`](DockerClient::git_delete_branch).
+fn valid_ref_name(name: &str) -> bool {
+    if name.is_empty() || name.starts_with('-') || name.starts_with('/') || name.ends_with('/') {
+        return false;
+    }
+    if name == "@" || name.contains("..") || name.contains("@{") || name.ends_with('.') {
+        return false;
+    }
+    // Per-component rules: no empty segment (rejects `//` and a trailing slash),
+    // no segment starting with `.` or ending with `.lock` — mirrors the parts of
+    // git's `check-ref-format` that a hand-rolled gate can cheaply enforce.
+    if name
+        .split('/')
+        .any(|seg| seg.is_empty() || seg.starts_with('.') || seg.ends_with(".lock"))
+    {
+        return false;
+    }
+    !name.chars().any(|c| {
+        c.is_whitespace()
+            || c.is_control()
+            || matches!(c, '~' | '^' | ':' | '?' | '*' | '[' | '\\' | '\x7f')
+    })
+}
+
+/// Is `path` a safe repo-relative pathspec? Confines
+/// [`git_discard_file`](DockerClient::git_discard_file)'s untracked-`rm` branch
+/// to the work tree: non-empty, not absolute, no `..` traversal segment, and no
+/// `.git` component (so the `rm` can't wipe repository metadata/config).
+fn is_safe_relpath(path: &str) -> bool {
+    if path.is_empty() || path.starts_with('/') {
+        return false;
+    }
+    !path
+        .split('/')
+        .any(|seg| seg == ".." || seg.eq_ignore_ascii_case(".git") || seg.contains('\0'))
+}
+
+/// Split the trailing `__RC__:N` marker (emitted by `git_rc` /
+/// `git_authed_script`) off the captured output. Returns `(exit_code, body)`. A
+/// missing or garbled marker maps to code 1 (failure) so an unexpected shape
+/// never reads as success.
+fn split_rc(raw: &str) -> (i32, String) {
+    let trimmed = raw.trim_end_matches('\n');
+    if let Some(idx) = trimmed.rfind("__RC__:") {
+        let code = trimmed[idx + 7..].trim().parse().unwrap_or(1);
+        (code, trimmed[..idx].trim_end().to_string())
+    } else {
+        (1, raw.trim().to_string())
+    }
+}
+
+/// Map a `(rc, output)` from `git_rc` to `()`/error for an action whose only
+/// signal is success. On failure surfaces git's own message (verbatim), falling
+/// back to `fallback` when git printed nothing.
+fn rc_ok(rc: i32, out: String, fallback: &str) -> Result<(), DockerError> {
+    if rc == 0 {
+        Ok(())
+    } else {
+        let msg = out.trim();
+        Err(DockerError::Command(if msg.is_empty() {
+            fallback.to_string()
+        } else {
+            msg.to_string()
+        }))
+    }
+}
+
+/// Like [`rc_ok`] but for an action that returns a status line: `ok` when git
+/// was silent on success, git's message otherwise; on failure, git's message or
+/// `fallback`.
+fn rc_msg(rc: i32, out: String, ok: &str, fallback: &str) -> Result<String, DockerError> {
+    let msg = out.trim();
+    if rc == 0 {
+        Ok(if msg.is_empty() {
+            ok.to_string()
+        } else {
+            msg.to_string()
+        })
+    } else {
+        Err(DockerError::Command(if msg.is_empty() {
+            fallback.to_string()
+        } else {
+            msg.to_string()
+        }))
+    }
 }
 
 /// Parse `git status --porcelain=v1 --branch` output. Pulled out of the async

@@ -634,6 +634,19 @@ body.dragging .divider::after {
   gap: 0.3125rem;
 }
 
+/* Source-control dock rows: per-row actions (stage / unstage / discard,
+   branch ⋯ menu) stay hidden until the row is hovered, focused, or active —
+   the VS Code SCM pattern. Keeps the list calm; reveals affordances on intent. */
+.sc-row .sc-actions {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.sc-row:hover .sc-actions,
+.sc-row:focus-within .sc-actions,
+.sc-row[data-active="true"] .sc-actions {
+  opacity: 1;
+}
+
 /* SpawnSplitBtn — the one primary CTA that replaces the old split-button trio.
    Two halves share the violet --pri solid fill (recipe ported from design
    .btn.pri.solid); the chevron half opens a placement popover. */
@@ -836,9 +849,15 @@ body.dragging .divider::after {
   background: color-mix(in oklab, var(--pri) 10%, transparent);
   transition: background 0.12s ease, border-color 0.12s ease;
 }
-.ws-cta:hover {
+.ws-cta:hover:not(:disabled) {
   background: color-mix(in oklab, var(--pri) 20%, transparent);
   border-color: color-mix(in oklab, var(--pri) 55%, transparent);
+}
+/* Daemon down → the CTA can't act (open/start/resume all need a runtime). Dim it
+   and drop the hover so it reads as gated, not clickable. */
+.ws-cta:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .tmpl-card {
   cursor: pointer;
@@ -881,6 +900,13 @@ body.dragging .divider::after {
    (paints BEHIND content) so the inline `background-color` can't clobber it and no
    z-index juggling is needed. */
 .island-surface {
+  /* Hairline ring on the SIDES + BOTTOM only (no top) so the black pill reads as
+     separate from the menu bar it floats over, while the top edge still merges
+     seamlessly with the physical notch. box-sizing:border-box (ISLAND_SURFACE) keeps
+     the border out of the layout box. */
+  border-left: 1px solid var(--island-bd);
+  border-right: 1px solid var(--island-bd);
+  border-bottom: 1px solid var(--island-bd);
   box-shadow: 0 0.625rem 1.75rem -0.5rem rgba(0, 0, 0, 0.6);
   transition: box-shadow 0.2s ease;
 }
@@ -889,6 +915,72 @@ body.dragging .divider::after {
    the physical notch reads as one continuous black shape; any white wash broke that. */
 .island-surface[data-open="true"] {
   box-shadow: 0 0.875rem 2.25rem -0.5rem rgba(0, 0, 0, 0.8);
+}
+
+/* Attention ping — a radar ring in the awaiting amber that blooms out of the pill's
+   edge and fades, twice (~1.4s total, matched to the JS timeout), when an agent
+   freshly needs input. box-shadow paints OUTSIDE the box so it isn't clipped by the
+   surface's overflow:hidden; the drop-shadow layer is kept so the pill stays lifted
+   while the ring pulses. The second shadow layer is the ring. */
+.island-surface.is-ping {
+  animation: island-ping 0.7s ease-out 2;
+}
+@keyframes island-ping {
+  0% {
+    box-shadow: 0 0.875rem 2.25rem -0.5rem rgba(0, 0, 0, 0.8), 0 0 0 0
+      color-mix(in oklab, var(--wait) 60%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0.875rem 2.25rem -0.5rem rgba(0, 0, 0, 0.8), 0 0 0 0.5rem
+      color-mix(in oklab, var(--wait) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .island-surface.is-ping {
+    animation: none;
+  }
+}
+
+/* The roster open/close handle (ExpandTab) — a small black pull-tab nub hanging off the
+   island's bottom-center (solid `--island-bg`, so it reads as part of the island, not
+   translucent over the wallpaper). The box lives here (not inline) so hover can WASH the
+   background — an inline `background` would beat these rules. Hover/press: a subtle lift
+   of the black + a 0.5px "pull" down. `.is-cursor` mirrors `:hover` for the backgrounded
+   panel, where CSS :hover is frozen (driven by the native cursor bridge). */
+.island-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 1rem;
+  /* 1px overlap onto the surface bottom so the seam vanishes (paints over it, later in DOM). */
+  margin-top: -0.0625rem;
+  padding: 0;
+  border: none;
+  background-color: var(--island-bg);
+  border-radius: 0 0 0.5rem 0.5rem;
+  box-shadow: 0 0.1875rem 0.4375rem -0.1875rem rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.12s ease;
+}
+.island-tab:hover,
+.island-tab.is-cursor {
+  background-color: color-mix(in oklab, var(--island-bg) 80%, var(--fg-0));
+  transform: translateY(0.5px);
+}
+.island-tab:active {
+  transform: translateY(1px);
+}
+
+/* Island inline icon controls (minimize `>-<` / restore `<->`, wrapped in `.island-ctrl`).
+   IconBtn's hover is plain CSS `:hover` (the `ghostIcon` Tailwind variant), which is FROZEN
+   in the backgrounded non-key helper webview — so the native cursor bridge sets `.is-cursor`
+   on the wrapper and we force the IconBtn's hover look (its hover bg/fg are inline
+   `--ib-hover-*` vars on the inner button). Plain `:hover` still covers the dev-web case. */
+.island-ctrl.is-cursor > button {
+  background-color: var(--ib-hover-bg, var(--bg-3));
+  color: var(--ib-hover-fg, var(--fg-0));
 }
 
 /* Dynamic-Island session row — hover highlight (the surface is pure black, so
@@ -919,10 +1011,22 @@ body.dragging .divider::after {
     transparent 58%
   );
 }
+/* A compact row that needs the user (awaiting / failed): a status-colored wash so it
+   reads as "this one is on you" without quite the weight of the active lead. Its rail
+   (below) also brightens + glows — the roster's call-to-action. */
+.island-row--attn {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--row-accent, var(--pri)) 15%, transparent),
+    transparent 64%
+  );
+}
 
-/* The terminal-glyph "jump" affordance: a faint rounded chip that is ALWAYS visible
-   at the row's trailing edge (so the row reads as "open in terminal" at rest), then
-   fills with the primary accent + lifts when the row is hovered. */
+/* The terminal-glyph "jump" affordance. At REST it's just a dim glyph (no box) so
+   the roster stays quiet — a column of filled chips read as noisy dead boxes. On
+   hover/cursor it resolves into a crisp NEUTRAL chip (white-ish on the black pill,
+   never the violet CTA which clashed with the agent-colored rows) and lifts; on
+   press it sinks + brightens for a tactile "jumping" beat. */
 .island-row__jump {
   flex-shrink: 0;
   display: inline-flex;
@@ -932,32 +1036,78 @@ body.dragging .divider::after {
   height: 1.375rem;
   border-radius: 0.4375rem;
   color: var(--fg-3);
-  background: color-mix(in oklab, var(--fg-0) 6%, transparent);
-  transition: color 0.14s ease, background 0.14s ease, transform 0.14s ease;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
 }
 .island-row:hover .island-row__jump,
 .island-row.is-cursor .island-row__jump {
-  color: var(--pri);
-  background: var(--pri-dim);
-  transform: scale(1.08);
+  color: var(--fg-0);
+  background: color-mix(in oklab, var(--fg-0) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fg-0) 18%, transparent);
+  transform: scale(1.06);
 }
 .island-row:active .island-row__jump {
-  transform: scale(0.94);
+  background: color-mix(in oklab, var(--fg-0) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fg-0) 28%, transparent);
+  transform: scale(0.9);
 }
 
-/* Active (lead) row status rail — a crisp rounded capsule inset from the row edges
-   in the agent's status color, with a soft glow. Replaces the old inset box-shadow
-   rail that followed the row's corner radius (it read as a rounded bracket). */
+/* Per-row status rail — a rounded capsule inset on the row's left edge in the agent's
+   status color, so the fleet state scans straight down the roster. EVERY row carries
+   one; the base (compact) rail is thin + dimmed, the active lead's is wider, full
+   color, and softly glowing. (Replaces the old inset box-shadow rail that followed the
+   corner radius and read as a rounded bracket.) */
 .island-row__rail {
   position: absolute;
   left: 0.4375rem;
+  top: 0.3125rem;
+  bottom: 0.3125rem;
+  width: 0.125rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--row-accent, var(--pri)) 55%, transparent);
+}
+.island-row--active .island-row__rail {
   top: 0.4375rem;
   bottom: 0.4375rem;
   width: 0.1875rem;
-  border-radius: 999px;
   background: var(--row-accent, var(--pri));
   box-shadow: 0 0 0.4375rem -0.0625rem
     color-mix(in oklab, var(--row-accent, var(--pri)) 50%, transparent);
+}
+/* The "needs you" row's rail: full status color + glow like the active lead, but it
+   breathes (slow pulse) so the eye is drawn to the one agent that's blocked on input. */
+.island-row--attn .island-row__rail {
+  width: 0.1875rem;
+  background: var(--row-accent, var(--pri));
+  box-shadow: 0 0 0.4375rem -0.0625rem
+    color-mix(in oklab, var(--row-accent, var(--pri)) 60%, transparent);
+  animation: island-rail-pulse 1.8s ease-in-out infinite;
+}
+@keyframes island-rail-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .island-row--attn .island-row__rail {
+    animation: none;
+  }
+}
+
+/* Idle indicator on the island (collapsed strip / notch-less bar). The shared
+   `.dot.idle` is a muted BLUE with a soft 3px glow halo — on the pure-black pill
+   that read as a fuzzy blue blob, and blue reads as an attention/info color, wrong
+   for "at rest". Scope a neutral, crisp version: a dim grey dot with a hairline
+   definition ring, no glow. Only idle is overridden — wait/done/err keep their
+   status color + glow (those ARE attention states). */
+.island-surface .dot.idle {
+  background: var(--fg-3);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--fg-0) 14%, transparent);
 }
 
 /* Indeterminate "working" equalizer (ActivityBars) — bars bounce out of phase in
@@ -1002,5 +1152,81 @@ body.dragging .divider::after {
   .island-eq > i {
     animation: none;
     transform: scaleY(0.6);
+  }
+}
+
+/* Pixel-art mascot (RobotMascot) — the COLLAPSED island's working/idle signal,
+   replacing the per-session name (concurrent agents can't all show a name). One
+   sprite sheet, 96px frames, 8 cols × 6 rows (states); the active row is picked via
+   inline `background-position-y`, the 8-frame loop animated in CSS. The 96px sprite
+   is `transform: scale()`d to the box `size` (set inline) and kept crisp with
+   `image-rendering: pixelated`. Sizes are sprite-grid px (exempt from the rem rule,
+   like AgentGlyph / the xterm glyph grid). */
+.mascot-box {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.mascot-sprite {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 96px;
+  height: 96px;
+  transform-origin: top left;
+  background-repeat: no-repeat;
+  background-size: 768px 576px;
+  image-rendering: pixelated;
+  animation: mascot-run 0.6667s steps(8) infinite;
+}
+@keyframes mascot-run {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: -768px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mascot-sprite {
+    animation: none;
+    background-position-x: 0;
+  }
+}
+
+/* Hub bottom status line — degrades gracefully when side docks (Files/Diff) narrow
+   the main region. The line is a container; the metric cluster + shortcut hints drop
+   as whole groups (rather than overflowing/overlapping the runtime identity) once the
+   bar gets too tight. The full metrics are always available via the expanded graphs
+   (⌘I). Thresholds in rem so they scale with the fluid root. */
+.sb-line {
+  container-type: inline-size;
+}
+.sb-metrics {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.sb-hints {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--fg-3);
+}
+@container (max-width: 46rem) {
+  .sb-hints {
+    display: none;
+  }
+}
+@container (max-width: 34rem) {
+  .sb-metrics {
+    display: none;
   }
 }

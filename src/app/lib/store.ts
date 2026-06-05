@@ -2080,6 +2080,10 @@ async function adoptWorkspace(
     const claudeId = cli === "claude" ? recallClaudeId(s.name) : undefined;
     const alias = aliasFor(label, cli, nextSeq(get().sessionMeta, ws.id, cli));
     registerMeta(s.name, cli, "standard", ws.id, group.id, containerKey, alias, claudeId);
+    // Adopt never calls createSession, so the backend activity entry has no
+    // alias/workspace — push the resolved identity so the Dynamic Island feed
+    // shows this restored agent's real name + workspace (fire-and-forget).
+    void ipc.adoptSessionIdentity(s.name, cli, alias, label, claudeId).catch(() => {});
   }
   return ws.id;
 }
@@ -2253,6 +2257,34 @@ export async function initLifecycle(): Promise<void> {
   // transitions after launch (and is the redundant first-launch trigger).
   void onLifecycle(setStatus);
   void onLifecycleError(setError);
+}
+
+// Re-probe the docker daemon + runtime detection on demand (the welcome screens'
+// "Start Docker" flow polls this until the daemon answers). Mirrors the eager boot
+// block above: on reachable it synthesizes a "running" status (which triggers the
+// idempotent bootstrap) and refreshes the container fleet. Returns reachability so
+// the caller can stop polling. Reuses existing IPC — no new command.
+export async function recheckDocker(): Promise<boolean> {
+  const set = useStore.setState;
+  const { setStatus } = useStore.getState();
+  void ipc
+    .detectDockerRuntime()
+    .then((dockerRuntime) => set({ dockerRuntime }))
+    .catch(() => {});
+  try {
+    const dockerInfo = await ipc.dockerInfo();
+    set({ dockerInfo });
+    if (dockerInfo.reachable) {
+      setStatus({ state: "running", id: null, image: "", name: "daemon" });
+      void ipc
+        .listWorkspaceContainers()
+        .then((workspaceContainers) => set({ workspaceContainers }))
+        .catch(() => {});
+    }
+    return dockerInfo.reachable;
+  } catch {
+    return false;
+  }
 }
 
 // Guard for close actions (⌘W, pane + sidebar close buttons). Returns true when

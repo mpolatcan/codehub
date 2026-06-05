@@ -33,7 +33,7 @@ export const SHORTCUT_GROUPS: { title: string; items: Sc[] }[] = [
     title: "Panels",
     items: [
       { keys: ["⌘", "E"], desc: "Files" },
-      { keys: ["⌘", "D"], desc: "Diff" },
+      { keys: ["⌘", "D"], desc: "Source control" },
       { keys: ["⌘", "J"], desc: "Shell" },
       { keys: ["⌘", "I"], desc: "Resource graphs" },
       { keys: ["⌘", "B"], desc: "Sidebar" },

@@ -1,9 +1,12 @@
 import {
+  ExpandTab,
   ISLAND_SURFACE,
   IslandList,
   type IslandSessionView,
   NotchStrip,
+  mascotStateFor,
 } from "../components/Island";
+import { MascotBanner } from "../screens/Island";
 
 // Dev-only harness (#/__island) to eyeball the Dynamic-Island surface in the real
 // design system. Not shipped — production renders the same components driven by the
@@ -13,8 +16,8 @@ import {
 
 const NOTCH_W = 180; // camera dead-zone width (px) — ~14" MBP
 const NOTCH_H = 32; // notch / menu-bar height (px)
-const FLANK = 64;
-const EXPANDED_W = 360;
+const FLANK = 110;
+const EXPANDED_W = 420;
 
 const SAMPLE: IslandSessionView[] = [
   {
@@ -55,12 +58,16 @@ const SAMPLE: IslandSessionView[] = [
 // below). `expanded` shows the full roster.
 function Stage({
   expanded,
+  peek = false,
   sessions = SAMPLE,
-}: { expanded: boolean; sessions?: IslandSessionView[] }) {
-  // Mirror screens/Island.tsx: a lone agent widens the collapsed flanks to fit its
-  // workspace name, capped at the expanded width.
-  const singleWs = sessions.length === 1 && !!sessions[0]?.workspace;
-  const collapsedW = Math.min(EXPANDED_W, NOTCH_W + 2 * (singleWs ? 96 : FLANK));
+}: { expanded: boolean; peek?: boolean; sessions?: IslandSessionView[] }) {
+  // Mirror screens/Island.tsx: the collapsed strip flanks the camera with the mascot
+  // (left) + count (right), capped at the expanded width.
+  const collapsedW = Math.min(EXPANDED_W, NOTCH_W + 2 * FLANK);
+  const mascot = mascotStateFor(sessions);
+  const mascotSize = Math.min(36, Math.max(24, NOTCH_H - 2));
+  // Minimized pill flanks the camera tightly (mascot left, count right, no label).
+  const peekW = Math.min(EXPANDED_W, NOTCH_W + 2 * Math.max(mascotSize + 18, 60));
   return (
     <div
       style={{
@@ -88,29 +95,63 @@ function Stage({
           zIndex: 1,
         }}
       />
-      {/* The island surface, top flush with the screen top so its notch-height strip
-          merges with the notch above; camera dead-zone aligns with the notch. */}
+      {/* The island surface (top flush with the screen top so its notch-height strip
+          merges with the notch above), with the chevron floating OUTSIDE it just below the
+          bottom edge — both centered in a positioned column. */}
       <div
-        className="island-surface"
-        data-open={expanded}
         style={{
           position: "absolute",
           top: 0,
           left: "50%",
           transform: "translateX(-50%)",
-          width: `${expanded ? EXPANDED_W : collapsedW}px`,
           zIndex: 2,
-          ...ISLAND_SURFACE,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
         }}
       >
-        <NotchStrip
-          active={sessions[0] ?? null}
-          count={sessions.length}
-          notchW={NOTCH_W}
-          notchH={NOTCH_H}
-          expanded={expanded}
-        />
-        {expanded ? <IslandList sessions={sessions} onJump={() => {}} /> : null}
+        <div
+          className="island-surface"
+          data-open={expanded}
+          style={{
+            width: `${peek ? peekW : expanded ? EXPANDED_W : collapsedW}px`,
+            ...ISLAND_SURFACE,
+          }}
+        >
+          {peek ? (
+            <NotchStrip
+              active={sessions[0] ?? null}
+              count={sessions.length}
+              notchW={NOTCH_W}
+              notchH={NOTCH_H}
+              expanded={false}
+              minimized
+              mascot={mascot}
+              mascotSize={mascotSize}
+              onRestore={() => {}}
+            />
+          ) : (
+            <>
+              <NotchStrip
+                active={sessions[0] ?? null}
+                count={sessions.length}
+                notchW={NOTCH_W}
+                notchH={NOTCH_H}
+                expanded={expanded}
+                mascot={mascot}
+                mascotSize={mascotSize}
+                onPeek={() => {}}
+              />
+              {expanded ? (
+                <>
+                  <MascotBanner sessions={sessions} />
+                  <IslandList sessions={sessions} onJump={() => {}} />
+                </>
+              ) : null}
+            </>
+          )}
+        </div>
+        {!peek ? <ExpandTab expanded={expanded} onToggle={() => {}} mascot={mascot} /> : null}
       </div>
     </div>
   );
@@ -130,17 +171,25 @@ export default function IslandPreview() {
       }}
     >
       <div style={{ color: "var(--fg-2)", fontFamily: "var(--mono)", fontSize: "var(--fs-12)" }}>
-        Collapsed — fills the notch, content flanks the camera
+        Collapsed — mascot (aggregate working/idle) flanks the camera + count badge
       </div>
       <Stage expanded={false} />
       <div style={{ color: "var(--fg-2)", fontFamily: "var(--mono)", fontSize: "var(--fs-12)" }}>
-        Collapsed (single agent) — shows its workspace instead of a count
+        Collapsed (single agent) — mascot conveys it's working
       </div>
       <Stage expanded={false} sessions={[SAMPLE[0]]} />
+      <div style={{ color: "var(--fg-2)", fontFamily: "var(--mono)", fontSize: "var(--fs-12)" }}>
+        Minimized — icon + count only, narrowed symmetrically (click to restore)
+      </div>
+      <Stage expanded={false} peek />
       <div style={{ color: "var(--fg-2)", fontFamily: "var(--mono)", fontSize: "var(--fs-12)" }}>
         Expanded — grows down + out of the notch
       </div>
       <Stage expanded={true} />
+      <div style={{ color: "var(--fg-2)", fontFamily: "var(--mono)", fontSize: "var(--fs-12)" }}>
+        Expanded (empty) — idle mascot + calm empty roster
+      </div>
+      <Stage expanded={true} sessions={[]} />
     </div>
   );
 }

@@ -101,7 +101,6 @@ function GroupTab({
     <div
       className={`group-tab${active ? " active" : ""}`}
       onClick={onSelect}
-      onDoubleClick={() => setEditing(true)}
       style={{
         display: "flex",
         alignItems: "center",
@@ -154,7 +153,18 @@ function GroupTab({
         />
       ) : (
         <Tip text="Double-click to rename">
-          <span className="ch-rename" style={{ fontWeight: active ? 500 : 400, color: fg }}>
+          <span
+            className="ch-rename"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              // Defer past this click's focus resolution: onSelect →
+              // setActiveGroup calls registry.focus() on the group's pane, which
+              // would otherwise steal focus from the freshly-autofocused rename
+              // input and blur it shut on the same tick.
+              requestAnimationFrame(() => setEditing(true));
+            }}
+            style={{ fontWeight: active ? 500 : 400, color: fg }}
+          >
             {group.name}
           </span>
         </Tip>

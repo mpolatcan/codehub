@@ -109,6 +109,58 @@ export const Ico = {
       <path d="M9 3h4v4M7 13H3V9M13 3l-5 5M3 13l5-5" />
     </svg>
   ),
+  minus: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+    >
+      <path d="M4 8h8" />
+    </svg>
+  ),
+  // Horizontal CONTRACT — clean double-chevrons pointing INWARD toward a center gap
+  // (Lucide `chevrons-right-left`): "pull the edges in" = minimize the island to its
+  // narrow icon+count pill. No center bar (that read as ASCII `>-<`, not an icon).
+  contractH: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 4.5L6 8 3 11.5" />
+      <path d="M13 4.5L10 8 13 11.5" />
+    </svg>
+  ),
+  // Horizontal EXPAND — clean double-chevrons pointing OUTWARD from a center gap (Lucide
+  // `chevrons-left-right`): "push the edges back out" = restore the minimized pill to the
+  // collapsed strip. Mirror of contractH; no center line.
+  expandH: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 4.5L3 8 6 11.5" />
+      <path d="M10 4.5L13 8 10 11.5" />
+    </svg>
+  ),
   diff: (
     <svg
       aria-hidden="true"
@@ -455,6 +507,72 @@ export const Ico = {
     >
       <circle cx="8" cy="8" r="5.5" />
       <path d="M8 4.5V8l2.5 1.5" />
+    </svg>
+  ),
+  // Pull / download from remote — tray with a down arrow into it.
+  download: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 2.5v6.5M5 6.5l3 3 3-3" />
+      <path d="M3 12.5h10" />
+    </svg>
+  ),
+  // Push / upload to remote — tray with an up arrow out of it.
+  upload: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 9.5V3M5 5.5l3-3 3 3" />
+      <path d="M3 12.5h10" />
+    </svg>
+  ),
+  // Copy — two offset rounded rects (copy SHA / text affordance).
+  copy: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.3" />
+      <path d="M3.5 9.5V4a1 1 0 0 1 1-1h5.5" />
+    </svg>
+  ),
+  // Git-commit — a node on a horizontal line (History affordance / empty state).
+  commit: (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+    >
+      <circle cx="8" cy="8" r="2.6" />
+      <path d="M2 8h2.9M11.1 8H14" strokeLinecap="round" />
     </svg>
   ),
   // Spinner — a ¾ ring; add the `.spin` class (panes.css) to animate it. Used by

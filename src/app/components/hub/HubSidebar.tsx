@@ -38,7 +38,11 @@ type NavId = "hub" | "dashboard" | "settings";
 
 export function HubSidebar() {
   const collapsed = useStore((s) => s.sidebarCollapsed);
-  const expandedWidth = "clamp(12rem, 18vw, 16.5rem)";
+  // Plain rem targets on BOTH ends so framer tweens the width symmetrically. A
+  // `clamp()`/`vw` target is not a parseable motion value — framer can't interpolate
+  // it, so expanding (→ clamp) used to SNAP open while collapsing (→ 3.25rem) slid.
+  // 16.5rem still scales with the fluid root font like the rest of the chrome.
+  const expandedWidth = "16.5rem";
   return (
     <motion.div
       animate={{ width: collapsed ? "3.25rem" : expandedWidth }}
@@ -179,9 +183,6 @@ function SidebarExpanded() {
 
       {/* Workspaces */}
       <WorkspacesSection />
-
-      {/* footer — runtime identity (closest real source for the account slot) */}
-      <SidebarFooter />
     </aside>
   );
 }
@@ -370,6 +371,24 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
             {title}
           </span>
         </button>
+        {sessions.length > 0 && (
+          <Tip text={`${sessions.length} pane${sessions.length === 1 ? "" : "s"}`}>
+            <span
+              className="mono tnum"
+              style={{
+                fontSize: "var(--fs-10)",
+                fontWeight: 600,
+                color: open ? "var(--fg-1)" : "var(--fg-2)",
+                background: "var(--bg-3)",
+                borderRadius: "0.3125rem",
+                padding: "0.0625rem 0.375rem",
+                flexShrink: 0,
+              }}
+            >
+              {sessions.length}
+            </span>
+          </Tip>
+        )}
         {busy ? (
           <Tip text={`${busy}…`}>
             <span
@@ -384,9 +403,14 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
             </span>
           </Tip>
         ) : (
-          <>
+          // Lifecycle controls — revealed on row hover/focus (.ws-ctl) so a resting
+          // card reads as just name · path · branch · pane-count, not a control strip.
+          <span
+            className="ws-ctl"
+            style={{ display: "inline-flex", alignItems: "center", gap: 1, flexShrink: 0 }}
+          >
             {state === "running" && (
-              <span style={{ display: "inline-flex", gap: 1 }}>
+              <>
                 <IconBtn
                   title="Restart container"
                   size={22}
@@ -409,7 +433,7 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
                 >
                   {Ico.stop}
                 </IconBtn>
-              </span>
+              </>
             )}
             {state === "stopped" && (
               <IconBtn
@@ -423,25 +447,7 @@ function WorkspaceSideRow({ workspaceId }: { workspaceId: string }) {
                 {Ico.play}
               </IconBtn>
             )}
-          </>
-        )}
-        {sessions.length > 0 && (
-          <Tip text={`${sessions.length} pane${sessions.length === 1 ? "" : "s"}`}>
-            <span
-              className="mono tnum"
-              style={{
-                fontSize: "var(--fs-10)",
-                fontWeight: 600,
-                color: open ? "var(--fg-1)" : "var(--fg-2)",
-                background: "var(--bg-3)",
-                borderRadius: "0.3125rem",
-                padding: "0.0625rem 0.375rem",
-                flexShrink: 0,
-              }}
-            >
-              {sessions.length}
-            </span>
-          </Tip>
+          </span>
         )}
       </div>
 
@@ -766,73 +772,10 @@ function SessionRow({
   );
 }
 
-// ── footer — design's account row, fed by real runtime identity ──────────────
-function SidebarFooter() {
-  const status = useStore((s) => s.status);
-  const dockerInfo = useStore((s) => s.dockerInfo);
-  const runtimeLive = status?.state === "running";
-
-  return (
-    <div
-      style={{
-        padding: "0.625rem 0.75rem",
-        borderTop: "1px solid var(--bd-soft)",
-        display: "flex",
-        alignItems: "center",
-        gap: "0.625rem",
-      }}
-    >
-      <div
-        style={{
-          width: "1.375rem",
-          height: "1.375rem",
-          borderRadius: "0.3125rem",
-          background: "linear-gradient(135deg, oklch(0.7 0.13 30), oklch(0.6 0.13 280))",
-          flexShrink: 0,
-          position: "relative",
-        }}
-      >
-        <span
-          style={{
-            position: "absolute",
-            right: "-0.125rem",
-            bottom: "-0.125rem",
-            width: "0.5rem",
-            height: "0.5rem",
-            borderRadius: "50%",
-            background: runtimeLive ? "var(--live)" : "var(--idle)",
-            border: "1.5px solid var(--bg-1)",
-          }}
-        />
-      </div>
-      <Tip text={status?.name ?? ""}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            className="mono"
-            style={{
-              fontSize: "var(--fs-12)",
-              color: "var(--fg-0)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {status?.state ?? "—"}
-          </div>
-          <div className="mono" style={{ fontSize: "var(--fs-10)", color: "var(--fg-3)" }}>
-            {dockerInfo?.version ? `docker ${dockerInfo.version}` : "docker daemon"}
-          </div>
-        </div>
-      </Tip>
-    </div>
-  );
-}
-
 // ── COLLAPSED RAIL (52px) ─────────────────────────────────────────────────────
 function SidebarRail() {
   const { activeId, items } = useNav();
   const toggleSidebar = useStore((s) => s.toggleSidebar);
-  const runtimeState = useStore((s) => s.status?.state);
 
   return (
     <aside
@@ -873,23 +816,6 @@ function SidebarRail() {
           {n.icon}
         </RailIcon>
       ))}
-      <div style={{ flex: 1 }} />
-      <Tip text={runtimeState ?? "unknown"} side="right">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            padding: "0.375rem 0",
-          }}
-        >
-          <StatusDot
-            status={
-              runtimeState === "running" ? "live" : runtimeState === "starting" ? "wait" : "off"
-            }
-            pulse={runtimeState === "running"}
-          />
-        </div>
-      </Tip>
     </aside>
   );
 }

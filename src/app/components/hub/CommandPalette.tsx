@@ -317,10 +317,13 @@ export function CommandPalette() {
         {/* ── Commands ──────────────────────────────────────────────────── */}
         {show("cmd") && runtimeLive && (
           <CommandGroup heading="Commands · 4">
-            <CommandItem value="review all changes diff workspace" onSelect={openDiff}>
-              <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.diff}</span>
+            <CommandItem
+              value="review all changes diff git source control workspace"
+              onSelect={openDiff}
+            >
+              <span style={{ display: "inline-flex", color: "var(--fg-2)" }}>{Ico.branch}</span>
               <span style={{ flex: 1 }}>
-                <Hi text="Review all changes" q={query} />
+                <Hi text="Open source control" q={query} />
               </span>
               <span
                 style={{
@@ -331,7 +334,7 @@ export function CommandPalette() {
                 }}
               >
                 <span className="mono" style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>
-                  workspace diff
+                  source control
                 </span>
                 <Kbd>⌘D</Kbd>
               </span>

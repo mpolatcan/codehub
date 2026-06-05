@@ -1,8 +1,53 @@
-import { type Variants, motion } from "motion/react";
-import type { CSSProperties } from "react";
+import { AnimatePresence, type Variants, motion } from "motion/react";
+import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
 import { AGENT_META, AgentGlyph, type AgentId } from "./primitives/AgentGlyph";
-import { StatusDot, type StatusKey } from "./primitives/StatusDot";
+import { IconBtn } from "./primitives/IconBtn";
+import { MascotGif } from "./primitives/MascotGif";
+import { type MascotState, RobotMascot } from "./primitives/RobotMascot";
+import { STATUS, StatusDot, type StatusKey } from "./primitives/StatusDot";
 import { Ico } from "./primitives/icons";
+
+// Shared color set for the island's bare icon controls (collapse / minimize / restore),
+// so a ghost IconBtn reads correctly on the dark surface: dim at rest, brightening to
+// full foreground over a faint wash on hover. No tooltips on these (the island window
+// clips a Radix popover); the chevron/minus glyph is self-evident.
+const ISLAND_CTRL = {
+  idleColor: "var(--fg-3)",
+  hoverColor: "var(--fg-0)",
+  hoverBg: "color-mix(in oklab, var(--fg-0) 14%, transparent)",
+} as const;
+
+// The island's inline icon controls (minimize `>-<` / restore `<->`). Wrapped in a
+// `.island-ctrl` span carrying `data-island-ctrl=<id>` so the native cursor bridge can
+// hit-test it (`island://cursor` → elementFromPoint) and force the hover look via
+// `.is-cursor` — IconBtn's hover is plain CSS `:hover`, which is FROZEN in the backgrounded
+// non-key helper webview (same reason rows use the bridge). `cursorCtrl` is the id the
+// bridge reports the pointer over; CSS `:hover` still covers the dev-web (active) case.
+function IslandCtrl({
+  id,
+  label,
+  cursorCtrl,
+  onClick,
+  children,
+}: {
+  id: string;
+  label: string;
+  cursorCtrl?: string | null;
+  onClick: MouseEventHandler<HTMLButtonElement>;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={`island-ctrl${cursorCtrl === id ? " is-cursor" : ""}`}
+      data-island-ctrl={id}
+      style={{ display: "inline-flex" }}
+    >
+      <IconBtn size={18} {...ISLAND_CTRL} aria-label={label} onClick={onClick}>
+        {children}
+      </IconBtn>
+    </span>
+  );
+}
 
 // Dynamic-Island surface (macOS notch window), composed entirely from existing
 // CodeHub primitives + tokens so it is pixel-consistent with the rest of the app
@@ -11,9 +56,9 @@ import { Ico } from "./primitives/icons";
 // One black SURFACE that morphs between two content modes (the caller animates its
 // width/height for the fluid expand/collapse; this file owns the chrome + content):
 //   • COLLAPSED  → `IslandBar`: pane title (+ workspace) + a live-agent count badge.
-//   • EXPANDED   → `IslandList`: every live agent as a row (status dot / active-row
-//                  glyph, title, workspace marker, relative time, hover jump glyph);
-//                  the active row adds a status action line ("Needs input").
+//   • EXPANDED   → `IslandList`: every live agent as a row — an identity line (agent
+//                  glyph, terminal name, workspace chip, relative time, hover jump
+//                  glyph) over a status line (the live event, e.g. "Needs input").
 //
 // Honesty boundary: every field is a REAL activity-feed signal. There is no
 // terminal-app concept here (agents run in containers), so the WORKSPACE is the
@@ -32,14 +77,15 @@ export interface IslandSessionView {
   workspace?: string;
   /** Relative time since last activity ("28m"). */
   ago: string;
+  /** Active-turn elapsed ("0:42") — set only while live; replaces `ago` then so a
+   *  working agent reads how long its turn has run instead of a meaningless "now". */
+  timer?: string;
   /** Launch task — the idle active row's meta-line fallback when there's no event. */
   subtitle?: string;
   /** Live event for this row's meta line — the humanized status label ("Thinking…" /
    *  "Running Bash" / "Needs input" / "Finished" / "Failed" / "Working…"); none idle. */
   action?: string;
 }
-
-const dim: CSSProperties = { color: "var(--fg-2)" };
 
 // Indeterminate "working" indicator — a tiny equalizer of bars that bounce in the
 // agent's accent. Honest: it signals ACTIVITY, not a percentage (we have no real
@@ -124,46 +170,106 @@ function CountBadge({ count, tone }: { count: number; tone?: string }) {
   );
 }
 
-// The lead agent's status color, but only when it warrants attention (waiting /
-// finished / failed) — used to tint the collapsed count chip. Working/idle → none.
-function urgentTone(active: IslandSessionView | null): string | undefined {
-  if (!active) return undefined;
-  return active.status === "wait" || active.status === "err" || active.status === "done"
-    ? statusColor(active.status)
-    : undefined;
+// Aggregate working/idle state for the COLLAPSED island's mascot. The minimized pill
+// can't name concurrent sessions, so instead of a per-session title it shows ONE robot
+// whose animation conveys "is the fleet working". Worst-attention-wins across all live
+// agents: any failed → error, any finished → success, any awaiting → thinking, any
+// working → coding, else idle. (wait/err/done auto-expand the island, so in practice
+// the COLLAPSED mascot is only ever coding or idle — the honest working/not signal.)
+export function mascotStateFor(sessions: IslandSessionView[]): MascotState {
+  if (sessions.some((s) => s.status === "err")) return "error";
+  if (sessions.some((s) => s.status === "done")) return "success";
+  if (sessions.some((s) => s.status === "wait")) return "thinking";
+  if (sessions.some((s) => s.status === "live")) return "coding";
+  return "idle";
 }
 
-// Workspace tag for the COLLAPSED notch strip (single-agent case). Mirrors the
-// expanded row's WorkspaceMeta (container glyph + name); the strip widens its flanks
-// for a lone agent (see screens/Island.tsx `collapsedW`) so the name fits un-clipped,
-// only ellipsizing very long names at the cap.
-function CollapsedWorkspace({ name }: { name: string }) {
+// The aggregate mascot state mapped to a status key — the single source for tinting the
+// whole island to the fleet's state ("status as light"): the header dot + mascot-well
+// glow + status-spine divider (expanded) and the count chip (collapsed) all read from
+// it, so a glance anywhere on the chrome reads green=working / amber=awaiting / red=
+// failed / blue=done / neutral=idle.
+export const MASCOT_STATUS: Record<MascotState, StatusKey> = {
+  idle: "idle",
+  thinking: "wait",
+  coding: "live",
+  building: "live",
+  success: "done",
+  error: "err",
+};
+
+/** The CSS color for the fleet's aggregate state. */
+export function mascotAccent(state: MascotState): string {
+  return STATUS[MASCOT_STATUS[state]].color;
+}
+
+/** Aggregate accent as a chip TONE — the same color, but `undefined` while idle so the
+ *  resting collapsed pill stays neutral (only a working/awaiting fleet glows). */
+function mascotTone(state: MascotState): string | undefined {
+  return state === "idle" ? undefined : mascotAccent(state);
+}
+
+// One-word aggregate label beside the mascot on the notch-LESS pill (which has the
+// room a notch strip doesn't). Honest fleet state, not a session name.
+function mascotLabel(state: MascotState): string {
+  return state === "idle" ? "Idle" : "Working";
+}
+
+// Per-status head-count of the fleet, ordered by attention (awaiting first). Real
+// counts straight off the roster — feeds the expanded banner's breakdown chip so a
+// MIXED fleet (e.g. 1 waiting + 2 working) reads its composition at a glance instead
+// of a flat "3 agents". Skips empty statuses; order matches the roster sort.
+const TALLY_ORDER: StatusKey[] = ["wait", "err", "done", "live", "idle"];
+export function statusTally(sessions: IslandSessionView[]): { key: StatusKey; n: number }[] {
+  const counts = new Map<StatusKey, number>();
+  for (const s of sessions) counts.set(s.status, (counts.get(s.status) ?? 0) + 1);
+  return TALLY_ORDER.filter((k) => counts.has(k)).map((k) => ({
+    key: k,
+    n: counts.get(k) as number,
+  }));
+}
+
+// The COLLAPSED-state mascot. Default → the robot-only animated GIF, full-frame
+// (`zoom=1`): the assets are transparent status-bar pixel-art where the robot fills the
+// canvas (no desk scene), so no crop is needed. The notch box is `size` CSS px but the
+// island webview renders at 2× on Retina, so a 36px box paints ~72 physical px — crisp
+// at the gif's native 88px. Under prefers-reduced-motion → the static CSS sprite (a GIF
+// can't be paused).
+function CollapsedMascot({ state, size }: { state: MascotState; size: number }) {
+  const reduce =
+    typeof window !== "undefined" &&
+    !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  // The notch is BINARY: idle vs working. Idle → the idle gif; any working state
+  // (live/thinking/etc.) → the "writing" gif (the `coding` key maps to writing.gif).
+  // The richer per-state art (thinking/deploying/success/debugging) lives in the
+  // expanded banner only, so the notch never flickers through them on a state change.
+  const s: MascotState = state === "idle" ? "idle" : "coding";
+  // "Status as light" in the MINIMIZED notch too: an alpha-aware drop-shadow makes the
+  // robot itself EMIT its status color into the black notch (green = working, amber =
+  // awaiting), so the notch reads as lit even collapsed. drop-shadow (not a bg glow) is
+  // used because the robot fills the frame opaquely — a glow behind it would be occluded;
+  // this haloes the robot's own silhouette and bleeds outward (the wrapper doesn't clip).
+  // Idle → no glow (the notch stays dark at rest).
+  const tone = mascotTone(state);
   return (
     <span
       style={{
+        position: "relative",
         display: "inline-flex",
         alignItems: "center",
-        gap: "0.25rem",
-        maxWidth: "7rem",
-        minWidth: 0,
-        color: "var(--fg-1)",
-        fontSize: "var(--fs-10)",
-        fontWeight: 500,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
+        justifyContent: "center",
+        width: size,
+        height: size,
+        filter: tone
+          ? `drop-shadow(0 0 0.375rem color-mix(in oklab, ${tone} 70%, transparent))`
+          : undefined,
       }}
     >
-      <span
-        style={{
-          display: "inline-flex",
-          flexShrink: 0,
-          color: "var(--fg-3)",
-          transform: "scale(0.85)",
-        }}
-      >
-        {Ico.container}
-      </span>
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+      {reduce ? (
+        <RobotMascot state={s} size={size} />
+      ) : (
+        <MascotGif state={s} size={size} radius="0.375rem" />
+      )}
     </span>
   );
 }
@@ -179,17 +285,47 @@ export interface NotchStripProps {
   /** Expanded → indicators ride the strip's OUTER edges (aligned with the body rows
    *  below); collapsed → hugged tight against the camera dead-zone (minimal pill). */
   expanded?: boolean;
+  /** Aggregate working/idle state for the COLLAPSED mascot (mascotStateFor). */
+  mascot: MascotState;
+  /** Mascot box size (px) — sized to the notch height by the caller. */
+  mascotSize: number;
+  /** Minimize (collapsed only) → shrink to the icon+count pill. Stops propagation so it
+   *  doesn't also trigger the pill's expand click. */
+  onPeek?: () => void;
+  /** Restore (minimized only) → widen back to the collapsed strip (the `<->` control). It
+   *  STAYS visible in peek so the shrink/restore affordance never vanishes on click. */
+  onRestore?: () => void;
+  /** Minimized (peek) variant: mascot + count + the `<->` restore control, tight flanks. */
+  minimized?: boolean;
+  /** Id the native cursor bridge reports the pointer over (forces control hover on the
+   *  backgrounded panel where CSS `:hover` is frozen). See `IslandCtrl`. */
+  cursorCtrl?: string | null;
 }
 
-// The always-on top strip that occupies the notch area. A status dot + agent glyph
-// sit LEFT of the camera and the live-agent count RIGHT of it, with a center dead-
-// zone the width of the notch so nothing ever lands under the camera (the dead-zone
-// stays centered in both states, so it always clears the lens). Its height is the
-// notch height, so the black fills the notch and reads as one shape with it. When
-// COLLAPSED the indicators hug the camera (tight minimal pill); when EXPANDED they
-// fan out to the strip's outer edges so they line up with the roster below. All rich
-// text lives in the body BELOW the camera (see IslandList) — never up here.
-export function NotchStrip({ active, count, notchW, notchH, expanded = false }: NotchStripProps) {
+// The always-on top strip that occupies the notch area, with a center dead-zone the
+// width of the notch so nothing ever lands under the camera (it stays centered in
+// both states, so it always clears the lens). Its height is the notch height, so the
+// black fills the notch and reads as one shape with it.
+//   • COLLAPSED → the strip is the minimized HUD: LEFT of the camera the lead agent's
+//     activity indicator + glyph + PANE TITLE ("which pane"); RIGHT of it the live
+//     EVENT ("what it's doing" — "Thinking…" / "Running npm test" / "Needs input"),
+//     status-colored, plus a count badge when more than one agent is live. So a glance
+//     at the notch answers which agent, which pane, and what it's doing — no expand.
+//   • EXPANDED → the indicators fan to the strip's outer edges (lined up with the
+//     roster below) and the rich per-row detail lives in the body (see IslandList).
+export function NotchStrip({
+  active,
+  count,
+  notchW,
+  notchH,
+  expanded = false,
+  mascot,
+  mascotSize,
+  onPeek,
+  onRestore,
+  minimized = false,
+  cursorCtrl,
+}: NotchStripProps) {
   const status = active?.status ?? "idle";
   const accent = active ? (AGENT_META[active.agent]?.accent ?? "var(--a-claude)") : "var(--live)";
   return (
@@ -207,30 +343,69 @@ export function NotchStrip({ active, count, notchW, notchH, expanded = false }: 
           flex: 1,
           display: "flex",
           alignItems: "center",
-          justifyContent: expanded ? "flex-start" : "flex-end",
-          gap: "0.3125rem",
-          paddingLeft: expanded ? "0.875rem" : 0,
+          justifyContent: "flex-start",
+          gap: "0.4375rem",
+          paddingLeft: "0.875rem",
           paddingRight: expanded ? 0 : "0.5rem",
           minWidth: 0,
         }}
       >
-        {/* Live → the equalizer is the activity signal (motion reads as "working" at a
-            glance); any other status → the colored status dot carries the semantics. */}
-        {status === "live" ? (
-          <ActivityBars color={accent} />
-        ) : (
-          <StatusDot status={status} pulse={status === "wait"} />
-        )}
-        {/* Collapsed only: the camera-hugging glyph IDs the active agent at a glance.
-            When expanded it would duplicate the per-row glyphs below, so it drops. */}
-        {active && !expanded ? (
-          <AgentGlyph
-            agent={active.agent}
-            size={12}
-            color={AGENT_META[active.agent]?.accent ?? "var(--a-claude)"}
-            style={{ flexShrink: 0 }}
-          />
-        ) : null}
+        {/* COLLAPSED → one mascot whose loop conveys the AGGREGATE working/idle state
+            (concurrent sessions can't each show a name, so a per-session title would be
+            misleading). EXPANDED → the per-row roster below carries identity, so the
+            strip's left edge falls back to the lead's activity indicator (equalizer when
+            live, dot otherwise), lined up with the rows. The two morph (fade + scale) on
+            the transition — a liquid hand-off, not a hard cut. */}
+        <AnimatePresence initial={false} mode="popLayout">
+          {expanded ? (
+            <motion.span
+              key="ind"
+              style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -6 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+            >
+              {status === "live" ? (
+                <ActivityBars color={accent} />
+              ) : (
+                <StatusDot status={status} pulse={status === "wait"} />
+              )}
+            </motion.span>
+          ) : (
+            <motion.span
+              key="mascot"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.4375rem",
+                flexShrink: 0,
+              }}
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+            >
+              <CollapsedMascot state={mascot} size={mascotSize} />
+              {/* One-word aggregate status beside the mascot ("Idle"/"Working") — the
+                  collapsed strip's status text, mirroring the notch-less IslandBar. The
+                  MINIMIZED pill drops it: only the icon + count survive there. */}
+              {!minimized ? (
+                <span
+                  style={{
+                    fontSize: "var(--fs-12)",
+                    lineHeight: 1,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    color: mascot === "idle" ? "var(--fg-2)" : "var(--fg-0)",
+                  }}
+                >
+                  {mascotLabel(mascot)}
+                </span>
+              ) : null}
+            </motion.span>
+          )}
+        </AnimatePresence>
       </div>
       <div style={{ width: `${notchW}px`, flexShrink: 0 }} aria-hidden />
       <div
@@ -238,21 +413,49 @@ export function NotchStrip({ active, count, notchW, notchH, expanded = false }: 
           flex: 1,
           display: "flex",
           alignItems: "center",
-          justifyContent: expanded ? "flex-end" : "flex-start",
+          justifyContent: "flex-end",
           gap: "0.3125rem",
           paddingLeft: expanded ? 0 : "0.5rem",
-          paddingRight: expanded ? "0.875rem" : 0,
+          paddingRight: expanded ? "0.875rem" : "0.625rem",
           minWidth: 0,
         }}
       >
-        {/* Collapsed context: a SINGLE agent shows its workspace (the count would just
-            say "1"); MULTIPLE agents show the count badge instead (one workspace can't
-            represent them). Expanded → always the count (rows carry their own
-            workspace). Mirrors the expanded row's "⌂ <workspace>" marker. */}
-        {!expanded && count === 1 && active?.workspace ? (
-          <CollapsedWorkspace name={active.workspace} />
-        ) : count > 0 ? (
-          <CountBadge count={count} tone={urgentTone(active)} />
+        {/* Just the live-agent count, COLLAPSED only — pinned to the right edge (it
+            slides, never blinks). When expanded the header's count pill owns it, so the
+            strip badge hides to avoid showing the number twice. The collapsed per-session
+            event/timer are gone: with the mascot carrying the aggregate working/idle
+            state, a single session's text would misrepresent a multi-agent fleet. */}
+        {count > 0 && !expanded ? <CountBadge count={count} tone={mascotTone(mascot)} /> : null}
+        {/* MINIMIZED → the `<->` restore control STAYS here (the affordance must not vanish
+            on shrink — the peek flank is widened to hold count + this button without the count
+            sliding under the camera); COLLAPSED → the `>-<` minimize control. Both stopPropagation
+            so they don't also fire the pill's click, and both force-hover via the native cursor
+            bridge (CSS :hover is frozen in the backgrounded panel). Roster open/close is the
+            centered chevron tab below the strip (ExpandTab), never an inline control here. */}
+        {minimized && onRestore ? (
+          <IslandCtrl
+            id="restore"
+            label="Restore"
+            cursorCtrl={cursorCtrl}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRestore();
+            }}
+          >
+            {Ico.expandH}
+          </IslandCtrl>
+        ) : !expanded && !minimized && onPeek ? (
+          <IslandCtrl
+            id="minimize"
+            label="Minimize"
+            cursorCtrl={cursorCtrl}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPeek();
+            }}
+          >
+            {Ico.contractH}
+          </IslandCtrl>
         ) : null}
       </div>
     </div>
@@ -260,77 +463,145 @@ export function NotchStrip({ active, count, notchW, notchH, expanded = false }: 
 }
 
 export interface IslandBarProps {
-  active: IslandSessionView | null;
   /** Number of live agents (drives the count badge). */
   count: number;
+  /** Aggregate working/idle state for the mascot (mascotStateFor). */
+  mascot: MascotState;
+  /** Minimize → icon+count pill (see NotchStrip.onPeek). */
+  onPeek?: () => void;
+  /** Restore (minimized only) → widen back to the collapsed bar (the `<->` control); stays
+   *  visible in peek so the affordance never vanishes on click. */
+  onRestore?: () => void;
+  /** Minimized (peek) variant: mascot + count + the `<->` restore control. */
+  minimized?: boolean;
+  /** Id the native cursor bridge reports the pointer over (forces control hover). */
+  cursorCtrl?: string | null;
 }
 
-// Collapsed content for a NOTCH-LESS display (external monitor): a plain pill row —
-// status dot + agent glyph + pane title (· workspace) + count badge. (On a notched
-// display the collapsed state is `NotchStrip` instead.)
-export function IslandBar({ active, count }: IslandBarProps) {
+// Collapsed content for a NOTCH-LESS display (external monitor): a plain pill — the
+// animated mascot carrying the AGGREGATE working/idle state, a one-word label, and the
+// live-agent count. Like the notch strip, it deliberately does NOT name a single
+// session: concurrent agents can't be represented by one name. (On a notched display
+// the collapsed state is `NotchStrip` instead.)
+export function IslandBar({
+  count,
+  mascot,
+  onPeek,
+  onRestore,
+  minimized = false,
+  cursorCtrl,
+}: IslandBarProps) {
   return (
+    // Content-sized (inline-flex, no width:100%): the surface hugs this pill, so the
+    // label always shows in FULL — never truncated by a fixed-width container.
     <div
       style={{
-        display: "flex",
+        display: "inline-flex",
         alignItems: "center",
-        gap: "0.3125rem",
-        width: "100%",
+        gap: minimized ? "0.375rem" : "0.5rem",
+        width: "max-content",
         boxSizing: "border-box",
-        padding: "0.375rem 0.875rem",
+        padding: minimized ? "0.25rem 0.625rem" : "0.25rem 0.5rem 0.25rem 0.875rem",
         fontFamily: "var(--mono)",
       }}
     >
-      {active ? (
-        <>
-          {active.status === "live" ? (
-            <ActivityBars color={AGENT_META[active.agent]?.accent ?? "var(--a-claude)"} />
-          ) : (
-            <StatusDot status={active.status} pulse={active.status === "wait"} />
-          )}
-          <AgentGlyph
-            agent={active.agent}
-            size={12}
-            color={AGENT_META[active.agent]?.accent ?? "var(--a-claude)"}
-            style={{ flexShrink: 0 }}
-          />
-          <span
-            style={{
-              flex: 1,
-              minWidth: 0,
-              fontSize: "var(--fs-12)",
-              lineHeight: 1,
-              color: "var(--fg-0)",
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {active.title}
-            {active.workspace ? (
-              <span style={{ color: "var(--fg-2)", fontWeight: 500 }}> · {active.workspace}</span>
-            ) : null}
-          </span>
-        </>
-      ) : (
-        <>
-          <StatusDot status="idle" />
-          <span
-            style={{
-              flex: 1,
-              fontSize: "var(--fs-12)",
-              lineHeight: 1,
-              color: "var(--fg-1)",
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-            }}
-          >
-            Idle
-          </span>
-        </>
-      )}
-      {count > 0 ? <CountBadge count={count} tone={urgentTone(active)} /> : null}
+      <CollapsedMascot state={mascot} size={28} />
+      {/* MINIMIZED → icon + count only (the label/controls drop). */}
+      {!minimized ? (
+        <span
+          style={{
+            fontSize: "var(--fs-12)",
+            lineHeight: 1,
+            color: mascot === "idle" ? "var(--fg-2)" : "var(--fg-0)",
+            fontWeight: 600,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {mascotLabel(mascot)}
+        </span>
+      ) : null}
+      {count > 0 ? <CountBadge count={count} tone={mascotTone(mascot)} /> : null}
+      {/* MINIMIZED → `<->` restore (stays visible — affordance never vanishes on shrink);
+          COLLAPSED → `>-<` minimize. Both force-hover via the native cursor bridge. Roster
+          open/close is the centered chevron tab below the bar (ExpandTab), not here. */}
+      {minimized && onRestore ? (
+        <IslandCtrl
+          id="restore"
+          label="Restore"
+          cursorCtrl={cursorCtrl}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRestore();
+          }}
+        >
+          {Ico.expandH}
+        </IslandCtrl>
+      ) : !minimized && onPeek ? (
+        <IslandCtrl
+          id="minimize"
+          label="Minimize"
+          cursorCtrl={cursorCtrl}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPeek();
+          }}
+        >
+          {Ico.contractH}
+        </IslandCtrl>
+      ) : null}
+    </div>
+  );
+}
+
+// The roster open/close affordance — a small black "pull-tab" HANDLE that hangs off the
+// island's bottom-center, just past its edge. It's a sibling BELOW the surface (in the
+// card's flex column), but painted in the same `--island-bg` black with rounded bottom
+// corners + a slight upward overlap, so it reads as a tongue extending FROM the island —
+// unambiguously island chrome, not the browser tab bar / menu chrome that sits below it
+// on screen (a bare floating glyph there blended into the window's own tab strip). Same
+// place both states: ▾ collapsed (→ expand) flips to ▴ expanded (→ collapse), so the
+// panel's collapse lives here too, not in the banner. Carries the island's float shadow
+// (so it floats with the surface) plus the fleet-tone glow when working ("status as
+// light"). Hover/press feedback is the `.island-tab` pull beat (panes.css).
+export function ExpandTab({
+  expanded = false,
+  onToggle,
+  mascot,
+  cursor = false,
+}: { expanded?: boolean; onToggle: () => void; mascot: MascotState; cursor?: boolean }) {
+  const tone = mascotTone(mascot);
+  // Box styling (size, black bg, rounded bottom, 1px surface overlap, float shadow, the
+  // hover/press wash + lift) lives in `.island-tab` (panes.css) so the hover state can
+  // override the background — an inline `background` would beat a `:hover`/`.is-cursor`
+  // rule. `.is-cursor` is the native-cursor-bridge hover (CSS :hover is frozen in the
+  // backgrounded panel). Only the dynamic tone color + glow stay inline.
+  return (
+    <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
+      <button
+        type="button"
+        className={`island-tab${cursor ? " is-cursor" : ""}`}
+        data-island-ctrl="chevron"
+        aria-label={expanded ? "Collapse" : "Expand"}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        style={{
+          color: tone ?? "var(--fg-3)",
+          filter: tone
+            ? `drop-shadow(0 0 0.25rem color-mix(in oklab, ${tone} 55%, transparent))`
+            : undefined,
+        }}
+      >
+        <span
+          style={{
+            display: "inline-flex",
+            transform: `scale(0.9)${expanded ? " rotate(180deg)" : ""}`,
+          }}
+        >
+          {Ico.chevD}
+        </span>
+      </button>
     </div>
   );
 }
@@ -357,17 +628,22 @@ const ROW_VARIANTS: Variants = {
   show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 500, damping: 34 } },
 };
 
-// Workspace marker — a dim "⌂ <name>" (container glyph + title). Workspace IS the
-// container in CodeHub's model, so the container icon is the honest marker. Shown on
-// every row when known; restored sessions carry no workspace (in-memory only) → it
-// is honestly omitted, never faked.
-function WorkspaceMeta({ name }: { name: string }) {
+// Workspace chip — a "⌂ <name>" capsule (container glyph + title) that rides the
+// IDENTITY line right beside the terminal name. Workspace IS the container in
+// CodeHub's model, so the container icon is the honest marker. It sits next to the
+// name (not as a far-right afterthought) because the agent name alone repeats across
+// workspaces ("Claude 1" in two projects) — the workspace is what DISAMBIGUATES the
+// row, so it belongs with the name as one identity unit. Shrinks/ellipsizes when long
+// so the name never gets pushed out; shown only when known (restored sessions carry
+// no workspace — in-memory only — so it is honestly omitted, never faked).
+function WorkspaceChip({ name }: { name: string }) {
   return (
     <span
+      title={name}
       style={{
-        flexShrink: 0,
-        minWidth: 0,
-        maxWidth: "10rem",
+        flexShrink: 1,
+        minWidth: "2.5rem",
+        maxWidth: "12.5rem",
         display: "inline-flex",
         alignItems: "center",
         gap: "0.25rem",
@@ -378,7 +654,7 @@ function WorkspaceMeta({ name }: { name: string }) {
         overflow: "hidden",
         padding: "0.0625rem 0.375rem 0.0625rem 0.3125rem",
         borderRadius: "0.375rem",
-        background: "color-mix(in oklab, var(--fg-0) 5%, transparent)",
+        background: "color-mix(in oklab, var(--fg-0) 6%, transparent)",
         boxShadow: "inset 0 0 0 1px var(--bd-soft)",
       }}
     >
@@ -417,14 +693,19 @@ function JumpHint() {
 // the agent and the active row's glyph carries the accent — the tag only tripled it.
 export function IslandRow({ s, detailed = false, cursor = false, onJump }: IslandRowProps) {
   const accent = AGENT_META[s.agent]?.accent ?? "var(--a-claude)";
-  // EVERY row gets a meta line so each item announces its own state, not just the
-  // active one: the live event ("Thinking…" / "Running Bash" / "Needs input") on the
-  // left, the workspace marker on the right. Idle rows have no event → the active row
-  // falls back to its launch task (taskDescription); plain idle rows show just the
-  // workspace. Event text is colored by status; live events lead with the equalizer.
+  // Line 1 is the IDENTITY (glyph + name + workspace chip + time + jump); line 2 is
+  // the STATUS — the live event ("Thinking…" / "Running Bash" / "Needs input"),
+  // colored by status, leading with the equalizer when live. Idle rows have no event
+  // → the active row falls back to its launch task (taskDescription); a plain idle
+  // row shows just its identity line (the workspace already sits beside the name).
   const event = s.action ?? (detailed ? s.subtitle : undefined);
   const eventColored = Boolean(s.action);
-  const cls = `island-row${detailed ? " island-row--active" : ""}${cursor ? " is-cursor" : ""}`;
+  // A non-lead row that needs the user (awaiting / failed) still gets a faint status
+  // wash so it glows in the roster — the lead row already has the `--active` wash.
+  const attn = !detailed && (s.status === "wait" || s.status === "err");
+  const cls = `island-row${detailed ? " island-row--active" : ""}${
+    attn ? " island-row--attn" : ""
+  }${cursor ? " is-cursor" : ""}`;
   return (
     <button
       type="button"
@@ -441,21 +722,31 @@ export function IslandRow({ s, detailed = false, cursor = false, onJump }: Islan
           textAlign: "left",
           border: "none",
           cursor: "pointer",
-          padding: detailed ? "0.4375rem 0.625rem 0.4375rem 0.9375rem" : "0.3125rem 0.625rem",
+          padding: detailed
+            ? "0.4375rem 0.625rem 0.4375rem 0.9375rem"
+            : "0.3125rem 0.625rem 0.3125rem 0.8125rem",
           borderRadius: detailed ? "0.625rem" : "0.5rem",
           // Active row: a soft accent RING for definition. (The old inset box-shadow
           // rail followed the corner radius → read as a rounded bracket; the crisp
           // status rail is now the `.island-row__rail` capsule below.) The faint wash
           // behind it is driven by `--row-accent` in `.island-row--active`.
           boxShadow: detailed
-            ? "inset 0 0 0 1px color-mix(in oklab, var(--row-accent) 18%, transparent)"
+            ? "inset 0 0 0 1px color-mix(in oklab, var(--row-accent) 14%, transparent)"
             : undefined,
           ["--row-accent" as string]: statusColor(s.status),
           fontFamily: "var(--mono)",
         } as CSSProperties
       }
     >
-      {detailed ? <span className="island-row__rail" aria-hidden /> : null}
+      {/* Status rail on EVERY row (thin + dim when compact, bright + glowing on the
+          active lead) so the fleet state scans down the left edge — the amber awaiting
+          row pops, green = working, neutral = idle. */}
+      <span className="island-row__rail" aria-hidden />
+
+      {/* IDENTITY LINE — glyph + name + workspace chip, then time + jump pinned right.
+          The name stays fixed-width (short, e.g. "Claude 1"); the workspace chip sits
+          immediately beside it and shrinks/ellipsizes, so two same-named agents read
+          as distinct identities ("Claude 1 ⌂honey-badger" vs "Claude 1 ⌂supra"). */}
       <div style={{ display: "flex", alignItems: "center", gap: "0.4375rem", width: "100%" }}>
         {/* Agent glyph leads EVERY row so each item is identifiable at a glance (the
             title alias alone doesn't say which CLI). Dimmed when idle so a dormant
@@ -468,9 +759,10 @@ export function IslandRow({ s, detailed = false, cursor = false, onJump }: Islan
           style={{ flexShrink: 0 }}
         />
         <span
+          title={s.title}
           style={{
-            flex: 1,
-            minWidth: 0,
+            flexShrink: 0,
+            maxWidth: "9rem",
             fontSize: "var(--fs-12)",
             color: "var(--fg-0)",
             fontWeight: detailed ? 600 : 500,
@@ -481,46 +773,52 @@ export function IslandRow({ s, detailed = false, cursor = false, onJump }: Islan
         >
           {s.title}
         </span>
-        <span className="tnum" style={{ flexShrink: 0, fontSize: "var(--fs-10)", ...dim }}>
-          {s.ago}
+        {s.workspace ? <WorkspaceChip name={s.workspace} /> : null}
+        <span style={{ flex: 1, minWidth: "0.5rem" }} aria-hidden />
+        {/* Live → the ticking turn timer (brighter, to read as "counting up"); else the
+            relative idle time. tnum keeps the digits from jittering as they change. */}
+        <span
+          className="tnum"
+          style={{
+            flexShrink: 0,
+            fontSize: "var(--fs-10)",
+            color: s.timer ? "var(--fg-1)" : "var(--fg-2)",
+          }}
+        >
+          {s.timer ?? s.ago}
         </span>
         <JumpHint />
       </div>
-      {/* Unified meta line — event (left) + workspace (right). Indented to clear the
-          row's leading indicator so it aligns under the title. */}
-      {event || s.workspace ? (
+      {/* STATUS LINE — the live event, colored by status (equalizer when live).
+          Indented to clear the row's leading glyph so it aligns under the name. Absent
+          for a plain idle row (its identity line already says everything). */}
+      {event ? (
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "0.5rem",
             width: "100%",
             paddingLeft: "1.375rem",
             minWidth: 0,
           }}
         >
-          {event ? (
-            <span
-              style={{
-                flex: 1,
-                minWidth: 0,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.4375rem",
-                fontSize: "var(--fs-11)",
-                fontWeight: eventColored ? 600 : 400,
-                color: eventColored ? statusColor(s.status) : "var(--fg-2)",
-              }}
-            >
-              {s.status === "live" ? <ActivityBars color={accent} /> : null}
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {event}
-              </span>
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4375rem",
+              fontSize: "var(--fs-11)",
+              fontWeight: eventColored ? 600 : 400,
+              color: eventColored ? statusColor(s.status) : "var(--fg-2)",
+            }}
+          >
+            {s.status === "live" ? <ActivityBars color={accent} /> : null}
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {event}
             </span>
-          ) : (
-            <span style={{ flex: 1, minWidth: 0 }} aria-hidden />
-          )}
-          {s.workspace ? <WorkspaceMeta name={s.workspace} /> : null}
+          </span>
         </div>
       ) : null}
     </button>
@@ -549,15 +847,21 @@ export function IslandList({ sessions, onJump, show = true, cursorSession }: Isl
       style={{ width: "100%", boxSizing: "border-box", padding: "0.375rem 0.5rem" }}
     >
       {sessions.length === 0 ? (
+        // Calm empty state — the banner above already shows the idle mascot + "All idle",
+        // so the roster just confirms there's nothing to act on (no sad red "none" box).
         <div
           style={{
-            padding: "0.75rem",
+            padding: "0.625rem 0.75rem 0.875rem",
             textAlign: "center",
-            fontSize: "var(--fs-13)",
-            color: "var(--fg-2)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.1875rem",
           }}
         >
-          No active agents
+          <span style={{ fontSize: "var(--fs-13)", fontWeight: 600, color: "var(--fg-1)" }}>
+            No agents running
+          </span>
+          <span style={{ fontSize: "var(--fs-11)", color: "var(--fg-3)" }}>Idle and ready</span>
         </div>
       ) : (
         sessions.map((s, i) => (

@@ -1,0 +1,28 @@
+# Native macOS Dynamic Island helper. Kept in its own workspace-member crate so
+# the Tauri app package (`..`) still has exactly one binary.
+[package]
+name = "codehub-island-helper"
+version = "0.1.2"
+edition = "2021"
+
+[dependencies]
+block2 = "0.6"
+dispatch2 = "0.3"
+libc = "0.2"
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
+objc2-web-kit = { version = "0.3", features = [
+  "block2",
+  "objc2-app-kit",
+  "objc2-core-foundation",
+  "WKNavigation",
+  "WKScriptMessage",
+  "WKScriptMessageHandler",
+  "WKUserContentController",
+  "WKUserScript",
+  "WKWebView",
+  "WKWebViewConfiguration",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
