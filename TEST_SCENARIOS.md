@@ -3,11 +3,13 @@
 Until automated IPC tests exist, exercise these by hand before each cut.
 Run `npm run tauri dev`, then check each row.
 
-Verify inside the container with:
+Verify inside the container with (each workspace runs its OWN container
+`codehub-ws-<key>` and its own tmux server — `docker ps` to find the name;
+`tmux ls` only lists that workspace's sessions):
 
 ```bash
-docker exec -it codehub-runtime tmux -S /tmp/codehub/default ls
-docker exec -it codehub-runtime ps -ef | grep -E "tmux|claude|codex"
+docker exec -e TMUX_TMPDIR=/tmp/codehub -it codehub-ws-<key> tmux ls
+docker exec -it codehub-ws-<key> ps -ef | grep -E "tmux|claude|codex"
 ```
 
 ## Lifecycle
@@ -19,7 +21,7 @@ docker exec -it codehub-runtime ps -ef | grep -E "tmux|claude|codex"
 | L3 | Launch, container exists & running | Status flips to running immediately, no re-pull |
 | L4 | Launch, container exists but stopped | CodeHub starts it; status: stopped → running |
 | L5 | Docker daemon down | Status: unreachable; clear error in status bar |
-| L6 | `docker stop codehub-runtime` while app running | Status drops to stopped within next probe; further `+` clicks blocked |
+| L6 | `docker stop codehub-ws-<key>` while app running | Status drops to stopped within next probe; further `+` clicks blocked |
 
 ## Session lifecycle (CORE — was previously broken)
 
@@ -30,11 +32,11 @@ docker exec -it codehub-runtime ps -ef | grep -E "tmux|claude|codex"
 | S3 | Click `×` on tab | Tab disappears, **tmux session also gone** | `tmux ls` must NOT list it |
 | S4 | Close last tab | Empty state ("No sessions yet") visible | `tmux ls` empty or "no server" |
 | S5 | Open 3 sessions, close middle one | Middle gone, others untouched, focus moves to first remaining | `tmux ls` shows 2 |
-| S6 | Open Claude + Codex + Antigravity tabs | 3 different bird silhouettes, 3 different Latin binomials in tabs | — |
+| S6 | Open Claude + Codex + Antigravity tabs | 3 different agent glyphs + agent names in tabs | — |
 | S7 | Close active tab | Focus auto-moves to next pane | UI: another tab gets `.active` border-top |
 | S8 | Rapid close (4 tabs in <1s) | All sessions gone, no zombie tmux sessions | `tmux ls` empty |
 | S9 | App force-quit while tabs open | After restart, `list_sessions` shows them, tabs auto-restored | `tmux ls` before+after |
-| S10 | Container restart while tabs open | tmux server died with container; old panes get exit event, UI shows `· specimen has departed ·` |
+| S10 | Container restart while tabs open | tmux server died with container; old panes get exit event, UI shows `· session ended ·` |
 | S11 | Open same session name twice (timing race) | Second open activates existing tab, doesn't crash backend | — |
 
 ## PTY plumbing
@@ -61,14 +63,14 @@ docker exec -it codehub-runtime ps -ef | grep -E "tmux|claude|codex"
 
 | # | Scenario | Expected |
 |---|---|---|
-| U1 | Hover tab | Bird silhouette colour shifts to ochre, subtle background |
+| U1 | Hover tab | Agent glyph + subtle hover background (`--bg-hover`) |
 | U2 | Click new-tab `+` | Popover opens anchored to the button, agent × mode chooser |
 | U3 | Open launcher (split / ⌘T), press Esc | Dialog closes, no session created |
 | U4 | Click overlay (outside dialog) | Dialog closes |
 | U5 | Click "Cancel" in launcher | Dialog closes, no session created |
 | U6 | Launcher entrance | Overlay fades, dialog lifts in |
-| U7 | Container state: running → stopped (manual `docker stop`) | Status bar text colour: moss → ochre |
-| U8 | Container state: unreachable | Status bar colour: oxidized red |
+| U7 | Container state: running → stopped (manual `docker stop`) | Status color shifts: live (`--live`) → idle (`--idle`) |
+| U8 | Container state: unreachable | Status color: error red (`--err`) |
 | U9 | Tab through chrome with keyboard | `:focus-visible` accent ring on tabs/controls; OS reduced-motion disables pane/dialog animation |
 
 ## Keyboard & launch modes
@@ -89,7 +91,7 @@ docker exec -it codehub-runtime ps -ef | grep -E "tmux|claude|codex"
 |---|---|---|
 | SH1 | Launcher → "Pane type" → Shell → Open | Tab labelled "Shell N · Shell", terminal shows `root@<id>:/workspace#` bash prompt; `tmux ls` shows `shell-xxxxx` |
 | SH2 | Selecting Shell in the launcher | Mode segment (Standard/Auto/YOLO) is replaced by a plain-bash note; no permission mode sent |
-| SH3 | Shell pane header metrics | ctx/turn/tokens/cost/edits all em-dash (no agent telemetry); no version shown |
+| SH3 | Shell pane footer metrics | ctx/turn/tokens all em-dash (no agent telemetry); no version shown |
 | SH4 | Close a Shell tab | tmux session gone (S3 invariant holds for shell too) |
 | SH5 | Run a command in the shell (`ls /workspace`) | Real output; cwd is `/workspace` |
 

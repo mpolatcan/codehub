@@ -38,14 +38,15 @@ codehub/
       screens/              # Full-page views (13 files):
                             #   Dashboard, Settings, Welcome, NewWorkspace,
                             #   SessionDetail, AgentDetail, Integrations (Settings
-                            #   sub-pane), Companion, EmptyState, Resume,
+                            #   sub-pane), Island, EmptyState, Resume,
                             #   SpawnDialog, LiveActivities, States.
                             #   (Usage = sidebar view rendered inside Dashboard,
                             #   not its own file)
       components/           # Top-level shared: Grid, PaneHead, PaneMount, PaneFoot,
                             #   SpawnModal, SpawnPane, spawn-form, LoginTerminalDialog,
-                            #   ApiKeyDialog, AboutDialog. Plus three subdirectories:
-                            #   hub/ — HubSidebar, HubTabs, HubStatusBar, DiffViewer,
+                            #   ApiKeyDialog, AboutDialog, Island (in-window island
+                            #   content). Plus three subdirectories:
+                            #   hub/ — HubSidebar, HubTabs, HubStatusBar, SourceControl,
                             #     DiffBody, FilesBrowser, ActionBar, CommandPalette,
                             #     Shortcuts, GroupsBar, WorkspaceBar, RuntimeBanner,
                             #     ShellPanel, … (hub chrome only)
@@ -55,7 +56,8 @@ codehub/
                             #   ui/ — shadcn primitives (Button, Dialog, Popover, etc.)
       hooks/                # useKeyboard, useContainerStatus, useContainerStatsPoll,
                             #   useSessionUsage (+useCodexUsage), useBurnRate,
-                            #   useActivityPoll, useAgentEvents, useGitStatusPoll
+                            #   useActivityPoll, useAgentEvents, useGitStatusPoll,
+                            #   useResizableDock (rem-native dock drag), useSlideIn
       lib/                  # store.ts (Zustand main), overlay.ts (Zustand panels/
                             #   modals/grid), panes.ts (registry), tree.ts (split
                             #   layout), catalog.ts (CLIS/MODES), launcher.ts,
@@ -64,7 +66,9 @@ codehub/
                             #   theme.ts (dark/gray/light toggle + persistence),
                             #   activity.ts (deriveLiveStatus — shared live status),
                             #   pty-output.ts + block-glyph-overlay.ts (terminal
-                            #   render: ANSI normalize + U+2580-U+259F block overlay)
+                            #   render: ANSI normalize + U+2580-U+259F block overlay),
+                            #   accounts.ts (profile helpers), highlight.ts (syntax
+                            #   highlighter), fileIcon.ts, fs.ts, metrics.ts
   src-tauri/                # Rust backend (workspace ROOT = the app crate)
     Cargo.toml              # [workspace] root + app package `codehub`
     tauri.conf.json
@@ -85,6 +89,10 @@ codehub/
       activity.rs           # Activity ring buffer + pending-prompt tracking
       config.rs             # Settings / agent-config persistence store
       island.rs             # macOS Dynamic Island companion (objc2/AppKit NSPanel)
+      auth.rs               # Credential capture/restore + credential_sync_loop
+      vault.rs              # Encrypted credential vault (XChaCha20-Poly1305 file)
+      pty_output.rs         # Terminal output ANSI normalize (48;5;16 bg → 49)
+      stats_history.rs      # Container stats ring buffer (sparkline history)
       types.rs              # Shared IPC types
       devserver.rs          # Dev-only HTTP/WS bridge logic (feature `devserver`)
   runtime/
@@ -160,7 +168,7 @@ Environment knobs:
 ## Gotchas / non-obvious things
 
 - **The `make dev-web` Rust bridge (`codehub-devserver`) is a SEPARATELY compiled binary.** When it is already running and you edit a Rust struct that crosses IPC (e.g. `AgentConfig`, `Settings`), the live bridge keeps serving the OLD shape — serde silently drops unknown fields — so browser-mode verification shows stale/empty data even though the code is right. Rebuild + restart the bridge (`cargo run -p codehub-devserver` recompiles on launch) after any backend struct change before trusting a `make dev-web` check.
-- **SPA hash routes (`#/companion`, dev `#/__states` etc.) need a FULL page reload to switch.** `src/app/main.tsx` reads `window.location.hash` exactly once at module load to pick the root. Navigating via Playwright `goto …#/companion` (or any in-page hash change) does NOT re-render — you keep seeing the previous view. Force `window.location.reload()` after setting the hash when driving these routes for visual checks.
+- **SPA hash routes (`#/island`, dev `#/__states` etc.) need a FULL page reload to switch.** `src/app/main.tsx` reads `window.location.hash` exactly once at module load to pick the root. Navigating via Playwright `goto …#/island` (or any in-page hash change) does NOT re-render — you keep seeing the previous view. Force `window.location.reload()` after setting the hash when driving these routes for visual checks.
 - **The app crate (`src-tauri/Cargo.toml`) must have exactly ONE binary, and the dev bridge lives in a separate workspace member (`src-tauri/devserver/`).** Tauri's bundler enumerates *every* bin target of the package being built — both `[[bin]]` entries AND every file under `src/bin/` — and tries to copy each into the bundle, **ignoring `required-features`**. A feature-gated dev bin inside the app package therefore breaks `tauri build` ("Failed to copy binary … `release/devserver` does not exist"), even though it's never compiled. So the bridge is its own crate, run with `cargo run -p codehub-devserver` (no `--features` flag — the member enables the `devserver` feature on its `codehub` path-dep). Don't add a second `[[bin]]` or any `src/bin/*.rs` to the app crate; add a workspace member instead. (This bit us on the v0.1.1 release — v0.1.0 shipped fine because it had a single binary.)
 - **`tauri::generate_context!` macro reads `tauri.conf.json` at compile time** and validates icon paths + `frontendDist`. If `dist/` is missing, `cargo check` fails with a proc-macro panic. Either run `npm run build` once, or keep the gitignored placeholder. Avoid this trap when running CI.
 - **Bollard `create_exec` requires explicit type annotation** in our codebase: `create_exec::<String>(...)`. Without it the compiler cannot infer `T: Into<String>`.

@@ -42,7 +42,7 @@ check.
   elements", `snapshot` and read the real name. After `goto`/hash-nav, give the
   view a beat (`sleep 1`) before the first click — DevPreview re-renders async.
 - **DevPreview screen nav (no reload):** `playwright-cli eval "window.location.hash='#/__screens/<key>'"`.
-- **Hash roots (need reload):** `playwright-cli goto …#/companion` then
+- **Hash roots (need reload):** `playwright-cli goto …#/island` then
   `playwright-cli reload`. A bare hash `goto` does NOT re-run `main.tsx`.
 - **Theme:** `playwright-cli localstorage-set codehub.theme <dark|gray|light>` then `reload`.
 - **Width:** `playwright-cli resize <w> <h>`.
@@ -55,10 +55,10 @@ check.
 | Action | Key | Action | Key |
 |---|---|---|---|
 | Files pane | `Meta+e` | Command palette | `Meta+k` |
-| Shell pane | `Meta+Shift+b` | Shortcuts help | `Shift+Slash` |
-| Diff inspector | `Meta+d` | Settings | `Meta+Comma` |
+| Shell pane | `Meta+j` | Shortcuts help | `Shift+Slash` |
+| Source control | `Meta+d` | Settings | `Meta+Comma` |
 | Resume drawer | `Meta+r` | Theme cycle | `Meta+Shift+l` |
-| New agent session | `Meta+n` | Companion | `Meta+Shift+c` |
+| New agent session | `Meta+n` | Companion / Island | `Meta+Shift+j` |
 | New workspace tab | `Meta+t` | Notifications | `Meta+Shift+n` |
 | Close pane | `Meta+w` | Dev tools | `Meta+Alt+i` |
 | Close workspace | `Meta+Shift+w` | Jump tab 1–9 | `Meta+1`…`Meta+9` |
@@ -80,10 +80,10 @@ Container: `Meta+Shift+x` exec, `Meta+Alt+r` restart, `Meta+Alt+period` stop,
 **DevPreview keys** (`#/__screens/<key>`): `empty` `main-hub-a` `hub-states`
 `welcome` `spawn` `new-workspace` `palette` `shortcuts` `about` `dashboard`
 `workspaces` `settings` `settings-agents` `settings-integrations`
-`settings-platform` `settings-notifications` `live-activities` `companion`
+`settings-platform` `settings-notifications` `live-activities`
 `agent-settings` `resume` `session-detail` `states`.
-**Live app:** `http://localhost:1420/`. **Hash roots:** `#/companion`
-`#/__primitives` `#/__states`.
+**Live app:** `http://localhost:1420/`. **Hash roots:** `#/island`
+`#/__island` `#/__primitives` `#/__states`.
 
 ---
 
@@ -171,7 +171,7 @@ playwright-cli screenshot --filename=.playwright-cli/s-b3-closeconfirm.png
 ```
 playwright-cli press "Meta+e"   ; playwright-cli screenshot --filename=.playwright-cli/s-c1-files.png ; playwright-cli press "Meta+e"
 playwright-cli press "Meta+d"   ; playwright-cli screenshot --filename=.playwright-cli/s-c1-diff.png  ; playwright-cli press "Meta+d"
-playwright-cli press "Meta+Shift+b" ; playwright-cli screenshot --filename=.playwright-cli/s-c1-shell.png ; playwright-cli press "Meta+Shift+b"
+playwright-cli press "Meta+j" ; playwright-cli screenshot --filename=.playwright-cli/s-c1-shell.png ; playwright-cli press "Meta+j"
 playwright-cli press "Meta+r"   ; playwright-cli screenshot --filename=.playwright-cli/s-c1-resume.png ; playwright-cli press "Meta+r"
 ```
 - **Expect:** each opens in its dock; panes resize; toggle off restores.
@@ -381,14 +381,14 @@ playwright-cli screenshot --filename=.playwright-cli/s-f4-resume.png
 
 ## Group G — Design canvases & galleries
 
-### S-G1 · Companion (embedded + standalone)
+### S-G1 · Island / companion (standalone window + dev preview)
 ```
-playwright-cli eval "window.location.hash='#/__screens/companion'"
-playwright-cli screenshot --filename=.playwright-cli/s-g1-companion-embedded.png
-playwright-cli goto "http://localhost:1420/#/companion" ; playwright-cli reload ; sleep 1
-playwright-cli screenshot --filename=.playwright-cli/s-g1-companion-window.png
+playwright-cli goto "http://localhost:1420/#/island" ; playwright-cli reload ; sleep 1
+playwright-cli screenshot --filename=.playwright-cli/s-g1-island-window.png
+playwright-cli goto "http://localhost:1420/#/__island" ; playwright-cli reload ; sleep 1
+playwright-cli screenshot --filename=.playwright-cli/s-g1-island-preview.png
 ```
-- **Check:** companion states (Idle/Thinking/Awaiting/Done/Failed/Bubble/Dragging/Docked); character row.
+- **Check:** island/companion states (Idle/Thinking/Awaiting/Done/Failed/Bubble/Dragging/Docked); character row.
 
 ### S-G2 · Live activities
 ```

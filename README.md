@@ -77,7 +77,7 @@ sequenceDiagram
 
     UI->>UI: launcher — agent (claude/codex/antigravity) × mode (standard/auto/yolo)
     UI->>B: create_session(name, cli, mode, workspace)
-    Note right of B: resolve + ensure<br/>codehub-ws-(key)<br/>(shared runtime when flag off)
+    Note right of B: resolve + ensure<br/>codehub-ws-(key)
     B->>T: docker exec — tmux new-session -d -s NAME CLI
     UI->>B: attach_session(name, cols, rows)
     B->>T: bollard exec tty=true — tmux attach -t NAME
@@ -99,13 +99,13 @@ sequenceDiagram
 - **Permission modes** — *Standard* (agent asks first), *Auto* (auto-accepts edits, still sandboxed), *YOLO* (skips all approvals; the container is the boundary). Antigravity is Standard-only until its flags are verified.
 - **Splits** — split any pane (its head controls, or ⌘\) into a binary tree; drag the divider to resize. Groups organize splits; each tab holds one or more groups.
 - **Color & rename** — click the identity dot on any pane head, group tab, or workspace tab to recolor it; double-click the title to rename. Colors and names persist across reloads.
-- **Hub panels** — a Files browser (⌘E), a workspace Diff viewer (⌘D), a Shell panel (⌘J), a Details/metrics panel (⌘I), and a Resume drawer (action-bar button) of past Claude/Codex sessions, docked beside the panes.
+- **Hub panels** — a Files browser (⌘E), a Source Control dock (⌘D — changes/diff, commit history, branches; full git client over the workspace repo), a Shell panel (⌘J), a Details/metrics panel (⌘I), and a Resume drawer (action-bar button) of past Claude/Codex sessions, docked beside the panes.
 - **Per-pane telemetry** — each agent pane carries a live footer: the working directory, a context-window gauge (tokens used / model max), the turn count, and total tokens. Real per-session data read from the Claude transcript / Codex rollout — never estimated. The strip is always present (zeros until the first turn produces a transcript). The sidebar mirrors each agent: name, working dir, and live status.
 - **Command palette** (⌘K) — jump to a view, focus a running session, spawn an agent, or open a recent/connected repo.
 - **Views** — Hub, Dashboard, Workspaces (container manager), Usage (token/cost rollup from session transcripts), Settings (agents · runtime · integrations · appearance · keyboard shortcuts). Three themes: dark, gray, light.
 - **GitHub integration** — connect a PAT or sign in via OAuth in Settings → Integrations. Browse repos, see scopes and permissions. Repos appear in the workspace wizard for cloning.
 - **Companion** — an always-on-top monitor window mirroring live agent status (working / awaiting input / done / failed) with inline approve/deny. On macOS a native notch "dynamic island" variant exists (experimental).
-- **Keyboard** — ⌘T launcher (new/recent/resume workspace) · ⌘N new agent · ⌘⇧N new agent in a new group · ⌘W close pane · ⌘⇧W close workspace · ⌘\ split (⌘⇧\ opposite axis) · ⌘E files · ⌘D diff · ⌘J shell · ⌘I details · ⌘B sidebar · ⌘1–9 jump to tab · ⌘[ / ⌘] prev/next tab · ⌘K palette · ⌘, settings · ⌘⇧L cycle theme · ⌘/ or ? shortcuts · ⌘⇧J companion. ⌘R is intentionally left free for webview reload.
+- **Keyboard** — ⌘T launcher (new/recent/resume workspace) · ⌘N new agent · ⌘⇧N new agent in a new group · ⌘W close pane · ⌘⇧W close workspace · ⌘\ split (⌘⇧\ opposite axis) · ⌘E files · ⌘D source control · ⌘J shell · ⌘I details · ⌘B sidebar · ⌘1–9 jump to tab · ⌘[ / ⌘] prev/next tab · ⌘K palette · ⌘, settings · ⌘⇧L cycle theme · ⌘/ or ? shortcuts · ⌘⇧J companion. ⌘R is intentionally left free for webview reload.
 
 ## Runtime image
 
